@@ -56,3 +56,27 @@ jobs:
           tags: zanshin:ci
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+  go:
+    name: go sdk / nakama module
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.22"
+          cache-dependency-path: |
+            sdk/go/go.sum
+            nakama/go.sum
+      - name: sdk
+        working-directory: sdk/go
+        run: |
+          test -z "$(gofmt -l .)"
+          go vet ./...
+          go test ./...
+      - name: nakama module
+        working-directory: nakama
+        run: |
+          test -z "$(gofmt -l .)"
+          go vet ./...
+          go build ./...

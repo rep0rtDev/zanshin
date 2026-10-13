@@ -1183,3 +1183,101 @@ async fn analytics_events_flow() {
         .unwrap();
     assert_eq!(r.status(), 200);
 }
+
+#[tokio::test]
+async fn server_identity_sync_and_inbox() {
+    let Some((base, http)) = start().await else {
+        eprintln!("skipping: ZANSHIN_TEST_DATABASE_URL / ZANSHIN_TEST_REDIS_URL not set");
+        return;
+    };
+    let suffix = uuid::Uuid::new_v4().simple().to_string();
+    let admin = |b: reqwest::RequestBuilder| b.header("x-api-key", ADMIN_KEY);
+    let created: Value = admin(http.post(format!("{base}/admin/v1/api-keys")))
+        .json(&json!({"name": "it-sync", "kind": "server"}))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    let server_key = created["secret"].as_str().unwrap().to_string();
+    let ext = format!("nakama-{suffix}");
+
+    // Upsert twice: second call merges properties and keeps the id.
+    let a: Value = http
+        .post(format!("{base}/server/v1/identities"))
+        .header("x-api-key", &server_key)
+        .json(&json!({"external_id": ext, "default": {"auth_provider": "device"}}))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    let b: Value = http
+        .post(format!("{base}/server/v1/identities"))
+        .header("x-api-key", &server_key)
+        .json(&json!({"external_id": ext, "default": {"lang": "de"}}))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(a["id"], b["id"]);
+    assert_eq!(b["properties"]["default"]["auth_provider"], "device");
+    assert_eq!(b["properties"]["default"]["lang"], "de");
+
+    let p: Value = http
+        .put(format!("{base}/server/v1/identities/{ext}/properties"))
+        .header("x-api-key", &server_key)
+        .json(&json!({"custom": {"nickname": "Neo"}}))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(p["custom"]["nickname"], "Neo");
+
+    let r = http
+        .post(format!("{base}/server/v1/messages"))
+        .header("x-api-key", &server_key)
+        .json(&json!({"external_id": ext, "title": "Hi {{custom.nickname}}"}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(r.status(), 201);
+    let inbox: Value = http
+        .get(format!("{base}/server/v1/messages/inbox?external_id={ext}"))
+        .header("x-api-key", &server_key)
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert!(inbox["messages"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|m| m["title"] == "Hi Neo"));
+
+    // Client keys may not use the server API or the change stream.
+    let ck: Value = admin(http.post(format!("{base}/admin/v1/api-keys")))
+        .json(&json!({"name": "it-sync-c", "kind": "client"}))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    let r = http
+        .post(format!("{base}/server/v1/identities"))
+        .header("x-api-key", ck["secret"].as_str().unwrap())
+        .json(&json!({"external_id": ext}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(r.status(), 403);
+}

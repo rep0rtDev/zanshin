@@ -28,9 +28,9 @@ console comes last once the model is stable.
       (count, unique identities, sum, conversion per variant)
 - [ ] **Identify / merge**: link an anonymous identity to an authenticated id, merge
       properties and history
-- [ ] **Go SDK** (`sdk/go`) with local evaluation cache + **Nakama runtime module**
-      (`bridges/nakama`): RPCs for every client call, hooks after-authenticate /
-      session-start to sync properties, flag lookup without network round-trips
+- [x] **Go SDK** (`sdk/go`): server-key client, per-identity evaluation cache with TTL,
+      WebSocket change-stream invalidation with reconnect/backoff, identity upsert, events,
+      direct messages, inbox
 
 ## 0.2 — reach
 
