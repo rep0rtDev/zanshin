@@ -130,6 +130,18 @@ pub enum Reason {
     Override,
     Rule { rule_id: String },
     Variant { rule_id: String, variant: String },
+    Experiment { experiment: String, variant: String },
+}
+
+/// A value fixed for this identity before rules are consulted.
+#[derive(Debug, Clone, PartialEq)]
+pub enum Pinned<'a> {
+    Override(&'a Value),
+    Experiment {
+        experiment: &'a str,
+        variant: &'a str,
+        value: &'a Value,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -231,13 +243,13 @@ impl Flag {
     }
 
     /// Evaluate for a subject. `props` is the flattened property map; `audiences` is the set of
-    /// audience keys the subject belongs to; `override_value` short-circuits everything.
+    /// audience keys the subject belongs to; `pinned` (override or experiment variant) wins over rules.
     pub fn evaluate(
         &self,
         subject: &str,
         props: &PropertyMap,
         audiences: &dyn Fn(&str) -> bool,
-        override_value: Option<&Value>,
+        pinned: Option<Pinned<'_>>,
     ) -> Evaluation {
         let mut ev = Evaluation {
             key: self.key.clone(),
@@ -251,10 +263,26 @@ impl Flag {
             ev.reason = Reason::Disabled;
             return ev;
         }
-        if let Some(v) = override_value {
-            ev.value = v.clone();
-            ev.reason = Reason::Override;
-            return ev;
+        match pinned {
+            Some(Pinned::Override(v)) => {
+                ev.value = v.clone();
+                ev.reason = Reason::Override;
+                return ev;
+            }
+            Some(Pinned::Experiment {
+                experiment,
+                variant,
+                value,
+            }) => {
+                ev.value = value.clone();
+                ev.variant = Some(variant.to_string());
+                ev.reason = Reason::Experiment {
+                    experiment: experiment.to_string(),
+                    variant: variant.to_string(),
+                };
+                return ev;
+            }
+            None => {}
         }
         let ctx = Context { props };
         for rule in &self.rules {
@@ -354,12 +382,22 @@ mod tests {
         let mut f = flag(json!([{"id":"all","value":true}]));
         let none = |_: &str| false;
         assert_eq!(
-            f.evaluate("u", &props("DE", 1), &none, Some(&json!(false)))
-                .reason,
+            f.evaluate(
+                "u",
+                &props("DE", 1),
+                &none,
+                Some(Pinned::Override(&json!(false)))
+            )
+            .reason,
             Reason::Override
         );
         f.enabled = false;
-        let ev = f.evaluate("u", &props("DE", 1), &none, Some(&json!(true)));
+        let ev = f.evaluate(
+            "u",
+            &props("DE", 1),
+            &none,
+            Some(Pinned::Override(&json!(true))),
+        );
         assert_eq!(ev.reason, Reason::Disabled);
         assert_eq!(ev.value, json!(false));
     }

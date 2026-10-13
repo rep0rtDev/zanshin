@@ -77,11 +77,35 @@ Evaluates feature flags for the current identity (`names` omitted = every flag):
 ] }
 ```
 
-`reason.kind` is one of `disabled`, `default`, `override`, `rule`, `variant`.
+`reason.kind` is one of `disabled`, `default`, `override`, `experiment`, `rule`, `variant` —
+listed in precedence order.
 
 ### `GET /v1/flags/{key}` — session
 
 One evaluation; 404 when the flag does not exist.
+
+### `GET /v1/audiences` — session
+
+`{ "audiences": ["beta_testers", "whales"] }` — keys of every enabled audience whose condition
+(and sampling percentage) the identity satisfies. Evaluated on read; nothing is stored.
+
+### `GET /v1/experiments?names=a,b` — session
+
+Enrolments of the current identity. On first call for a running experiment the identity is
+targeted, allocated and the variant is stored, so later calls return the same variant even if
+properties change:
+
+```json
+{ "experiments": [ { "key": "price_test", "name": "Price test", "variant": "cheap", "value": 4.99, "version": 2 } ] }
+```
+
+Paused experiments keep serving existing assignments without enrolling anyone new; stopped and
+draft experiments return nothing.
+
+### `POST /v1/experiments/{key}/expose` — session
+
+Records that the identity actually saw its variant (`exposures` + 1, first `exposed_at`). 404 when
+not enrolled, 400 when the experiment is not live.
 
 ### `GET /v1/stream?token=<access token>&names=a,b` — WebSocket
 
@@ -92,6 +116,8 @@ set. Messages from the server:
 { "type": "hello", "identity_id": "…" }
 { "type": "flag", "flag": { …evaluation… } }        // definition or override changed
 { "type": "flag_deleted", "key": "shop_v2" }
+{ "type": "flags", "flags": [ … ] }                  // after an audience / experiment change
+{ "type": "experiments", "experiments": [ … ] }
 { "type": "error", "message": "session expired" }   // followed by close
 ```
 
@@ -108,8 +134,11 @@ For trusted backends (game servers, the Nakama module). Identities are addressed
 | Method | Path | Returns |
 |--------|------|---------|
 | `GET` | `/flags?external_id=<id>&names=a,b` | `{ "flags": [ …evaluations… ] }` |
+| `GET` | `/audiences?external_id=<id>` | `{ "audiences": [ … ] }` |
+| `GET` | `/experiments?external_id=<id>&names=a,b` | `{ "experiments": [ … ] }` (assigns when eligible) |
+| `POST` | `/experiments/{key}/expose?external_id=<id>` | `{}` |
 
-gRPC: `ServerGetFlags`.
+gRPC: `ServerGetFlags`, `ServerGetAudiences`, `ServerGetExperiments`.
 
 ## Admin API — `/admin/v1` (admin key)
 
@@ -131,6 +160,37 @@ gRPC: `ServerGetFlags`.
 | `PUT` / `DELETE` | `/flags/{key}/overrides/{identity_id}` | `{ "value": … }` | `{}` |
 | `GET` | `/flags/{key}/evaluate/{identity_id}` | — | evaluation for that identity (debug) |
 | `POST` | `/flags/{key}/evaluate` | `{ "subject": "…", "properties": { "default": {…}, "custom": {…} } }` | dry-run evaluation with ad-hoc properties |
+
+| `GET` / `POST` | `/audiences` | `{ "key", "name", "description", "condition", "percentage", "enabled", "salt", "tags" }` | audience definitions |
+| `GET` / `PUT` / `PATCH` / `DELETE` | `/audiences/{key}` | partial definition | definition |
+| `GET` | `/audiences/{key}/evaluate/{identity_id}` | — | `{ "member": bool }` |
+| `POST` | `/audiences/{key}/evaluate` | `{ "subject", "properties" }` | dry-run membership |
+| `GET` / `POST` | `/experiments` | experiment definition (below) | definitions |
+| `GET` / `PUT` / `PATCH` / `DELETE` | `/experiments/{key}` | partial definition | definition |
+| `POST` | `/experiments/{key}/start` · `/pause` · `/stop` | — | definition; transitions: draft→running, running⇄paused, running/paused→stopped |
+| `POST` | `/experiments/{key}/reset` | — | `{ "deleted_assignments": n }` |
+| `GET` | `/experiments/{key}/results` | — | assigned / exposed / exposures per variant |
+| `GET` / `PUT` / `DELETE` | `/experiments/{key}/assignments/{identity_id}` | `{ "variant": "…" }` for `PUT` | inspect / force / clear one identity's assignment |
+
+### Experiment definition
+
+```json
+{
+  "key": "price_test", "name": "Price test", "hypothesis": "A lower entry price lifts conversion",
+  "status": "draft",                       // draft | running | paused | stopped (use the lifecycle endpoints)
+  "condition": { "prop": "default.country", "op": "in", "value": ["DE", "AT"] },
+  "audiences": ["new_players"],            // all must match
+  "percentage": 50,                        // share of eligible identities enrolled
+  "variants": [ { "key": "control", "value": 9.99, "weight": 50 }, { "key": "cheap", "value": 4.99, "weight": 50 } ],
+  "control": "control",
+  "flag_key": "price",                     // optional: the assigned variant's value becomes this flag's value
+  "salt": "", "starts_at": null, "ends_at": null, "tags": []
+}
+```
+
+When `flag_key` is set, flag evaluation reports `"reason": { "kind": "experiment", "experiment": "price_test", "variant": "cheap" }`
+and the variant key, so clients can attribute metrics without a second lookup. Per-identity flag
+overrides still win over experiments.
 
 ### Flag definition
 
