@@ -3,7 +3,9 @@
 pub mod admin;
 pub mod auth;
 pub mod error;
+pub mod server_api;
 pub mod v1;
+pub mod ws;
 
 use std::net::SocketAddr;
 
@@ -58,6 +60,7 @@ pub fn router(state: AppState) -> Router {
         .route("/readyz", get(readyz))
         .route("/metrics", get(metrics))
         .nest("/v1", v1::router())
+        .nest("/server/v1", server_api::router())
         .nest("/admin/v1", admin::router())
         .layer(DefaultBodyLimit::max(state.cfg.server.body_limit))
         .layer(TimeoutLayer::with_status_code(

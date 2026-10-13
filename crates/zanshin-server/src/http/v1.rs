@@ -22,7 +22,54 @@ pub fn router() -> Router<AppState> {
         .route("/authenticate/logout", post(logout))
         .route("/identity", get(get_identity).delete(delete_identity))
         .route("/properties", get(get_properties).put(update_properties))
+        .route("/flags", get(get_flags))
+        .route("/flags/{key}", get(get_flag))
+        .route("/stream", get(super::ws::stream))
         .route("/healthcheck", get(healthcheck))
+}
+
+#[derive(Debug, Default, Deserialize)]
+pub struct FlagsQuery {
+    /// Comma-separated flag keys; omitted = all flags.
+    #[serde(default)]
+    pub names: Option<String>,
+}
+
+pub fn split_names(names: Option<String>) -> Vec<String> {
+    names
+        .unwrap_or_default()
+        .split(',')
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(String::from)
+        .collect()
+}
+
+#[derive(Debug, Serialize)]
+pub struct FlagList {
+    pub flags: Vec<zanshin_core::flags::Evaluation>,
+}
+
+async fn get_flags(
+    State(state): State<AppState>,
+    SessionAuth(ctx): SessionAuth,
+    axum::extract::Query(q): axum::extract::Query<FlagsQuery>,
+) -> ApiResult<Json<FlagList>> {
+    let identity = state.identity.get(ctx.identity_id()).await?;
+    let flags = state
+        .flags
+        .evaluate(&identity, &split_names(q.names))
+        .await?;
+    Ok(Json(FlagList { flags }))
+}
+
+async fn get_flag(
+    State(state): State<AppState>,
+    SessionAuth(ctx): SessionAuth,
+    axum::extract::Path(key): axum::extract::Path<String>,
+) -> ApiResult<Json<zanshin_core::flags::Evaluation>> {
+    let identity = state.identity.get(ctx.identity_id()).await?;
+    Ok(Json(state.flags.evaluate_one(&identity, &key).await?))
 }
 
 #[derive(Debug, Deserialize)]

@@ -31,6 +31,27 @@ pub fn router() -> Router<AppState> {
             "/identities/by-external-id/{external_id}",
             get(get_identity_by_external),
         )
+        .route("/flags", get(list_flags).post(create_flag))
+        .route(
+            "/flags/{key}",
+            get(get_flag)
+                .put(update_flag)
+                .patch(update_flag)
+                .delete(delete_flag),
+        )
+        .route("/flags/{key}/overrides", get(list_overrides))
+        .route(
+            "/flags/{key}/overrides/{identity_id}",
+            axum::routing::put(set_override).delete(delete_override),
+        )
+        .route(
+            "/flags/{key}/evaluate/{identity_id}",
+            get(evaluate_for_identity),
+        )
+        .route(
+            "/flags/{key}/evaluate",
+            axum::routing::post(evaluate_dry_run),
+        )
         .route("/stats", get(stats))
 }
 
@@ -192,4 +213,167 @@ async fn stats(
         "uptime_seconds": (chrono::Utc::now() - state.started_at).num_seconds(),
         "clickhouse_enabled": state.stores.clickhouse.is_some(),
     })))
+}
+
+// ---- flags ---------------------------------------------------------------------------------
+
+use crate::services::flags::FlagPatch;
+use zanshin_core::flags::{Evaluation, Flag};
+
+#[derive(Debug, Deserialize)]
+pub struct CreateFlagRequest {
+    pub key: String,
+    #[serde(flatten)]
+    pub patch: FlagPatch,
+}
+
+async fn list_flags(
+    State(state): State<AppState>,
+    AdminAuth(_): AdminAuth,
+) -> ApiResult<Json<Vec<Flag>>> {
+    Ok(Json(
+        state
+            .flags
+            .list()
+            .await
+            .iter()
+            .map(|f| (**f).clone())
+            .collect(),
+    ))
+}
+
+async fn create_flag(
+    State(state): State<AppState>,
+    AdminAuth(_): AdminAuth,
+    Json(req): Json<CreateFlagRequest>,
+) -> ApiResult<(axum::http::StatusCode, Json<Flag>)> {
+    let f = state.flags.create(&req.key, req.patch.into()).await?;
+    Ok((axum::http::StatusCode::CREATED, Json(f)))
+}
+
+async fn get_flag(
+    State(state): State<AppState>,
+    AdminAuth(_): AdminAuth,
+    Path(key): Path<String>,
+) -> ApiResult<Json<Flag>> {
+    Ok(Json((*state.flags.get(&key).await?).clone()))
+}
+
+async fn update_flag(
+    State(state): State<AppState>,
+    AdminAuth(_): AdminAuth,
+    Path(key): Path<String>,
+    Json(patch): Json<FlagPatch>,
+) -> ApiResult<Json<Flag>> {
+    Ok(Json(state.flags.update(&key, patch.into()).await?))
+}
+
+async fn delete_flag(
+    State(state): State<AppState>,
+    AdminAuth(_): AdminAuth,
+    Path(key): Path<String>,
+) -> ApiResult<Json<serde_json::Value>> {
+    state.flags.delete(&key).await?;
+    Ok(Json(serde_json::json!({})))
+}
+
+#[derive(Debug, Serialize)]
+pub struct OverrideRow {
+    pub identity_id: Uuid,
+    pub external_id: String,
+    pub value: serde_json::Value,
+}
+
+async fn list_overrides(
+    State(state): State<AppState>,
+    AdminAuth(_): AdminAuth,
+    Path(key): Path<String>,
+    Query(q): Query<ListQuery>,
+) -> ApiResult<Json<Vec<OverrideRow>>> {
+    let rows = state.flags.list_overrides(&key, q.limit).await?;
+    Ok(Json(
+        rows.into_iter()
+            .map(|(identity_id, external_id, value)| OverrideRow {
+                identity_id,
+                external_id,
+                value,
+            })
+            .collect(),
+    ))
+}
+
+#[derive(Debug, Deserialize)]
+pub struct OverrideRequest {
+    pub value: serde_json::Value,
+}
+
+async fn set_override(
+    State(state): State<AppState>,
+    AdminAuth(_): AdminAuth,
+    Path((key, identity_id)): Path<(String, Uuid)>,
+    Json(req): Json<OverrideRequest>,
+) -> ApiResult<Json<serde_json::Value>> {
+    state
+        .flags
+        .set_override(&key, identity_id, req.value)
+        .await?;
+    Ok(Json(serde_json::json!({})))
+}
+
+async fn delete_override(
+    State(state): State<AppState>,
+    AdminAuth(_): AdminAuth,
+    Path((key, identity_id)): Path<(String, Uuid)>,
+) -> ApiResult<Json<serde_json::Value>> {
+    state.flags.delete_override(&key, identity_id).await?;
+    Ok(Json(serde_json::json!({})))
+}
+
+async fn evaluate_for_identity(
+    State(state): State<AppState>,
+    AdminAuth(_): AdminAuth,
+    Path((key, identity_id)): Path<(String, Uuid)>,
+) -> ApiResult<Json<Evaluation>> {
+    let identity = state.identity.get(identity_id).await?;
+    Ok(Json(state.flags.evaluate_one(&identity, &key).await?))
+}
+
+#[derive(Debug, Default, Deserialize)]
+pub struct DryRunRequest {
+    /// Subject used for bucketing (an external id); defaults to "dry-run".
+    #[serde(default)]
+    pub subject: Option<String>,
+    #[serde(default)]
+    pub properties: zanshin_core::PropertySet,
+}
+
+async fn evaluate_dry_run(
+    State(state): State<AppState>,
+    AdminAuth(_): AdminAuth,
+    Path(key): Path<String>,
+    Json(req): Json<DryRunRequest>,
+) -> ApiResult<Json<Evaluation>> {
+    state.flags.get(&key).await?;
+    let now = chrono::Utc::now();
+    let identity = zanshin_core::Identity {
+        id: Uuid::nil(),
+        external_id: req.subject.unwrap_or_else(|| "dry-run".into()),
+        properties: req.properties.clone(),
+        created_at: now,
+        updated_at: now,
+        last_seen_at: now,
+    };
+    let mut evals = state
+        .flags
+        .evaluate_with(
+            &identity,
+            &req.properties,
+            std::slice::from_ref(&key),
+            &Default::default(),
+        )
+        .await;
+    evals
+        .pop()
+        .map(Json)
+        .ok_or_else(|| Error::not_found(format!("flag {key:?} not found")).into())
 }

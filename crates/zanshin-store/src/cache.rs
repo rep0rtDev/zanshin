@@ -102,3 +102,46 @@ fn map_redis(e: redis::RedisError) -> Error {
         Error::internal(e)
     }
 }
+
+/// A dedicated pub/sub subscription (Redis needs a separate connection for SUBSCRIBE).
+pub struct Subscription {
+    pubsub: redis::aio::PubSub,
+}
+
+impl Cache {
+    pub async fn subscribe(&self, url: &str, channels: &[&str]) -> Result<Subscription> {
+        let client = redis::Client::open(url).context("parsing redis url")?;
+        let mut pubsub = client.get_async_pubsub().await.map_err(map_redis)?;
+        for ch in channels {
+            pubsub
+                .subscribe(self.key(&["events", ch]))
+                .await
+                .map_err(map_redis)?;
+        }
+        Ok(Subscription { pubsub })
+    }
+}
+
+impl Subscription {
+    /// Next message as (channel suffix, JSON payload). Returns `None` when the connection drops.
+    pub async fn next<T: DeserializeOwned>(&mut self) -> Option<(String, T)> {
+        use futures_util::StreamExt;
+        loop {
+            let msg = self.pubsub.on_message().next().await?;
+            let channel: String = msg
+                .get_channel_name()
+                .rsplit(':')
+                .next()
+                .unwrap_or_default()
+                .to_string();
+            let payload: Vec<u8> = match msg.get_payload() {
+                Ok(p) => p,
+                Err(_) => continue,
+            };
+            match serde_json::from_slice(&payload) {
+                Ok(v) => return Some((channel, v)),
+                Err(e) => tracing::warn!(error = %e, "ignoring malformed bus message"),
+            }
+        }
+    }
+}

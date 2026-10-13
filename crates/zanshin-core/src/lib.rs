@@ -2,8 +2,11 @@
 
 pub mod apikey;
 pub mod error;
+pub mod flags;
+pub mod hash;
 pub mod identity;
 pub mod properties;
+pub mod rules;
 pub mod token;
 
 pub use error::{Error, Result};
