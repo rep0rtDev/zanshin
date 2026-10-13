@@ -69,7 +69,8 @@ variables. `zanshin --check-config` prints the effective configuration with secr
 | PostgreSQL migrations, Redis cache, ClickHouse schema bootstrap | ✅ |
 | Prometheus `/metrics`, structured logs, request ids, graceful shutdown | ✅ |
 | Feature flags: typed values, targeting rules (`all`/`any`/`not`, 20 operators incl. semver), percentage rollouts, weighted variants, per-identity overrides, live push over WebSocket / gRPC stream, replicated via Redis | ✅ |
-| Audiences / segments, A/B experiments with sticky assignment | 🔜 |
+| Audiences (rule-based segments with sampling) gating flags and experiments | ✅ |
+| A/B experiments: targeting, allocation %, weighted variants, sticky assignment, exposure tracking, lifecycle draft→running→paused→stopped, results per variant, optional flag linkage | ✅ |
 | Live events (schedules), in-app messages / inbox | 🔜 |
 | Analytics event ingest (ClickHouse, PostgreSQL fallback), computed properties | 🔜 |
 | Go SDK + Nakama runtime module, TypeScript / Unity / Unreal / Godot SDKs | 🔜 |
@@ -85,15 +86,17 @@ variables. `zanshin --check-config` prints the effective configuration with secr
 | `GET` / `DELETE` | `/v1/identity` | session | current identity / delete it |
 | `GET` / `PUT` | `/v1/properties` | session | read / merge properties (`null` removes a key) |
 | `GET` | `/v1/flags[?names=a,b]`, `/v1/flags/{key}` | session | evaluate feature flags |
-| `WS` | `/v1/stream[?token=]` | session | live flag changes pushed to the client |
-| `GET` | `/server/v1/flags?external_id=&names=` | server key | evaluate flags for any identity (Nakama / backends) |
+| `GET` | `/v1/audiences` | session | audiences the identity belongs to |
+| `GET` / `POST` | `/v1/experiments[?names=]`, `/v1/experiments/{key}/expose` | session | enrolments (sticky) / record exposure |
+| `WS` | `/v1/stream[?token=]` | session | live flag / audience / experiment changes pushed to the client |
+| `GET` | `/server/v1/{flags,audiences,experiments}?external_id=` | server key | evaluate for any identity (Nakama / backends) |
 | `GET` / `POST` | `/admin/v1/api-keys` | admin | list / mint API keys |
 | `DELETE` | `/admin/v1/api-keys/{id}` | admin | revoke a key |
 | `GET` | `/admin/v1/identities[?after=&limit=]` | admin | paginate identities |
 | `GET` / `DELETE` | `/admin/v1/identities/{id}` | admin | inspect / delete |
 | `PUT` | `/admin/v1/identities/{id}/properties` | admin | server-side property update |
 | `GET` | `/admin/v1/identities/by-external-id/{xid}` | admin | lookup by external id |
-| `*` | `/admin/v1/flags…` | admin | flag CRUD, overrides, per-identity and dry-run evaluation |
+| `*` | `/admin/v1/{flags,audiences,experiments}…` | admin | CRUD, overrides, lifecycle, results, per-identity and dry-run evaluation |
 | `GET` | `/admin/v1/stats`, `/healthz`, `/readyz`, `/metrics` | — / admin | operations |
 
 Full reference: [docs/api.md](docs/api.md). Design: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).

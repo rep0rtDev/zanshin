@@ -13,9 +13,10 @@ use zanshin_core::Error;
 use zanshin_proto::api::v1::{
     flag_event,
     zanshin_server::{Zanshin, ZanshinServer},
-    AuthenticateLogoutRequest, AuthenticateRefreshRequest, AuthenticateRequest, Flag, FlagEvent,
-    FlagList, GetFlagRequest, GetFlagsRequest, Identity, Properties, ServerGetFlagsRequest,
-    Session, UpdatePropertiesRequest,
+    AudienceList, AuthenticateLogoutRequest, AuthenticateRefreshRequest, AuthenticateRequest,
+    ExperimentList, ExposeExperimentRequest, Flag, FlagEvent, FlagList, GetExperimentsRequest,
+    GetFlagRequest, GetFlagsRequest, Identity, Properties, ServerGetExperimentsRequest,
+    ServerGetFlagsRequest, ServerIdentityRequest, Session, UpdatePropertiesRequest,
 };
 
 use crate::{services::identity::SessionContext, state::AppState};
@@ -238,8 +239,8 @@ impl Zanshin for ZanshinGrpc {
             .map_err(to_status)?;
         let evals = self
             .state
-            .flags
-            .evaluate(&identity, &request.into_inner().names)
+            .eval
+            .flags(&identity, &request.into_inner().names)
             .await
             .map_err(to_status)?;
         Ok(Response::new(FlagList {
@@ -257,8 +258,8 @@ impl Zanshin for ZanshinGrpc {
             .map_err(to_status)?;
         let ev = self
             .state
-            .flags
-            .evaluate_one(&identity, &request.into_inner().name)
+            .eval
+            .flag(&identity, &request.into_inner().name)
             .await
             .map_err(to_status)?;
         Ok(Response::new(evaluation_to_proto(ev)))
@@ -274,7 +275,7 @@ impl Zanshin for ZanshinGrpc {
         let ctx = self.require_session(request.metadata()).await?;
         let names = request.into_inner().names;
         let state = self.state.clone();
-        let mut rx = state.flags.subscribe();
+        let mut rx = state.bus.subscribe();
         let expires_at = ctx.claims.expires_at();
         let identity_id = ctx.identity_id();
         let stream = async_stream(
@@ -294,31 +295,103 @@ impl Zanshin for ZanshinGrpc {
                     if change.identity_id.is_some_and(|id| id != identity_id) {
                         continue;
                     }
-                    if !names.is_empty() && !names.contains(&change.key) {
-                        continue;
-                    }
-                    let event = if change.deleted {
-                        FlagEvent {
-                            event: Some(flag_event::Event::Deleted(change.key)),
-                        }
-                    } else {
-                        let Ok(identity) = state.identity.get(identity_id).await else {
-                            return;
-                        };
-                        match state.flags.evaluate_one(&identity, &change.key).await {
-                            Ok(ev) => FlagEvent {
-                                event: Some(flag_event::Event::Flag(evaluation_to_proto(ev))),
-                            },
-                            Err(_) => continue,
-                        }
-                    };
-                    if tx.send(Ok(event)).await.is_err() {
+                    let Ok(identity) = state.identity.get(identity_id).await else {
                         return;
+                    };
+                    let events: Vec<FlagEvent> = match change.kind {
+                        crate::services::bus::ChangeKind::Flag => {
+                            if !names.is_empty() && !names.contains(&change.key) {
+                                continue;
+                            }
+                            if change.deleted {
+                                vec![FlagEvent {
+                                    event: Some(flag_event::Event::Deleted(change.key)),
+                                }]
+                            } else {
+                                match state.eval.flag(&identity, &change.key).await {
+                                    Ok(ev) => vec![FlagEvent {
+                                        event: Some(flag_event::Event::Flag(evaluation_to_proto(
+                                            ev,
+                                        ))),
+                                    }],
+                                    Err(_) => continue,
+                                }
+                            }
+                        }
+                        // Audience / experiment changes can move any flag: re-send the requested set.
+                        _ => match state.eval.flags(&identity, &names).await {
+                            Ok(evs) => evs
+                                .into_iter()
+                                .map(|ev| FlagEvent {
+                                    event: Some(flag_event::Event::Flag(evaluation_to_proto(ev))),
+                                })
+                                .collect(),
+                            Err(_) => continue,
+                        },
+                    };
+                    for ev in events {
+                        if tx.send(Ok(ev)).await.is_err() {
+                            return;
+                        }
                     }
                 }
             },
         );
         Ok(Response::new(Box::pin(stream)))
+    }
+
+    async fn get_audiences(&self, request: Request<()>) -> Result<Response<AudienceList>, Status> {
+        let ctx = self.require_session(request.metadata()).await?;
+        let identity = self
+            .state
+            .identity
+            .get(ctx.identity_id())
+            .await
+            .map_err(to_status)?;
+        Ok(Response::new(AudienceList {
+            audiences: self.state.eval.audience_keys(&identity).await,
+        }))
+    }
+
+    async fn get_experiments(
+        &self,
+        request: Request<GetExperimentsRequest>,
+    ) -> Result<Response<ExperimentList>, Status> {
+        let ctx = self.require_session(request.metadata()).await?;
+        let identity = self
+            .state
+            .identity
+            .get(ctx.identity_id())
+            .await
+            .map_err(to_status)?;
+        let a = self
+            .state
+            .eval
+            .assignments(&identity, &request.into_inner().names)
+            .await
+            .map_err(to_status)?;
+        Ok(Response::new(ExperimentList {
+            experiments: a.into_iter().map(assignment_to_proto).collect(),
+        }))
+    }
+
+    async fn expose_experiment(
+        &self,
+        request: Request<ExposeExperimentRequest>,
+    ) -> Result<Response<()>, Status> {
+        let ctx = self.require_session(request.metadata()).await?;
+        let identity = self
+            .state
+            .identity
+            .get(ctx.identity_id())
+            .await
+            .map_err(to_status)?;
+        self.state
+            .experiments
+            .expose(&identity, &request.into_inner().name)
+            .await
+            .map_err(to_status)?;
+        Ok(Response::new(()))
     }
 
     async fn server_get_flags(
@@ -327,14 +400,59 @@ impl Zanshin for ZanshinGrpc {
     ) -> Result<Response<FlagList>, Status> {
         self.require_server_key(request.metadata()).await?;
         let req = request.into_inner();
+        let identity = self
+            .state
+            .eval
+            .identity_by_external_id(&req.external_id)
+            .await
+            .map_err(to_status)?;
         let evals = self
             .state
-            .flags
-            .evaluate_by_external_id(&req.external_id, &req.names)
+            .eval
+            .flags(&identity, &req.names)
             .await
             .map_err(to_status)?;
         Ok(Response::new(FlagList {
             flags: evals.into_iter().map(evaluation_to_proto).collect(),
+        }))
+    }
+
+    async fn server_get_audiences(
+        &self,
+        request: Request<ServerIdentityRequest>,
+    ) -> Result<Response<AudienceList>, Status> {
+        self.require_server_key(request.metadata()).await?;
+        let identity = self
+            .state
+            .eval
+            .identity_by_external_id(&request.into_inner().external_id)
+            .await
+            .map_err(to_status)?;
+        Ok(Response::new(AudienceList {
+            audiences: self.state.eval.audience_keys(&identity).await,
+        }))
+    }
+
+    async fn server_get_experiments(
+        &self,
+        request: Request<ServerGetExperimentsRequest>,
+    ) -> Result<Response<ExperimentList>, Status> {
+        self.require_server_key(request.metadata()).await?;
+        let req = request.into_inner();
+        let identity = self
+            .state
+            .eval
+            .identity_by_external_id(&req.external_id)
+            .await
+            .map_err(to_status)?;
+        let a = self
+            .state
+            .eval
+            .assignments(&identity, &req.names)
+            .await
+            .map_err(to_status)?;
+        Ok(Response::new(ExperimentList {
+            experiments: a.into_iter().map(assignment_to_proto).collect(),
         }))
     }
 

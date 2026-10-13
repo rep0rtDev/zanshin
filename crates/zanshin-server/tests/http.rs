@@ -379,3 +379,287 @@ async fn feature_flags_flow() {
         .unwrap();
     assert_eq!(r.status(), 404);
 }
+
+#[tokio::test]
+async fn audiences_and_experiments_flow() {
+    let Some((base, http)) = start().await else {
+        eprintln!("skipping: ZANSHIN_TEST_DATABASE_URL / ZANSHIN_TEST_REDIS_URL not set");
+        return;
+    };
+    let suffix = uuid::Uuid::new_v4().simple().to_string();
+    let aud = format!("it_aud_{suffix}");
+    let flag = format!("it_price_{suffix}");
+    let exp = format!("it_exp_{suffix}");
+    let admin = |b: reqwest::RequestBuilder| b.header("x-api-key", ADMIN_KEY);
+
+    let created: Value = admin(http.post(format!("{base}/admin/v1/api-keys")))
+        .json(&json!({"name": "it-exp", "kind": "client"}))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    let client_key = created["secret"].as_str().unwrap().to_string();
+
+    // Audience of beta testers, a flag gated by it, a numeric flag driven by an experiment.
+    let r = admin(http.post(format!("{base}/admin/v1/audiences")))
+        .json(&json!({"key": aud, "condition": {"prop": "custom.beta", "op": "eq", "value": true}}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(r.status(), 201);
+    let r = admin(http.post(format!("{base}/admin/v1/flags")))
+        .json(
+            &json!({"key": flag, "value_type": "number", "default_value": 9.99,
+            "rules": [{"id": "beta", "audiences": [aud], "value": 7.99}]}),
+        )
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(r.status(), 201);
+    let r = admin(http.post(format!("{base}/admin/v1/experiments")))
+        .json(&json!({"key": exp, "flag_key": flag, "control": "control", "audiences": [aud],
+            "variants": [{"key": "control", "value": 9.99, "weight": 1}, {"key": "cheap", "value": 4.99, "weight": 1}]}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(r.status(), 201, "{}", r.text().await.unwrap());
+    // Needs at least two variants.
+    let r = admin(http.post(format!("{base}/admin/v1/experiments")))
+        .json(&json!({"key": format!("{exp}_bad"), "variants": [{"key": "only", "value": 1, "weight": 1}]}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(r.status(), 400);
+
+    let auth = |id: String, beta: bool| {
+        http.post(format!("{base}/v1/authenticate"))
+            .header("x-api-key", &client_key)
+            .json(&json!({"id": id, "custom": {"beta": beta}}))
+    };
+    let beta: Value = auth(format!("it-beta-{suffix}"), true)
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    let plain: Value = auth(format!("it-plain-{suffix}"), false)
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    let beta_token = beta["token"].as_str().unwrap();
+    let plain_token = plain["token"].as_str().unwrap();
+
+    // Audience membership drives the flag rule.
+    let a: Value = http
+        .get(format!("{base}/v1/audiences"))
+        .bearer_auth(beta_token)
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert!(a["audiences"].as_array().unwrap().contains(&json!(aud)));
+    let a: Value = http
+        .get(format!("{base}/v1/audiences"))
+        .bearer_auth(plain_token)
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert!(!a["audiences"].as_array().unwrap().contains(&json!(aud)));
+    let ev: Value = http
+        .get(format!("{base}/v1/flags/{flag}"))
+        .bearer_auth(beta_token)
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(ev["value"], 7.99);
+    let ev: Value = http
+        .get(format!("{base}/v1/flags/{flag}"))
+        .bearer_auth(plain_token)
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(ev["value"], 9.99);
+
+    // Draft experiment enrols nobody; running enrols the beta tester, sticky, and pins the flag.
+    let e: Value = http
+        .get(format!("{base}/v1/experiments"))
+        .bearer_auth(beta_token)
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(e["experiments"], json!([]));
+    let r = admin(http.post(format!("{base}/admin/v1/experiments/{exp}/start")))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(r.status(), 200);
+    let e: Value = http
+        .get(format!("{base}/v1/experiments"))
+        .bearer_auth(beta_token)
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    let variant = e["experiments"][0]["variant"].as_str().unwrap().to_string();
+    let e2: Value = http
+        .get(format!("{base}/v1/experiments"))
+        .bearer_auth(beta_token)
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(
+        e2["experiments"][0]["variant"], variant,
+        "assignment must be sticky"
+    );
+    let ev: Value = http
+        .get(format!("{base}/v1/flags/{flag}"))
+        .bearer_auth(beta_token)
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(ev["reason"]["kind"], "experiment");
+    assert_eq!(ev["variant"], variant);
+    let e: Value = http
+        .get(format!("{base}/v1/experiments"))
+        .bearer_auth(plain_token)
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(
+        e["experiments"],
+        json!([]),
+        "outside the audience: not enrolled"
+    );
+
+    // Exposure shows up in results.
+    let r = http
+        .post(format!("{base}/v1/experiments/{exp}/expose"))
+        .bearer_auth(beta_token)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(r.status(), 200);
+    let r = http
+        .post(format!("{base}/v1/experiments/{exp}/expose"))
+        .bearer_auth(plain_token)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(r.status(), 404);
+    let res: Value = admin(http.get(format!("{base}/admin/v1/experiments/{exp}/results")))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(res["total_assigned"], 1);
+    let v = res["variants"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|v| v["variant"] == variant)
+        .unwrap();
+    assert_eq!(v["exposed"], 1);
+
+    // Force the other variant; the flag follows.
+    let other = if variant == "cheap" {
+        "control"
+    } else {
+        "cheap"
+    };
+    let beta_id = beta["identity"]["id"].as_str().unwrap();
+    let r = admin(http.put(format!(
+        "{base}/admin/v1/experiments/{exp}/assignments/{beta_id}"
+    )))
+    .json(&json!({"variant": other}))
+    .send()
+    .await
+    .unwrap();
+    assert_eq!(r.status(), 200);
+    let ev: Value = http
+        .get(format!("{base}/v1/flags/{flag}"))
+        .bearer_auth(beta_token)
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(ev["variant"], other);
+
+    // Stop: nothing served, flag falls back to the audience rule; illegal restart rejected.
+    let r = admin(http.post(format!("{base}/admin/v1/experiments/{exp}/stop")))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(r.status(), 200);
+    let e: Value = http
+        .get(format!("{base}/v1/experiments"))
+        .bearer_auth(beta_token)
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(e["experiments"], json!([]));
+    let ev: Value = http
+        .get(format!("{base}/v1/flags/{flag}"))
+        .bearer_auth(beta_token)
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(ev["value"], 7.99);
+    let r = admin(http.post(format!("{base}/admin/v1/experiments/{exp}/start")))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(r.status(), 400);
+
+    for path in [
+        format!("/admin/v1/experiments/{exp}"),
+        format!("/admin/v1/flags/{flag}"),
+        format!("/admin/v1/audiences/{aud}"),
+    ] {
+        let r = admin(http.delete(format!("{base}{path}")))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(r.status(), 200);
+    }
+}

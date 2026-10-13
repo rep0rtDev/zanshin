@@ -2,8 +2,10 @@
 //! pub-sub bus, ClickHouse the (optional) analytics event sink.
 
 pub mod api_keys;
+pub mod audiences;
 pub mod cache;
 pub mod clickhouse_sink;
+pub mod experiments;
 pub mod flags;
 pub mod identities;
 pub mod sessions;

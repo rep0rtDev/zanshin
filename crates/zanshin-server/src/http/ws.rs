@@ -3,7 +3,8 @@
 //!
 //! Server → client messages:
 //! `{"type":"hello","identity_id":"…"}`, `{"type":"flag","flag":{…}}`, `{"type":"flag_deleted","key":"…"}`,
-//! `{"type":"error","message":"…"}`. Client may send `{"type":"ping"}` and receives `{"type":"pong"}`.
+//! `{"type":"flags","flags":[…]}` and `{"type":"experiments","experiments":[…]}` after an audience or
+//! experiment change, `{"type":"error","message":"…"}`. Client may send `{"type":"ping"}` → `{"type":"pong"}`.
 
 use axum::{
     extract::{
@@ -11,14 +12,17 @@ use axum::{
         Query, State,
     },
     http::request::Parts,
-    response::{IntoResponse, Response},
+    response::Response,
 };
 use serde::Deserialize;
 use serde_json::json;
 use tokio::sync::broadcast::error::RecvError;
 use zanshin_core::Error;
 
-use crate::{services::identity::SessionContext, state::AppState};
+use crate::{
+    services::{bus::ChangeKind, identity::SessionContext},
+    state::AppState,
+};
 
 use super::{auth::bearer_from_parts, error::ApiError};
 
@@ -44,18 +48,23 @@ pub async fn stream(
     Ok(ws.on_upgrade(move |socket| run(socket, state, ctx, names)))
 }
 
+async fn send(socket: &mut WebSocket, msg: serde_json::Value) -> bool {
+    socket
+        .send(Message::Text(msg.to_string().into()))
+        .await
+        .is_ok()
+}
+
 async fn run(mut socket: WebSocket, state: AppState, ctx: SessionContext, names: Vec<String>) {
     let identity_id = ctx.identity_id();
     let expires_at = ctx.claims.expires_at();
-    let mut rx = state.flags.subscribe();
+    let mut rx = state.bus.subscribe();
     metrics::gauge!("zanshin_ws_connections").increment(1.0);
-    let _ = socket
-        .send(Message::Text(
-            json!({"type": "hello", "identity_id": identity_id})
-                .to_string()
-                .into(),
-        ))
-        .await;
+    send(
+        &mut socket,
+        json!({"type": "hello", "identity_id": identity_id}),
+    )
+    .await;
 
     loop {
         tokio::select! {
@@ -66,22 +75,35 @@ async fn run(mut socket: WebSocket, state: AppState, ctx: SessionContext, names:
                     Err(RecvError::Closed) => break,
                 };
                 if chrono::Utc::now() >= expires_at {
-                    let _ = socket.send(Message::Text(json!({"type": "error", "message": "session expired"}).to_string().into())).await;
+                    send(&mut socket, json!({"type": "error", "message": "session expired"})).await;
                     break;
                 }
-                if change.identity_id.is_some_and(|id| id != identity_id) || (!names.is_empty() && !names.contains(&change.key)) {
+                if change.identity_id.is_some_and(|id| id != identity_id) {
                     continue;
                 }
-                let msg = if change.deleted {
-                    json!({"type": "flag_deleted", "key": change.key})
-                } else {
-                    let Ok(identity) = state.identity.get(identity_id).await else { break };
-                    match state.flags.evaluate_one(&identity, &change.key).await {
-                        Ok(ev) => json!({"type": "flag", "flag": ev}),
-                        Err(_) => continue,
+                let Ok(identity) = state.identity.get(identity_id).await else { break };
+                let ok = match change.kind {
+                    ChangeKind::Flag => {
+                        if !names.is_empty() && !names.contains(&change.key) {
+                            continue;
+                        }
+                        if change.deleted {
+                            send(&mut socket, json!({"type": "flag_deleted", "key": change.key})).await
+                        } else {
+                            match state.eval.flag(&identity, &change.key).await {
+                                Ok(ev) => send(&mut socket, json!({"type": "flag", "flag": ev})).await,
+                                Err(_) => continue,
+                            }
+                        }
+                    }
+                    ChangeKind::Audience | ChangeKind::Experiment => {
+                        let flags = state.eval.flags(&identity, &names).await.unwrap_or_default();
+                        let experiments = state.eval.assignments(&identity, &[]).await.unwrap_or_default();
+                        send(&mut socket, json!({"type": "flags", "flags": flags})).await
+                            && send(&mut socket, json!({"type": "experiments", "experiments": experiments})).await
                     }
                 };
-                if socket.send(Message::Text(msg.to_string().into())).await.is_err() {
+                if !ok {
                     break;
                 }
             }
@@ -89,7 +111,7 @@ async fn run(mut socket: WebSocket, state: AppState, ctx: SessionContext, names:
                 match incoming {
                     Some(Ok(Message::Text(t))) => {
                         if t.contains("\"ping\"") {
-                            let _ = socket.send(Message::Text(json!({"type": "pong"}).to_string().into())).await;
+                            send(&mut socket, json!({"type": "pong"})).await;
                         }
                     }
                     Some(Ok(Message::Close(_))) | None | Some(Err(_)) => break,
@@ -99,10 +121,4 @@ async fn run(mut socket: WebSocket, state: AppState, ctx: SessionContext, names:
         }
     }
     metrics::gauge!("zanshin_ws_connections").decrement(1.0);
-}
-
-impl IntoResponse for Box<ApiError> {
-    fn into_response(self) -> Response {
-        (*self).into_response()
-    }
 }

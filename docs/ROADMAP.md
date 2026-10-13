@@ -11,10 +11,12 @@ console comes last once the model is stable.
       properties (audience gate wired in the next step), percentage rollouts with deterministic
       hashing, weighted variants, per-identity overrides, in-memory catalog replicated through
       Redis pub/sub, WebSocket / gRPC server-stream flag updates
-- [ ] **Audiences**: rule-based segments (property predicates, and/or/not, set membership,
-      ranges, version comparisons), membership evaluation on read, materialised counts
-- [ ] **Experiments**: variants with weights, allocation percentage, audience gate, sticky
-      assignment stored per identity, exposure events, start/stop/pause
+- [x] **Audiences**: rule-based segments (property predicates, and/or/not, set membership,
+      ranges, version comparisons) with optional percentage sampling, evaluated on read, gating
+      flag rules and experiments
+- [x] **Experiments**: variants with weights, allocation percentage, audience gate, sticky
+      assignment stored per identity, exposure tracking, draft → running → paused → stopped,
+      per-variant results, optional link to a flag whose value the variant overrides
 - [ ] **Live events**: start/end, recurring schedules (cron + duration), audience gate,
       per-identity active list, per-event JSON payload, timezone handling
 - [ ] **Messages / inbox**: scheduled or triggered in-app messages, per-identity read /

@@ -36,8 +36,17 @@ service Zanshin {
   // Push re-evaluated flags whenever their definition (or an override) changes.
   rpc StreamFlags(GetFlagsRequest) returns (stream FlagEvent);
 
-  // Server-key only: evaluate flags for any identity by external id (used by backends / Nakama).
+  // Audiences the current identity belongs to.
+  rpc GetAudiences(google.protobuf.Empty) returns (AudienceList);
+  // Experiments the current identity is enrolled in (assigns on first call when eligible).
+  rpc GetExperiments(GetExperimentsRequest) returns (ExperimentList);
+  // Record that the current identity actually saw its variant.
+  rpc ExposeExperiment(ExposeExperimentRequest) returns (google.protobuf.Empty);
+
+  // Server-key only: evaluate for any identity by external id (used by backends / Nakama).
   rpc ServerGetFlags(ServerGetFlagsRequest) returns (FlagList);
+  rpc ServerGetAudiences(ServerIdentityRequest) returns (AudienceList);
+  rpc ServerGetExperiments(ServerGetExperimentsRequest) returns (ExperimentList);
 
   rpc Healthcheck(google.protobuf.Empty) returns (google.protobuf.Empty);
 }
@@ -62,15 +71,50 @@ message Flag {
   string value_type = 3;
   // Variant key when the value came from a weighted variant.
   string variant = 4;
-  // disabled | default | override | rule | variant
+  // disabled | default | override | rule | variant | experiment
   string reason = 5;
   // Rule id that produced the value, if any.
   string rule_id = 6;
   int64 version = 7;
+  // Experiment key when the value came from an experiment variant.
+  string experiment = 8;
 }
 
 message FlagList {
   repeated Flag flags = 1;
+}
+
+message AudienceList {
+  repeated string audiences = 1;
+}
+
+message GetExperimentsRequest {
+  repeated string names = 1;
+}
+
+message ExposeExperimentRequest {
+  string name = 1;
+}
+
+message ServerIdentityRequest {
+  string external_id = 1;
+}
+
+message ServerGetExperimentsRequest {
+  string external_id = 1;
+  repeated string names = 2;
+}
+
+message Experiment {
+  string name = 1;
+  string display_name = 2;
+  string variant = 3;
+  google.protobuf.Value value = 4;
+  int64 version = 5;
+}
+
+message ExperimentList {
+  repeated Experiment experiments = 1;
 }
 
 message FlagEvent {

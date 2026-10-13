@@ -3,9 +3,12 @@
 use std::collections::HashMap;
 
 use prost_types::{value::Kind, ListValue, Struct, Timestamp, Value};
-use zanshin_core::flags::{Evaluation, Reason};
+use zanshin_core::{
+    experiments::Assignment,
+    flags::{Evaluation, Reason},
+};
 use zanshin_core::{properties::PropertyMap, Identity as CoreIdentity, PropertySet};
-use zanshin_proto::api::v1::{Flag, Identity, Properties, Session};
+use zanshin_proto::api::v1::{Experiment, Flag, Identity, Properties, Session};
 
 use crate::services::identity::SessionTokens;
 
@@ -90,12 +93,13 @@ pub fn session_to_proto(s: SessionTokens) -> Session {
 }
 
 pub fn evaluation_to_proto(e: Evaluation) -> Flag {
-    let (reason, rule_id) = match &e.reason {
-        Reason::Disabled => ("disabled", String::new()),
-        Reason::Default => ("default", String::new()),
-        Reason::Override => ("override", String::new()),
-        Reason::Rule { rule_id } => ("rule", rule_id.clone()),
-        Reason::Variant { rule_id, .. } => ("variant", rule_id.clone()),
+    let (reason, rule_id, experiment) = match &e.reason {
+        Reason::Disabled => ("disabled", String::new(), String::new()),
+        Reason::Default => ("default", String::new(), String::new()),
+        Reason::Override => ("override", String::new(), String::new()),
+        Reason::Rule { rule_id } => ("rule", rule_id.clone(), String::new()),
+        Reason::Variant { rule_id, .. } => ("variant", rule_id.clone(), String::new()),
+        Reason::Experiment { experiment, .. } => ("experiment", String::new(), experiment.clone()),
     };
     Flag {
         name: e.key,
@@ -105,5 +109,16 @@ pub fn evaluation_to_proto(e: Evaluation) -> Flag {
         reason: reason.to_string(),
         rule_id,
         version: e.version,
+        experiment,
+    }
+}
+
+pub fn assignment_to_proto(a: Assignment) -> Experiment {
+    Experiment {
+        name: a.key,
+        display_name: a.name,
+        variant: a.variant,
+        value: Some(json_to_value(a.value)),
+        version: a.version,
     }
 }

@@ -1,12 +1,14 @@
 //! Client API, `/v1`.
 
 use axum::{
-    extract::State,
+    extract::{Path, Query, State},
     routing::{get, post},
     Json, Router,
 };
 use serde::{Deserialize, Serialize};
-use zanshin_core::{properties::PropertyMap, Identity, PropertySet};
+use zanshin_core::{
+    experiments::Assignment, flags::Evaluation, properties::PropertyMap, Identity, PropertySet,
+};
 
 use crate::state::AppState;
 
@@ -24,52 +26,11 @@ pub fn router() -> Router<AppState> {
         .route("/properties", get(get_properties).put(update_properties))
         .route("/flags", get(get_flags))
         .route("/flags/{key}", get(get_flag))
+        .route("/audiences", get(get_audiences))
+        .route("/experiments", get(get_experiments))
+        .route("/experiments/{key}/expose", post(expose_experiment))
         .route("/stream", get(super::ws::stream))
         .route("/healthcheck", get(healthcheck))
-}
-
-#[derive(Debug, Default, Deserialize)]
-pub struct FlagsQuery {
-    /// Comma-separated flag keys; omitted = all flags.
-    #[serde(default)]
-    pub names: Option<String>,
-}
-
-pub fn split_names(names: Option<String>) -> Vec<String> {
-    names
-        .unwrap_or_default()
-        .split(',')
-        .map(str::trim)
-        .filter(|s| !s.is_empty())
-        .map(String::from)
-        .collect()
-}
-
-#[derive(Debug, Serialize)]
-pub struct FlagList {
-    pub flags: Vec<zanshin_core::flags::Evaluation>,
-}
-
-async fn get_flags(
-    State(state): State<AppState>,
-    SessionAuth(ctx): SessionAuth,
-    axum::extract::Query(q): axum::extract::Query<FlagsQuery>,
-) -> ApiResult<Json<FlagList>> {
-    let identity = state.identity.get(ctx.identity_id()).await?;
-    let flags = state
-        .flags
-        .evaluate(&identity, &split_names(q.names))
-        .await?;
-    Ok(Json(FlagList { flags }))
-}
-
-async fn get_flag(
-    State(state): State<AppState>,
-    SessionAuth(ctx): SessionAuth,
-    axum::extract::Path(key): axum::extract::Path<String>,
-) -> ApiResult<Json<zanshin_core::flags::Evaluation>> {
-    let identity = state.identity.get(ctx.identity_id()).await?;
-    Ok(Json(state.flags.evaluate_one(&identity, &key).await?))
 }
 
 #[derive(Debug, Deserialize)]
@@ -210,6 +171,92 @@ async fn update_properties(
         .update_properties(ctx.identity_id(), req.default, req.custom)
         .await?;
     Ok(Json(i.properties))
+}
+
+#[derive(Debug, Default, Deserialize)]
+pub struct NamesQuery {
+    /// Comma-separated keys; omitted = all.
+    #[serde(default)]
+    pub names: Option<String>,
+}
+
+pub fn split_names(names: Option<String>) -> Vec<String> {
+    names
+        .unwrap_or_default()
+        .split(',')
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(String::from)
+        .collect()
+}
+
+#[derive(Debug, Serialize)]
+pub struct FlagList {
+    pub flags: Vec<Evaluation>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct AudienceList {
+    pub audiences: Vec<String>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct ExperimentList {
+    pub experiments: Vec<Assignment>,
+}
+
+async fn get_flags(
+    State(state): State<AppState>,
+    SessionAuth(ctx): SessionAuth,
+    Query(q): Query<NamesQuery>,
+) -> ApiResult<Json<FlagList>> {
+    let identity = state.identity.get(ctx.identity_id()).await?;
+    Ok(Json(FlagList {
+        flags: state.eval.flags(&identity, &split_names(q.names)).await?,
+    }))
+}
+
+async fn get_flag(
+    State(state): State<AppState>,
+    SessionAuth(ctx): SessionAuth,
+    Path(key): Path<String>,
+) -> ApiResult<Json<Evaluation>> {
+    let identity = state.identity.get(ctx.identity_id()).await?;
+    Ok(Json(state.eval.flag(&identity, &key).await?))
+}
+
+async fn get_audiences(
+    State(state): State<AppState>,
+    SessionAuth(ctx): SessionAuth,
+) -> ApiResult<Json<AudienceList>> {
+    let identity = state.identity.get(ctx.identity_id()).await?;
+    Ok(Json(AudienceList {
+        audiences: state.eval.audience_keys(&identity).await,
+    }))
+}
+
+async fn get_experiments(
+    State(state): State<AppState>,
+    SessionAuth(ctx): SessionAuth,
+    Query(q): Query<NamesQuery>,
+) -> ApiResult<Json<ExperimentList>> {
+    let identity = state.identity.get(ctx.identity_id()).await?;
+    Ok(Json(ExperimentList {
+        experiments: state
+            .eval
+            .assignments(&identity, &split_names(q.names))
+            .await?,
+    }))
+}
+
+async fn expose_experiment(
+    State(state): State<AppState>,
+    SessionAuth(ctx): SessionAuth,
+    Path(key): Path<String>,
+) -> ApiResult<Json<serde_json::Value>> {
+    let identity = state.identity.get(ctx.identity_id()).await?;
+    state.experiments.expose(&identity, &key).await?;
+    Ok(Json(serde_json::json!({})))
 }
 
 async fn healthcheck() -> Json<serde_json::Value> {

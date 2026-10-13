@@ -52,6 +52,56 @@ pub fn router() -> Router<AppState> {
             "/flags/{key}/evaluate",
             axum::routing::post(evaluate_dry_run),
         )
+        .route("/audiences", get(list_audiences).post(create_audience))
+        .route(
+            "/audiences/{key}",
+            get(get_audience)
+                .put(update_audience)
+                .patch(update_audience)
+                .delete(delete_audience),
+        )
+        .route(
+            "/audiences/{key}/evaluate/{identity_id}",
+            get(audience_for_identity),
+        )
+        .route(
+            "/audiences/{key}/evaluate",
+            axum::routing::post(audience_dry_run),
+        )
+        .route(
+            "/experiments",
+            get(list_experiments).post(create_experiment),
+        )
+        .route(
+            "/experiments/{key}",
+            get(get_experiment)
+                .put(update_experiment)
+                .patch(update_experiment)
+                .delete(delete_experiment),
+        )
+        .route(
+            "/experiments/{key}/start",
+            axum::routing::post(start_experiment),
+        )
+        .route(
+            "/experiments/{key}/pause",
+            axum::routing::post(pause_experiment),
+        )
+        .route(
+            "/experiments/{key}/stop",
+            axum::routing::post(stop_experiment),
+        )
+        .route(
+            "/experiments/{key}/reset",
+            axum::routing::post(reset_experiment),
+        )
+        .route("/experiments/{key}/results", get(experiment_results))
+        .route(
+            "/experiments/{key}/assignments/{identity_id}",
+            get(get_assignment)
+                .put(force_assignment)
+                .delete(delete_assignment),
+        )
         .route("/stats", get(stats))
 }
 
@@ -335,7 +385,7 @@ async fn evaluate_for_identity(
     Path((key, identity_id)): Path<(String, Uuid)>,
 ) -> ApiResult<Json<Evaluation>> {
     let identity = state.identity.get(identity_id).await?;
-    Ok(Json(state.flags.evaluate_one(&identity, &key).await?))
+    Ok(Json(state.eval.flag(&identity, &key).await?))
 }
 
 #[derive(Debug, Default, Deserialize)]
@@ -353,27 +403,275 @@ async fn evaluate_dry_run(
     Path(key): Path<String>,
     Json(req): Json<DryRunRequest>,
 ) -> ApiResult<Json<Evaluation>> {
-    state.flags.get(&key).await?;
-    let now = chrono::Utc::now();
-    let identity = zanshin_core::Identity {
-        id: Uuid::nil(),
-        external_id: req.subject.unwrap_or_else(|| "dry-run".into()),
-        properties: req.properties.clone(),
-        created_at: now,
-        updated_at: now,
-        last_seen_at: now,
-    };
-    let mut evals = state
-        .flags
-        .evaluate_with(
-            &identity,
+    Ok(Json(
+        state
+            .eval
+            .dry_run_flag(
+                req.subject.as_deref().unwrap_or("dry-run"),
+                &req.properties,
+                &key,
+            )
+            .await?,
+    ))
+}
+
+// ---- audiences -----------------------------------------------------------------------------
+
+use crate::services::{audiences::AudiencePatch, experiments::ExperimentPatch};
+use zanshin_core::{
+    audiences::Audience,
+    experiments::{Experiment, Status},
+};
+
+#[derive(Debug, Deserialize)]
+pub struct CreateAudienceRequest {
+    pub key: String,
+    #[serde(flatten)]
+    pub patch: AudiencePatch,
+}
+
+async fn list_audiences(
+    State(state): State<AppState>,
+    AdminAuth(_): AdminAuth,
+) -> ApiResult<Json<Vec<Audience>>> {
+    Ok(Json(
+        state
+            .audiences
+            .list()
+            .await
+            .iter()
+            .map(|a| (**a).clone())
+            .collect(),
+    ))
+}
+
+async fn create_audience(
+    State(state): State<AppState>,
+    AdminAuth(_): AdminAuth,
+    Json(req): Json<CreateAudienceRequest>,
+) -> ApiResult<(axum::http::StatusCode, Json<Audience>)> {
+    Ok((
+        axum::http::StatusCode::CREATED,
+        Json(state.audiences.create(&req.key, req.patch).await?),
+    ))
+}
+
+async fn get_audience(
+    State(state): State<AppState>,
+    AdminAuth(_): AdminAuth,
+    Path(key): Path<String>,
+) -> ApiResult<Json<Audience>> {
+    Ok(Json((*state.audiences.get(&key).await?).clone()))
+}
+
+async fn update_audience(
+    State(state): State<AppState>,
+    AdminAuth(_): AdminAuth,
+    Path(key): Path<String>,
+    Json(patch): Json<AudiencePatch>,
+) -> ApiResult<Json<Audience>> {
+    Ok(Json(state.audiences.update(&key, patch).await?))
+}
+
+async fn delete_audience(
+    State(state): State<AppState>,
+    AdminAuth(_): AdminAuth,
+    Path(key): Path<String>,
+) -> ApiResult<Json<serde_json::Value>> {
+    state.audiences.delete(&key).await?;
+    Ok(Json(serde_json::json!({})))
+}
+
+async fn audience_for_identity(
+    State(state): State<AppState>,
+    AdminAuth(_): AdminAuth,
+    Path((key, identity_id)): Path<(String, Uuid)>,
+) -> ApiResult<Json<serde_json::Value>> {
+    let identity = state.identity.get(identity_id).await?;
+    let member = state.eval.audience_keys(&identity).await.contains(&key);
+    state.audiences.get(&key).await?;
+    Ok(Json(
+        serde_json::json!({ "audience": key, "identity_id": identity_id, "member": member }),
+    ))
+}
+
+async fn audience_dry_run(
+    State(state): State<AppState>,
+    AdminAuth(_): AdminAuth,
+    Path(key): Path<String>,
+    Json(req): Json<DryRunRequest>,
+) -> ApiResult<Json<serde_json::Value>> {
+    let member = state
+        .eval
+        .dry_run_audience(
+            req.subject.as_deref().unwrap_or("dry-run"),
             &req.properties,
-            std::slice::from_ref(&key),
-            &Default::default(),
+            &key,
         )
-        .await;
-    evals
-        .pop()
-        .map(Json)
-        .ok_or_else(|| Error::not_found(format!("flag {key:?} not found")).into())
+        .await?;
+    Ok(Json(
+        serde_json::json!({ "audience": key, "member": member }),
+    ))
+}
+
+// ---- experiments ---------------------------------------------------------------------------
+
+#[derive(Debug, Deserialize)]
+pub struct CreateExperimentRequest {
+    pub key: String,
+    #[serde(flatten)]
+    pub patch: ExperimentPatch,
+}
+
+async fn list_experiments(
+    State(state): State<AppState>,
+    AdminAuth(_): AdminAuth,
+) -> ApiResult<Json<Vec<Experiment>>> {
+    Ok(Json(
+        state
+            .experiments
+            .list()
+            .await
+            .iter()
+            .map(|e| (**e).clone())
+            .collect(),
+    ))
+}
+
+async fn create_experiment(
+    State(state): State<AppState>,
+    AdminAuth(_): AdminAuth,
+    Json(req): Json<CreateExperimentRequest>,
+) -> ApiResult<(axum::http::StatusCode, Json<Experiment>)> {
+    Ok((
+        axum::http::StatusCode::CREATED,
+        Json(state.experiments.create(&req.key, req.patch).await?),
+    ))
+}
+
+async fn get_experiment(
+    State(state): State<AppState>,
+    AdminAuth(_): AdminAuth,
+    Path(key): Path<String>,
+) -> ApiResult<Json<Experiment>> {
+    Ok(Json((*state.experiments.get(&key).await?).clone()))
+}
+
+async fn update_experiment(
+    State(state): State<AppState>,
+    AdminAuth(_): AdminAuth,
+    Path(key): Path<String>,
+    Json(patch): Json<ExperimentPatch>,
+) -> ApiResult<Json<Experiment>> {
+    Ok(Json(state.experiments.update(&key, patch).await?))
+}
+
+async fn delete_experiment(
+    State(state): State<AppState>,
+    AdminAuth(_): AdminAuth,
+    Path(key): Path<String>,
+) -> ApiResult<Json<serde_json::Value>> {
+    state.experiments.delete(&key).await?;
+    Ok(Json(serde_json::json!({})))
+}
+
+async fn start_experiment(
+    State(state): State<AppState>,
+    AdminAuth(_): AdminAuth,
+    Path(key): Path<String>,
+) -> ApiResult<Json<Experiment>> {
+    Ok(Json(
+        state.experiments.set_status(&key, Status::Running).await?,
+    ))
+}
+
+async fn pause_experiment(
+    State(state): State<AppState>,
+    AdminAuth(_): AdminAuth,
+    Path(key): Path<String>,
+) -> ApiResult<Json<Experiment>> {
+    Ok(Json(
+        state.experiments.set_status(&key, Status::Paused).await?,
+    ))
+}
+
+async fn stop_experiment(
+    State(state): State<AppState>,
+    AdminAuth(_): AdminAuth,
+    Path(key): Path<String>,
+) -> ApiResult<Json<Experiment>> {
+    Ok(Json(
+        state.experiments.set_status(&key, Status::Stopped).await?,
+    ))
+}
+
+async fn reset_experiment(
+    State(state): State<AppState>,
+    AdminAuth(_): AdminAuth,
+    Path(key): Path<String>,
+) -> ApiResult<Json<serde_json::Value>> {
+    let n = state.experiments.reset(&key).await?;
+    Ok(Json(serde_json::json!({ "deleted_assignments": n })))
+}
+
+async fn experiment_results(
+    State(state): State<AppState>,
+    AdminAuth(_): AdminAuth,
+    Path(key): Path<String>,
+) -> ApiResult<Json<serde_json::Value>> {
+    let (exp, stats) = state.experiments.results(&key).await?;
+    let total: i64 = stats.iter().map(|s| s.assigned).sum();
+    Ok(Json(serde_json::json!({
+        "experiment": exp.key, "status": exp.status, "control": exp.control, "total_assigned": total,
+        "variants": exp.variants.iter().map(|v| {
+            let s = stats.iter().find(|s| s.variant == v.key);
+            serde_json::json!({
+                "variant": v.key, "weight": v.weight,
+                "assigned": s.map(|s| s.assigned).unwrap_or(0),
+                "exposed": s.map(|s| s.exposed).unwrap_or(0),
+                "exposures": s.map(|s| s.exposures).unwrap_or(0),
+            })
+        }).collect::<Vec<_>>()
+    })))
+}
+
+async fn get_assignment(
+    State(state): State<AppState>,
+    AdminAuth(_): AdminAuth,
+    Path((key, identity_id)): Path<(String, Uuid)>,
+) -> ApiResult<Json<serde_json::Value>> {
+    match state.experiments.assignment(&key, identity_id).await? {
+        Some(a) => Ok(Json(serde_json::to_value(a).map_err(Error::internal)?)),
+        None => Err(Error::not_found("identity is not assigned").into()),
+    }
+}
+
+#[derive(Debug, Deserialize)]
+pub struct ForceAssignRequest {
+    pub variant: String,
+}
+
+async fn force_assignment(
+    State(state): State<AppState>,
+    AdminAuth(_): AdminAuth,
+    Path((key, identity_id)): Path<(String, Uuid)>,
+    Json(req): Json<ForceAssignRequest>,
+) -> ApiResult<Json<serde_json::Value>> {
+    state
+        .experiments
+        .force_assign(&key, identity_id, &req.variant)
+        .await?;
+    Ok(Json(serde_json::json!({})))
+}
+
+async fn delete_assignment(
+    State(state): State<AppState>,
+    AdminAuth(_): AdminAuth,
+    Path((key, identity_id)): Path<(String, Uuid)>,
+) -> ApiResult<Json<serde_json::Value>> {
+    state
+        .experiments
+        .delete_assignment(&key, identity_id)
+        .await?;
+    Ok(Json(serde_json::json!({})))
 }
