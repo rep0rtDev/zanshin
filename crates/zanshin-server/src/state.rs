@@ -14,6 +14,7 @@ use crate::{
         audiences::AudienceService,
         bus::{ChangeBus, ChangeKind},
         eval::Evaluator,
+        events::EventService,
         experiments::ExperimentService,
         flags::FlagService,
         identity::IdentityService,
@@ -32,6 +33,7 @@ pub struct AppState {
     pub flags: FlagService,
     pub audiences: AudienceService,
     pub experiments: ExperimentService,
+    pub events: EventService,
     pub live_events: LiveEventService,
     pub messages: MessageService,
     pub eval: Evaluator,
@@ -78,6 +80,8 @@ impl AppState {
             "catalogs loaded"
         );
         state.bus.spawn_listener();
+        state.events.spawn_writer();
+        tracing::info!(backend = state.events.backend(), "event sink ready");
         Ok(state)
     }
 
@@ -107,8 +111,20 @@ impl AppState {
             bus.clone(),
         );
         let audiences = AudienceService::new(AudienceRepo::new(stores.pg.clone()), bus.clone());
-        let experiments =
-            ExperimentService::new(ExperimentRepo::new(stores.pg.clone()), bus.clone());
+        let event_store = match &stores.clickhouse {
+            Some(ch) => zanshin_store::events::EventStore::ClickHouse(Box::new(ch.clone())),
+            None => zanshin_store::events::EventStore::Postgres(stores.pg.clone()),
+        };
+        let events = EventService::new(
+            event_store,
+            identities.clone(),
+            ExperimentRepo::new(stores.pg.clone()),
+        );
+        let experiments = ExperimentService::new(
+            ExperimentRepo::new(stores.pg.clone()),
+            bus.clone(),
+            events.clone(),
+        );
         let live_events = LiveEventService::new(LiveEventRepo::new(stores.pg.clone()), bus.clone());
         let messages = MessageService::new(MessageRepo::new(stores.pg.clone()), bus.clone());
         let eval = Evaluator::new(
@@ -128,6 +144,7 @@ impl AppState {
             flags,
             audiences,
             experiments,
+            events,
             live_events,
             messages,
             eval,

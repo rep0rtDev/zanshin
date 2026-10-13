@@ -204,6 +204,18 @@ impl ExperimentRepo {
         Ok(rows.into_iter().collect())
     }
 
+    /// Current assignments as (experiment key, variant) pairs.
+    pub async fn assignment_keys_for(&self, identity_id: Uuid) -> Result<Vec<(String, String)>> {
+        sqlx::query_as(
+            "SELECT e.key, a.variant FROM experiment_assignments a JOIN experiments e ON e.id = a.experiment_id
+             WHERE a.identity_id = $1 AND e.status IN ('running', 'paused') ORDER BY e.key",
+        )
+        .bind(identity_id)
+        .fetch_all(&self.pg)
+        .await
+        .map_err(map_sqlx)
+    }
+
     /// Insert an assignment unless one exists; returns the variant that is now stored
     /// (the existing one wins a race).
     pub async fn assign(

@@ -72,7 +72,8 @@ variables. `zanshin --check-config` prints the effective configuration with secr
 | Audiences (rule-based segments with sampling) gating flags and experiments | ✅ |
 | A/B experiments: targeting, allocation %, weighted variants, sticky assignment, exposure tracking, lifecycle draft→running→paused→stopped, results per variant, optional flag linkage | ✅ |
 | Live events (schedules), in-app messages / inbox | 🔜 |
-| Analytics event ingest (ClickHouse, PostgreSQL fallback), computed properties | 🔜 |
+| Analytics events: client/server ingest, batching writer, ClickHouse sink (PostgreSQL fallback), events tagged with live experiment assignments, timeseries / top names / per-identity log, per-variant experiment metrics with conversion | ✅ |
+| Computed properties maintained from events: `session_count`, `first/last_seen_at`, `event_count`, per-event `count` / `sum` / `last_at` — targetable from rules | ✅ |
 | Go SDK + Nakama runtime module, TypeScript / Unity / Unreal / Godot SDKs | 🔜 |
 | Embedded admin console | 🔜 |
 
@@ -88,17 +89,18 @@ variables. `zanshin --check-config` prints the effective configuration with secr
 | `GET` | `/v1/flags[?names=a,b]`, `/v1/flags/{key}` | session | evaluate feature flags |
 | `GET` | `/v1/audiences` | session | audiences the identity belongs to |
 | `GET` / `POST` | `/v1/experiments[?names=]`, `/v1/experiments/{key}/expose` | session | enrolments (sticky) / record exposure |
+| `POST` | `/v1/events` | session | report analytics events (batched) |
 | `GET` | `/v1/live-events[?names=&upcoming=true]` | session | active (and upcoming) live events targeting the identity |
 | `GET` / `PUT` / `DELETE` | `/v1/messages`, `/v1/messages/{id}` | session | inbox, mark read, consume |
 | `WS` | `/v1/stream[?token=]` | session | live flag / audience / experiment changes pushed to the client |
-| `GET` / `POST` | `/server/v1/{flags,audiences,experiments,live-events}?external_id=`, `/server/v1/messages` | server key | evaluate for any identity, send direct messages (Nakama / backends) |
+| `GET` / `POST` | `/server/v1/{flags,audiences,experiments,live-events}?external_id=`, `/server/v1/{messages,events}` | server key | evaluate for any identity, send direct messages, report events (Nakama / backends) |
 | `GET` / `POST` | `/admin/v1/api-keys` | admin | list / mint API keys |
 | `DELETE` | `/admin/v1/api-keys/{id}` | admin | revoke a key |
 | `GET` | `/admin/v1/identities[?after=&limit=]` | admin | paginate identities |
 | `GET` / `DELETE` | `/admin/v1/identities/{id}` | admin | inspect / delete |
 | `PUT` | `/admin/v1/identities/{id}/properties` | admin | server-side property update |
 | `GET` | `/admin/v1/identities/by-external-id/{xid}` | admin | lookup by external id |
-| `*` | `/admin/v1/{flags,audiences,experiments,live-events,messages}…` | admin | CRUD, overrides, lifecycle, results, stats, per-identity and dry-run evaluation |
+| `*` | `/admin/v1/{flags,audiences,experiments,live-events,messages}…`, `/admin/v1/analytics/…` | admin | CRUD, overrides, lifecycle, results (+ event metrics), stats, analytics, per-identity and dry-run evaluation |
 | `GET` | `/admin/v1/stats`, `/healthz`, `/readyz`, `/metrics` | — / admin | operations |
 
 Full reference: [docs/api.md](docs/api.md). Design: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).

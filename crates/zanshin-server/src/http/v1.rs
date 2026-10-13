@@ -30,6 +30,7 @@ pub fn router() -> Router<AppState> {
         .route("/audiences", get(get_audiences))
         .route("/experiments", get(get_experiments))
         .route("/experiments/{key}/expose", post(expose_experiment))
+        .route("/events", post(send_events))
         .route("/live-events", get(get_live_events))
         .route("/messages", get(get_messages))
         .route(
@@ -96,6 +97,16 @@ async fn authenticate(
         .identity
         .authenticate(&req.id, req.default, req.custom)
         .await?;
+    state
+        .events
+        .system(
+            &s.identity,
+            zanshin_core::events::EV_AUTHENTICATE,
+            "",
+            None,
+            None,
+        )
+        .await;
     Ok(Json(session_response(s)))
 }
 
@@ -147,6 +158,7 @@ async fn delete_identity(
     SessionAuth(ctx): SessionAuth,
 ) -> ApiResult<Json<serde_json::Value>> {
     state.identity.delete(ctx.identity_id()).await?;
+    let _ = state.events.delete_identity(ctx.identity_id()).await;
     Ok(Json(serde_json::json!({})))
 }
 
@@ -341,6 +353,24 @@ async fn delete_message(
     let identity = state.identity.get(ctx.identity_id()).await?;
     state.messages.consume(&identity, id).await?;
     Ok(Json(serde_json::json!({})))
+}
+
+#[derive(Debug, Deserialize)]
+pub struct EventBatch {
+    pub events: Vec<zanshin_core::events::EventInput>,
+}
+
+async fn send_events(
+    State(state): State<AppState>,
+    SessionAuth(ctx): SessionAuth,
+    Json(req): Json<EventBatch>,
+) -> ApiResult<Json<serde_json::Value>> {
+    let identity = state.identity.get(ctx.identity_id()).await?;
+    let n = state
+        .events
+        .track(&identity, req.events, false, Some(ctx.claims.sid))
+        .await?;
+    Ok(Json(serde_json::json!({ "accepted": n })))
 }
 
 async fn healthcheck() -> Json<serde_json::Value> {

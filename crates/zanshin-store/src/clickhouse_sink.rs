@@ -19,11 +19,14 @@ const SCHEMA: &[&str] = &[r#"CREATE TABLE IF NOT EXISTS events (
         name         LowCardinality(String),
         value        String,
         metadata     String CODEC(ZSTD(3)),
-        session_id   UUID
+        session_id   UUID,
+        experiments  Map(LowCardinality(String), LowCardinality(String))
     ) ENGINE = MergeTree
       PARTITION BY toYYYYMM(event_time)
       ORDER BY (name, event_time, identity_id)
-      TTL toDateTime(event_time) + INTERVAL 400 DAY"#];
+      TTL toDateTime(event_time) + INTERVAL 400 DAY"#,
+    "ALTER TABLE events ADD COLUMN IF NOT EXISTS experiments Map(LowCardinality(String), LowCardinality(String))",
+    "ALTER TABLE events ADD COLUMN IF NOT EXISTS id UUID DEFAULT generateUUIDv4()"];
 
 impl ClickHouse {
     pub async fn connect(cfg: &ClickHouseConfig) -> Result<Self> {

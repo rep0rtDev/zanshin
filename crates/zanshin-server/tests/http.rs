@@ -499,7 +499,7 @@ async fn audiences_and_experiments_flow() {
 
     // Draft experiment enrols nobody; running enrols the beta tester, sticky, and pins the flag.
     let e: Value = http
-        .get(format!("{base}/v1/experiments"))
+        .get(format!("{base}/v1/experiments?names={exp}"))
         .bearer_auth(beta_token)
         .send()
         .await
@@ -514,7 +514,7 @@ async fn audiences_and_experiments_flow() {
         .unwrap();
     assert_eq!(r.status(), 200);
     let e: Value = http
-        .get(format!("{base}/v1/experiments"))
+        .get(format!("{base}/v1/experiments?names={exp}"))
         .bearer_auth(beta_token)
         .send()
         .await
@@ -524,7 +524,7 @@ async fn audiences_and_experiments_flow() {
         .unwrap();
     let variant = e["experiments"][0]["variant"].as_str().unwrap().to_string();
     let e2: Value = http
-        .get(format!("{base}/v1/experiments"))
+        .get(format!("{base}/v1/experiments?names={exp}"))
         .bearer_auth(beta_token)
         .send()
         .await
@@ -548,7 +548,7 @@ async fn audiences_and_experiments_flow() {
     assert_eq!(ev["reason"]["kind"], "experiment");
     assert_eq!(ev["variant"], variant);
     let e: Value = http
-        .get(format!("{base}/v1/experiments"))
+        .get(format!("{base}/v1/experiments?names={exp}"))
         .bearer_auth(plain_token)
         .send()
         .await
@@ -626,7 +626,7 @@ async fn audiences_and_experiments_flow() {
         .unwrap();
     assert_eq!(r.status(), 200);
     let e: Value = http
-        .get(format!("{base}/v1/experiments"))
+        .get(format!("{base}/v1/experiments?names={exp}"))
         .bearer_auth(beta_token)
         .send()
         .await
@@ -957,4 +957,229 @@ async fn live_events_and_messages_flow() {
             .unwrap();
         assert_eq!(r.status(), 200);
     }
+}
+
+#[tokio::test]
+async fn analytics_events_flow() {
+    let Some((base, http)) = start().await else {
+        eprintln!("skipping: ZANSHIN_TEST_DATABASE_URL / ZANSHIN_TEST_REDIS_URL not set");
+        return;
+    };
+    let suffix = uuid::Uuid::new_v4().simple().to_string();
+    let exp = format!("it_metric_{suffix}");
+    let metric = format!("purchase_{suffix}");
+    let admin = |b: reqwest::RequestBuilder| b.header("x-api-key", ADMIN_KEY);
+
+    let created: Value = admin(http.post(format!("{base}/admin/v1/api-keys")))
+        .json(&json!({"name": "it-ev", "kind": "client"}))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    let client_key = created["secret"].as_str().unwrap().to_string();
+    let server_created: Value = admin(http.post(format!("{base}/admin/v1/api-keys")))
+        .json(&json!({"name": "it-ev-s", "kind": "server"}))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    let server_key = server_created["secret"].as_str().unwrap().to_string();
+
+    // A running experiment so events get tagged with the assignment.
+    let r = admin(http.post(format!("{base}/admin/v1/experiments")))
+        .json(&json!({"key": exp, "status": "running", "condition": {"prop": "identity.external_id", "op": "eq", "value": format!("it-ev-{suffix}")},
+            "variants": [{"key": "a", "value": 1, "weight": 1}, {"key": "b", "value": 2, "weight": 1}]}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(r.status(), 201);
+
+    let ext = format!("it-ev-{suffix}");
+    let s: Value = http
+        .post(format!("{base}/v1/authenticate"))
+        .header("x-api-key", &client_key)
+        .json(&json!({"id": ext}))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    let token = s["token"].as_str().unwrap();
+    let identity_id = s["identity"]["id"].as_str().unwrap().to_string();
+    let e: Value = http
+        .get(format!("{base}/v1/experiments"))
+        .bearer_auth(token)
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    let variant = e["experiments"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|x| x["key"] == exp)
+        .unwrap()["variant"]
+        .as_str()
+        .unwrap()
+        .to_string();
+
+    // Reserved names rejected for clients, accepted for server keys; duplicates by id collapsed.
+    let r = http
+        .post(format!("{base}/v1/events"))
+        .bearer_auth(token)
+        .json(&json!({"events": [{"name": "$cheat"}]}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(r.status(), 400);
+    let dup = uuid::Uuid::new_v4();
+    let r: Value = http
+        .post(format!("{base}/v1/events"))
+        .bearer_auth(token)
+        .json(&json!({"events": [
+            {"name": metric, "value": "9.99", "metadata": {"sku": "gold"}, "id": dup},
+            {"name": metric, "value": "9.99", "id": dup},
+            {"name": metric, "value": "5"},
+            {"name": "level.up", "value": "7"}
+        ]}))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(r["accepted"], 3);
+    let r: Value = http
+        .post(format!("{base}/server/v1/events"))
+        .header("x-api-key", &server_key)
+        .json(&json!({"external_id": ext, "events": [{"name": "$grant", "value": "100"}]}))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(r["accepted"], 1);
+
+    // The writer flushes every 500 ms; wait for computed properties to show up.
+    let mut props = Value::Null;
+    for _ in 0..40 {
+        tokio::time::sleep(std::time::Duration::from_millis(250)).await;
+        props = http
+            .get(format!("{base}/v1/properties"))
+            .bearer_auth(token)
+            .send()
+            .await
+            .unwrap()
+            .json()
+            .await
+            .unwrap();
+        if props["computed"]
+            .get(format!("events.{metric}.count"))
+            .is_some()
+            && props["computed"].get("session_count").is_some()
+        {
+            break;
+        }
+    }
+    let c = &props["computed"];
+    assert_eq!(c["session_count"], 1, "{c}");
+    assert_eq!(c[format!("events.{metric}.count")], 2, "{c}");
+    assert!((c[format!("events.{metric}.sum")].as_f64().unwrap() - 14.99).abs() < 1e-9);
+    assert_eq!(c["events.level_up.count"], 1);
+    assert_eq!(
+        c["event_count"], 4,
+        "$grant counts as an event, $authenticate does not: {c}"
+    );
+    assert!(c.get("events.$grant.count").is_none());
+
+    // Analytics: timeseries, names, per-identity log, experiment metric.
+    let ts: Value = admin(http.get(format!(
+        "{base}/admin/v1/analytics/events?name={metric}&granularity=hour"
+    )))
+    .send()
+    .await
+    .unwrap()
+    .json()
+    .await
+    .unwrap();
+    let total: i64 = ts["buckets"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|b| b["count"].as_i64().unwrap())
+        .sum();
+    assert_eq!(total, 2, "{ts}");
+    let names: Value = admin(http.get(format!("{base}/admin/v1/analytics/events/names?limit=500")))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert!(names["names"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|n| n["name"] == metric));
+    let log: Value = admin(http.get(format!("{base}/admin/v1/identities/{identity_id}/events")))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    let evs = log["events"].as_array().unwrap();
+    assert!(evs.iter().any(|e| e["name"] == "$authenticate"));
+    let purchase = evs
+        .iter()
+        .find(|e| e["name"] == metric && e["value"] == "9.99")
+        .unwrap();
+    assert_eq!(purchase["metadata"]["sku"], "gold");
+    assert_eq!(
+        purchase["experiments"][&exp], variant,
+        "events are tagged with the live assignment"
+    );
+    let res: Value = admin(http.get(format!(
+        "{base}/admin/v1/experiments/{exp}/results?metric={metric}"
+    )))
+    .send()
+    .await
+    .unwrap()
+    .json()
+    .await
+    .unwrap();
+    let row = res["variants"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|v| v["variant"] == variant)
+        .unwrap();
+    assert_eq!(row["metric"]["count"], 2, "{res}");
+    assert_eq!(row["metric"]["identities"], 1);
+    assert_eq!(row["metric"]["conversion"], 1.0);
+
+    // Too many events in one request.
+    let big: Vec<Value> = (0..501).map(|_| json!({"name": "x"})).collect();
+    let r = http
+        .post(format!("{base}/v1/events"))
+        .bearer_auth(token)
+        .json(&json!({"events": big}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(r.status(), 400);
+
+    let r = admin(http.delete(format!("{base}/admin/v1/experiments/{exp}")))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(r.status(), 200);
 }

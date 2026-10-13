@@ -152,6 +152,22 @@ impl IdentityRepo {
         Ok(())
     }
 
+    /// Shallow-merge a patch into computed properties (JSON `null` removes a key).
+    pub async fn merge_computed(&self, id: Uuid, patch: &PropertyMap) -> Result<()> {
+        if patch.is_empty() {
+            return Ok(());
+        }
+        sqlx::query(
+            "UPDATE identities SET computed_properties = jsonb_strip_nulls(computed_properties || $2), updated_at = now() WHERE id = $1",
+        )
+        .bind(id)
+        .bind(Value::Object(patch.clone()))
+        .execute(&self.pg)
+        .await
+        .map_err(map_sqlx)?;
+        Ok(())
+    }
+
     pub async fn touch(&self, id: Uuid) -> Result<()> {
         sqlx::query("UPDATE identities SET last_seen_at = now() WHERE id = $1")
             .bind(id)

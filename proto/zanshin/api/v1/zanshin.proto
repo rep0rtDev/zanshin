@@ -50,8 +50,12 @@ service Zanshin {
   rpc UpdateMessage(UpdateMessageRequest) returns (Message);
   rpc DeleteMessage(MessageIdRequest) returns (google.protobuf.Empty);
 
+  // Report analytics events for the current identity.
+  rpc SendEvents(EventBatch) returns (SendEventsResponse);
+
   // Server-key only: evaluate for any identity by external id (used by backends / Nakama).
   rpc ServerGetFlags(ServerGetFlagsRequest) returns (FlagList);
+  rpc ServerSendEvents(ServerEventBatch) returns (SendEventsResponse);
   rpc ServerGetLiveEvents(ServerGetLiveEventsRequest) returns (LiveEventList);
   rpc ServerSendMessage(ServerSendMessageRequest) returns (MessageIdRequest);
   rpc ServerGetAudiences(ServerIdentityRequest) returns (AudienceList);
@@ -124,6 +128,29 @@ message Experiment {
 
 message ExperimentList {
   repeated Experiment experiments = 1;
+}
+
+message Event {
+  string name = 1;
+  string value = 2;
+  google.protobuf.Struct metadata = 3;
+  // Unix milliseconds; 0 = server receipt time.
+  int64 timestamp_ms = 4;
+  // Optional client idempotency key (UUID).
+  string id = 5;
+}
+
+message EventBatch {
+  repeated Event events = 1;
+}
+
+message ServerEventBatch {
+  string external_id = 1;
+  repeated Event events = 2;
+}
+
+message SendEventsResponse {
+  int32 accepted = 1;
 }
 
 message GetLiveEventsRequest {

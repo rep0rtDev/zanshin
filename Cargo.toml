@@ -34,7 +34,7 @@ protoc-bin-vendored = "3"
 
 sqlx = { version = "0.8", default-features = false, features = ["runtime-tokio", "tls-rustls", "postgres", "uuid", "chrono", "json", "migrate", "macros"] }
 redis = { version = "0.27", features = ["tokio-comp", "connection-manager"] }
-clickhouse = { version = "0.13" }
+clickhouse = { version = "0.13", features = ["chrono", "uuid"] }
 
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["preserve_order"] }

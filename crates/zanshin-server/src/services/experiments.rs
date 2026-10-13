@@ -102,13 +102,19 @@ impl Enrolment {
 pub struct ExperimentService {
     repo: ExperimentRepo,
     bus: ChangeBus,
+    events: super::events::EventService,
     pub catalog: Arc<Catalog<Experiment>>,
 }
 
 impl ExperimentService {
-    pub fn new(repo: ExperimentRepo, bus: ChangeBus) -> Self {
+    pub fn new(repo: ExperimentRepo, bus: ChangeBus, events: super::events::EventService) -> Self {
         let catalog = Catalog::new(ChangeKind::Experiment, "experiment", Arc::new(repo.clone()));
-        Self { repo, bus, catalog }
+        Self {
+            repo,
+            bus,
+            events,
+            catalog,
+        }
     }
 
     pub async fn list(&self) -> Vec<Arc<Experiment>> {
@@ -180,6 +186,22 @@ impl ExperimentService {
         }
         metrics::counter!("zanshin_experiment_exposures_total", "experiment" => exp.key.clone())
             .increment(1);
+        if let Ok(Some(a)) = self.repo.get_assignment(exp.id, identity.id).await {
+            let mut meta = serde_json::Map::new();
+            meta.insert(
+                "experiment".into(),
+                serde_json::Value::String(exp.key.clone()),
+            );
+            self.events
+                .system(
+                    identity,
+                    zanshin_core::events::EV_EXPOSURE,
+                    a.variant,
+                    Some(meta),
+                    None,
+                )
+                .await;
+        }
         Ok(())
     }
 

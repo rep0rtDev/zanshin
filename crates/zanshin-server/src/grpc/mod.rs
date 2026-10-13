@@ -14,9 +14,10 @@ use zanshin_proto::api::v1::{
     flag_event,
     zanshin_server::{Zanshin, ZanshinServer},
     AudienceList, AuthenticateLogoutRequest, AuthenticateRefreshRequest, AuthenticateRequest,
-    ExperimentList, ExposeExperimentRequest, Flag, FlagEvent, FlagList, GetExperimentsRequest,
-    GetFlagRequest, GetFlagsRequest, GetLiveEventsRequest, GetMessagesRequest, Identity,
-    LiveEventList, Message, MessageIdRequest, MessageList, Properties, ServerGetExperimentsRequest,
+    EventBatch, ExperimentList, ExposeExperimentRequest, Flag, FlagEvent, FlagList,
+    GetExperimentsRequest, GetFlagRequest, GetFlagsRequest, GetLiveEventsRequest,
+    GetMessagesRequest, Identity, LiveEventList, Message, MessageIdRequest, MessageList,
+    Properties, SendEventsResponse, ServerEventBatch, ServerGetExperimentsRequest,
     ServerGetFlagsRequest, ServerGetLiveEventsRequest, ServerIdentityRequest,
     ServerSendMessageRequest, Session, UpdateMessageRequest, UpdatePropertiesRequest,
 };
@@ -136,6 +137,16 @@ impl Zanshin for ZanshinGrpc {
             )
             .await
             .map_err(to_status)?;
+        self.state
+            .events
+            .system(
+                &s.identity,
+                zanshin_core::events::EV_AUTHENTICATE,
+                "",
+                None,
+                None,
+            )
+            .await;
         Ok(Response::new(session_to_proto(s)))
     }
 
@@ -195,6 +206,7 @@ impl Zanshin for ZanshinGrpc {
             .delete(ctx.identity_id())
             .await
             .map_err(to_status)?;
+        let _ = self.state.events.delete_identity(ctx.identity_id()).await;
         Ok(Response::new(()))
     }
 
@@ -602,6 +614,58 @@ impl Zanshin for ZanshinGrpc {
             .await
             .map_err(to_status)?;
         Ok(Response::new(MessageIdRequest { id: id.to_string() }))
+    }
+
+    async fn send_events(
+        &self,
+        request: Request<EventBatch>,
+    ) -> Result<Response<SendEventsResponse>, Status> {
+        let ctx = self.require_session(request.metadata()).await?;
+        let identity = self
+            .state
+            .identity
+            .get(ctx.identity_id())
+            .await
+            .map_err(to_status)?;
+        let inputs: Vec<_> = request
+            .into_inner()
+            .events
+            .into_iter()
+            .map(convert::event_from_proto)
+            .collect();
+        let n = self
+            .state
+            .events
+            .track(&identity, inputs, false, Some(ctx.claims.sid))
+            .await
+            .map_err(to_status)?;
+        Ok(Response::new(SendEventsResponse { accepted: n as i32 }))
+    }
+
+    async fn server_send_events(
+        &self,
+        request: Request<ServerEventBatch>,
+    ) -> Result<Response<SendEventsResponse>, Status> {
+        self.require_server_key(request.metadata()).await?;
+        let req = request.into_inner();
+        let identity = self
+            .state
+            .eval
+            .identity_by_external_id(&req.external_id)
+            .await
+            .map_err(to_status)?;
+        let inputs: Vec<_> = req
+            .events
+            .into_iter()
+            .map(convert::event_from_proto)
+            .collect();
+        let n = self
+            .state
+            .events
+            .track(&identity, inputs, true, None)
+            .await
+            .map_err(to_status)?;
+        Ok(Response::new(SendEventsResponse { accepted: n as i32 }))
     }
 
     async fn healthcheck(&self, _request: Request<()>) -> Result<Response<()>, Status> {
