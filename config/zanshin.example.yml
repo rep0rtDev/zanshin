@@ -1,0 +1,38 @@
+# Every key can be overridden with an environment variable:
+#   ZANSHIN__SERVER__HTTP_ADDR=0.0.0.0:7550  ZANSHIN__AUTH__JWT_SECRET=...
+server:
+  http_addr: 0.0.0.0:7550
+  grpc_addr: 0.0.0.0:7549
+  cors_origins: []          # empty = any origin
+  body_limit: 1048576       # bytes
+  request_timeout: 30s
+
+database:
+  url: postgres://zanshin:zanshin@localhost:5432/zanshin
+  max_connections: 16
+  migrate: true             # apply embedded migrations on start
+
+redis:
+  url: redis://localhost:6379/0
+  key_prefix: zanshin
+
+clickhouse:
+  enabled: false            # analytics events fall back to PostgreSQL when disabled
+  url: http://localhost:8123
+  user: default
+  password: ""
+  database: zanshin
+
+auth:
+  jwt_secret: change-me-to-a-random-string-of-at-least-32-chars
+  issuer: zanshin
+  access_ttl: 1h
+  refresh_ttl: 30d
+  allow_anonymous_authenticate: false   # dev only: authenticate without a client API key
+
+admin:
+  bootstrap_key: null       # set once to mint real admin/client/server keys via /admin/v1/api-keys
+
+log:
+  level: info,sqlx=warn,hyper=warn,tower_http=info
+  json: false

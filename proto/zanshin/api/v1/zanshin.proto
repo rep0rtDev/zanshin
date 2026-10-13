@@ -1,0 +1,81 @@
+syntax = "proto3";
+
+package zanshin.api.v1;
+
+import "google/protobuf/empty.proto";
+import "google/protobuf/struct.proto";
+import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/rep0rtDev/zanshin/sdk/go/zanshin/api/v1;apiv1";
+
+// Client-facing API. Every call except Authenticate* and Healthcheck requires
+// a session token (`authorization: Bearer <token>`). Authenticate calls require a
+// client API key (`x-api-key: <key>` or HTTP Basic with the key as username).
+service Zanshin {
+  // Authenticate an identity by its external id. Creates the identity on first use.
+  rpc Authenticate(AuthenticateRequest) returns (Session);
+  // Exchange a refresh token for a new session (rotates the refresh token).
+  rpc AuthenticateRefresh(AuthenticateRefreshRequest) returns (Session);
+  // Revoke the current session (access token + refresh token).
+  rpc AuthenticateLogout(AuthenticateLogoutRequest) returns (google.protobuf.Empty);
+
+  // Current identity.
+  rpc GetIdentity(google.protobuf.Empty) returns (Identity);
+  // Delete the current identity and everything attached to it.
+  rpc DeleteIdentity(google.protobuf.Empty) returns (google.protobuf.Empty);
+
+  // All properties of the current identity.
+  rpc GetProperties(google.protobuf.Empty) returns (Properties);
+  // Merge default/custom properties into the current identity.
+  rpc UpdateProperties(UpdatePropertiesRequest) returns (Properties);
+
+  rpc Healthcheck(google.protobuf.Empty) returns (google.protobuf.Empty);
+}
+
+message Properties {
+  // Properties captured automatically or set by the client at authenticate time
+  // (platform, country, app version, ...).
+  map<string, google.protobuf.Value> default = 1;
+  // Properties derived server-side (session count, days since install, ...).
+  map<string, google.protobuf.Value> computed = 2;
+  // Free-form properties set by the game.
+  map<string, google.protobuf.Value> custom = 3;
+}
+
+message AuthenticateRequest {
+  // External identity id (device id, player id, Nakama user id, ...).
+  string id = 1;
+  map<string, google.protobuf.Value> default = 2;
+  map<string, google.protobuf.Value> custom = 3;
+}
+
+message AuthenticateRefreshRequest {
+  string refresh_token = 1;
+}
+
+message AuthenticateLogoutRequest {
+  string token = 1;
+  string refresh_token = 2;
+}
+
+message Session {
+  string token = 1;
+  string refresh_token = 2;
+  Identity identity = 3;
+  Properties properties = 4;
+}
+
+message Identity {
+  string id = 1;
+  string external_id = 2;
+  google.protobuf.Timestamp created_at = 3;
+  google.protobuf.Timestamp updated_at = 4;
+  google.protobuf.Timestamp last_seen_at = 5;
+}
+
+message UpdatePropertiesRequest {
+  map<string, google.protobuf.Value> default = 1;
+  map<string, google.protobuf.Value> custom = 2;
+  // Recompute computed properties synchronously before returning.
+  bool recompute = 3;
+}

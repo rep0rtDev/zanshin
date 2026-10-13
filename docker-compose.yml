@@ -1,0 +1,73 @@
+services:
+  zanshin:
+    build: .
+    image: zanshin:local
+    ports:
+      - "7550:7550"   # HTTP / REST / WebSocket
+      - "7549:7549"   # gRPC
+    environment:
+      ZANSHIN__DATABASE__URL: postgres://zanshin:zanshin@postgres:5432/zanshin
+      ZANSHIN__REDIS__URL: redis://redis:6379/0
+      ZANSHIN__CLICKHOUSE__ENABLED: "true"
+      ZANSHIN__CLICKHOUSE__URL: http://clickhouse:8123
+      ZANSHIN__CLICKHOUSE__USER: zanshin
+      ZANSHIN__CLICKHOUSE__PASSWORD: zanshin
+      # Change both of these before exposing the server anywhere.
+      ZANSHIN__AUTH__JWT_SECRET: ${ZANSHIN_JWT_SECRET:-change-me-change-me-change-me-change-me}
+      ZANSHIN__ADMIN__BOOTSTRAP_KEY: ${ZANSHIN_ADMIN_KEY:-change-me-admin-key}
+      ZANSHIN__LOG__JSON: "false"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      clickhouse:
+        condition: service_healthy
+    restart: unless-stopped
+
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: zanshin
+      POSTGRES_PASSWORD: zanshin
+      POSTGRES_DB: zanshin
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U zanshin -d zanshin"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--save", "", "--appendonly", "no", "--maxmemory", "256mb", "--maxmemory-policy", "allkeys-lru"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+
+  clickhouse:
+    image: clickhouse/clickhouse-server:24.8-alpine
+    environment:
+      CLICKHOUSE_USER: zanshin
+      CLICKHOUSE_PASSWORD: zanshin
+      CLICKHOUSE_DB: zanshin
+      CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: "1"
+    volumes:
+      - chdata:/var/lib/clickhouse
+    ulimits:
+      nofile: { soft: 262144, hard: 262144 }
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8123/ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+    restart: unless-stopped
+
+volumes:
+  pgdata:
+  chdata:
