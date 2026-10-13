@@ -323,3 +323,6 @@ func (m *module) rpcProperties(ctx context.Context, _ runtime.Logger, _ *sql.DB,
 	}
 	return respond(props)
 }
+
+// main is required for the plugin build mode; Nakama only calls InitModule.
+func main() {}
