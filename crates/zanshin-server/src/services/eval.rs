@@ -11,13 +11,20 @@ use zanshin_core::{
 };
 use zanshin_store::identities::IdentityRepo;
 
-use super::{audiences::AudienceService, experiments::ExperimentService, flags::FlagService};
+use zanshin_core::{live_events::ActiveEvent, messages::InboxMessage};
+
+use super::{
+    audiences::AudienceService, experiments::ExperimentService, flags::FlagService,
+    live_events::LiveEventService, messages::MessageService,
+};
 
 #[derive(Clone)]
 pub struct Evaluator {
     pub flags: FlagService,
     pub audiences: AudienceService,
     pub experiments: ExperimentService,
+    pub live_events: LiveEventService,
+    pub messages: MessageService,
     identities: IdentityRepo,
 }
 
@@ -36,14 +43,45 @@ impl Evaluator {
         flags: FlagService,
         audiences: AudienceService,
         experiments: ExperimentService,
+        live_events: LiveEventService,
+        messages: MessageService,
         identities: IdentityRepo,
     ) -> Self {
         Self {
             flags,
             audiences,
             experiments,
+            live_events,
+            messages,
             identities,
         }
+    }
+
+    pub async fn live_events(
+        &self,
+        identity: &Identity,
+        names: &[String],
+        active_only: bool,
+    ) -> Vec<ActiveEvent> {
+        let flat = flatten_with_identity(identity, &identity.properties);
+        let audiences = self
+            .audiences
+            .memberships(&identity.external_id, &flat)
+            .await;
+        self.live_events
+            .for_subject(&flat, &audiences, names, active_only)
+            .await
+    }
+
+    pub async fn inbox(&self, identity: &Identity, limit: i64) -> Result<Vec<InboxMessage>> {
+        let flat = flatten_with_identity(identity, &identity.properties);
+        let audiences = self
+            .audiences
+            .memberships(&identity.external_id, &flat)
+            .await;
+        self.messages
+            .inbox(identity, &flat, &audiences, limit)
+            .await
     }
 
     pub async fn context(

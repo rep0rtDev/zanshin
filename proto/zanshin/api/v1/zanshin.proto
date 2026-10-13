@@ -43,8 +43,17 @@ service Zanshin {
   // Record that the current identity actually saw its variant.
   rpc ExposeExperiment(ExposeExperimentRequest) returns (google.protobuf.Empty);
 
+  // Live events targeting the current identity (active ones plus their next occurrence).
+  rpc GetLiveEvents(GetLiveEventsRequest) returns (LiveEventList);
+  // Inbox: delivers pending campaign messages, returns unconsumed ones.
+  rpc GetMessages(GetMessagesRequest) returns (MessageList);
+  rpc UpdateMessage(UpdateMessageRequest) returns (Message);
+  rpc DeleteMessage(MessageIdRequest) returns (google.protobuf.Empty);
+
   // Server-key only: evaluate for any identity by external id (used by backends / Nakama).
   rpc ServerGetFlags(ServerGetFlagsRequest) returns (FlagList);
+  rpc ServerGetLiveEvents(ServerGetLiveEventsRequest) returns (LiveEventList);
+  rpc ServerSendMessage(ServerSendMessageRequest) returns (MessageIdRequest);
   rpc ServerGetAudiences(ServerIdentityRequest) returns (AudienceList);
   rpc ServerGetExperiments(ServerGetExperimentsRequest) returns (ExperimentList);
 
@@ -115,6 +124,78 @@ message Experiment {
 
 message ExperimentList {
   repeated Experiment experiments = 1;
+}
+
+message GetLiveEventsRequest {
+  repeated string names = 1;
+  // Include targeted events that are not active right now (with their next occurrence).
+  bool include_upcoming = 2;
+}
+
+message Occurrence {
+  int64 start_unix = 1;
+  int64 end_unix = 2;
+}
+
+message LiveEvent {
+  string name = 1;
+  string display_name = 2;
+  string description = 3;
+  google.protobuf.Value value = 4;
+  bool active = 5;
+  Occurrence current = 6;
+  Occurrence next = 7;
+  int64 version = 8;
+}
+
+message LiveEventList {
+  repeated LiveEvent live_events = 1;
+}
+
+message ServerGetLiveEventsRequest {
+  string external_id = 1;
+  repeated string names = 2;
+  bool include_upcoming = 3;
+}
+
+message GetMessagesRequest {
+  int32 limit = 1;
+}
+
+message Message {
+  string id = 1;
+  string key = 2;
+  string title = 3;
+  string body = 4;
+  string image_url = 5;
+  google.protobuf.Value payload = 6;
+  int32 priority = 7;
+  int64 delivered_unix = 8;
+  int64 read_unix = 9;
+  int64 expires_unix = 10;
+}
+
+message MessageList {
+  repeated Message messages = 1;
+}
+
+message UpdateMessageRequest {
+  string id = 1;
+  bool read = 2;
+}
+
+message MessageIdRequest {
+  string id = 1;
+}
+
+message ServerSendMessageRequest {
+  string external_id = 1;
+  string title = 2;
+  string body = 3;
+  string image_url = 4;
+  google.protobuf.Value payload = 5;
+  int32 priority = 6;
+  int64 ttl_secs = 7;
 }
 
 message FlagEvent {

@@ -15,8 +15,10 @@ use zanshin_proto::api::v1::{
     zanshin_server::{Zanshin, ZanshinServer},
     AudienceList, AuthenticateLogoutRequest, AuthenticateRefreshRequest, AuthenticateRequest,
     ExperimentList, ExposeExperimentRequest, Flag, FlagEvent, FlagList, GetExperimentsRequest,
-    GetFlagRequest, GetFlagsRequest, Identity, Properties, ServerGetExperimentsRequest,
-    ServerGetFlagsRequest, ServerIdentityRequest, Session, UpdatePropertiesRequest,
+    GetFlagRequest, GetFlagsRequest, GetLiveEventsRequest, GetMessagesRequest, Identity,
+    LiveEventList, Message, MessageIdRequest, MessageList, Properties, ServerGetExperimentsRequest,
+    ServerGetFlagsRequest, ServerGetLiveEventsRequest, ServerIdentityRequest,
+    ServerSendMessageRequest, Session, UpdateMessageRequest, UpdatePropertiesRequest,
 };
 
 use crate::{services::identity::SessionContext, state::AppState};
@@ -454,6 +456,152 @@ impl Zanshin for ZanshinGrpc {
         Ok(Response::new(ExperimentList {
             experiments: a.into_iter().map(assignment_to_proto).collect(),
         }))
+    }
+
+    async fn get_live_events(
+        &self,
+        request: Request<GetLiveEventsRequest>,
+    ) -> Result<Response<LiveEventList>, Status> {
+        let ctx = self.require_session(request.metadata()).await?;
+        let identity = self
+            .state
+            .identity
+            .get(ctx.identity_id())
+            .await
+            .map_err(to_status)?;
+        let req = request.into_inner();
+        let events = self
+            .state
+            .eval
+            .live_events(&identity, &req.names, !req.include_upcoming)
+            .await;
+        Ok(Response::new(LiveEventList {
+            live_events: events.into_iter().map(live_event_to_proto).collect(),
+        }))
+    }
+
+    async fn get_messages(
+        &self,
+        request: Request<GetMessagesRequest>,
+    ) -> Result<Response<MessageList>, Status> {
+        let ctx = self.require_session(request.metadata()).await?;
+        let identity = self
+            .state
+            .identity
+            .get(ctx.identity_id())
+            .await
+            .map_err(to_status)?;
+        let limit = match request.into_inner().limit {
+            0 => 50,
+            n => n as i64,
+        };
+        let inbox = self
+            .state
+            .eval
+            .inbox(&identity, limit)
+            .await
+            .map_err(to_status)?;
+        Ok(Response::new(MessageList {
+            messages: inbox.into_iter().map(inbox_to_proto).collect(),
+        }))
+    }
+
+    async fn update_message(
+        &self,
+        request: Request<UpdateMessageRequest>,
+    ) -> Result<Response<Message>, Status> {
+        let ctx = self.require_session(request.metadata()).await?;
+        let identity = self
+            .state
+            .identity
+            .get(ctx.identity_id())
+            .await
+            .map_err(to_status)?;
+        let req = request.into_inner();
+        let id = uuid::Uuid::parse_str(&req.id)
+            .map_err(|_| Status::invalid_argument("id must be a uuid"))?;
+        let m = self
+            .state
+            .messages
+            .mark_read(&identity, id)
+            .await
+            .map_err(to_status)?;
+        Ok(Response::new(inbox_to_proto(m)))
+    }
+
+    async fn delete_message(
+        &self,
+        request: Request<MessageIdRequest>,
+    ) -> Result<Response<()>, Status> {
+        let ctx = self.require_session(request.metadata()).await?;
+        let identity = self
+            .state
+            .identity
+            .get(ctx.identity_id())
+            .await
+            .map_err(to_status)?;
+        let id = uuid::Uuid::parse_str(&request.into_inner().id)
+            .map_err(|_| Status::invalid_argument("id must be a uuid"))?;
+        self.state
+            .messages
+            .consume(&identity, id)
+            .await
+            .map_err(to_status)?;
+        Ok(Response::new(()))
+    }
+
+    async fn server_get_live_events(
+        &self,
+        request: Request<ServerGetLiveEventsRequest>,
+    ) -> Result<Response<LiveEventList>, Status> {
+        self.require_server_key(request.metadata()).await?;
+        let req = request.into_inner();
+        let identity = self
+            .state
+            .eval
+            .identity_by_external_id(&req.external_id)
+            .await
+            .map_err(to_status)?;
+        let events = self
+            .state
+            .eval
+            .live_events(&identity, &req.names, !req.include_upcoming)
+            .await;
+        Ok(Response::new(LiveEventList {
+            live_events: events.into_iter().map(live_event_to_proto).collect(),
+        }))
+    }
+
+    async fn server_send_message(
+        &self,
+        request: Request<ServerSendMessageRequest>,
+    ) -> Result<Response<MessageIdRequest>, Status> {
+        self.require_server_key(request.metadata()).await?;
+        let req = request.into_inner();
+        let identity = self
+            .state
+            .eval
+            .identity_by_external_id(&req.external_id)
+            .await
+            .map_err(to_status)?;
+        let msg = crate::services::messages::DirectMessage {
+            title: req.title,
+            body: req.body,
+            image_url: req.image_url,
+            payload: req
+                .payload
+                .map(convert::value_to_json)
+                .unwrap_or(serde_json::Value::Null),
+            priority: req.priority,
+            ttl_secs: (req.ttl_secs > 0).then_some(req.ttl_secs),
+        };
+        let id = self
+            .state
+            .messages
+            .send_direct(&identity, msg)
+            .await
+            .map_err(to_status)?;
+        Ok(Response::new(MessageIdRequest { id: id.to_string() }))
     }
 
     async fn healthcheck(&self, _request: Request<()>) -> Result<Response<()>, Status> {

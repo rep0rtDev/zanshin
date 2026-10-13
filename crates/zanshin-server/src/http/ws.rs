@@ -96,6 +96,14 @@ async fn run(mut socket: WebSocket, state: AppState, ctx: SessionContext, names:
                             }
                         }
                     }
+                    ChangeKind::LiveEvent => {
+                        let events = state.eval.live_events(&identity, &[], false).await;
+                        send(&mut socket, json!({"type": "live_events", "live_events": events})).await
+                    }
+                    ChangeKind::Message => {
+                        let inbox = state.eval.inbox(&identity, 50).await.unwrap_or_default();
+                        send(&mut socket, json!({"type": "inbox", "messages": inbox})).await
+                    }
                     ChangeKind::Audience | ChangeKind::Experiment => {
                         let flags = state.eval.flags(&identity, &names).await.unwrap_or_default();
                         let experiments = state.eval.assignments(&identity, &[]).await.unwrap_or_default();

@@ -663,3 +663,298 @@ async fn audiences_and_experiments_flow() {
         assert_eq!(r.status(), 200);
     }
 }
+
+#[tokio::test]
+async fn live_events_and_messages_flow() {
+    let Some((base, http)) = start().await else {
+        eprintln!("skipping: ZANSHIN_TEST_DATABASE_URL / ZANSHIN_TEST_REDIS_URL not set");
+        return;
+    };
+    let suffix = uuid::Uuid::new_v4().simple().to_string();
+    let ev_now = format!("it_ev_now_{suffix}");
+    let ev_later = format!("it_ev_later_{suffix}");
+    let msg = format!("it_msg_{suffix}");
+    let admin = |b: reqwest::RequestBuilder| b.header("x-api-key", ADMIN_KEY);
+    let now = chrono::Utc::now();
+
+    let created: Value = admin(http.post(format!("{base}/admin/v1/api-keys")))
+        .json(&json!({"name": "it-live", "kind": "client"}))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    let client_key = created["secret"].as_str().unwrap().to_string();
+    let server_created: Value = admin(http.post(format!("{base}/admin/v1/api-keys")))
+        .json(&json!({"name": "it-live-s", "kind": "server"}))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    let server_key = server_created["secret"].as_str().unwrap().to_string();
+
+    // One active event for VIPs, one upcoming event for everyone, one bad definition.
+    let r = admin(http.post(format!("{base}/admin/v1/live-events")))
+        .json(&json!({"key": ev_now, "name": "Double XP", "starts_at": now - chrono::Duration::hours(1),
+            "duration_secs": 7200, "payload": {"xp": 2}, "condition": {"prop": "custom.vip", "op": "eq", "value": true}}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(r.status(), 201, "{}", r.text().await.unwrap());
+    let r = admin(http.post(format!("{base}/admin/v1/live-events")))
+        .json(&json!({"key": ev_later, "starts_at": now + chrono::Duration::days(1), "ends_at": now + chrono::Duration::days(2)}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(r.status(), 201);
+    let r = admin(http.post(format!("{base}/admin/v1/live-events")))
+        .json(&json!({"key": format!("{ev_now}_bad"), "starts_at": now, "recurrence": "0 0 18 * * Sat *"}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(
+        r.status(),
+        400,
+        "recurring without duration must be rejected"
+    );
+
+    // Campaign with templated title.
+    let r = admin(http.post(format!("{base}/admin/v1/messages")))
+        .json(&json!({"key": msg, "title": "Welcome {{custom.nick}}", "body": "Enjoy", "payload": {"gift": 100},
+            "condition": {"prop": "custom.vip", "op": "eq", "value": true}, "priority": 5}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(r.status(), 201, "{}", r.text().await.unwrap());
+
+    let auth = |id: String, vip: bool| {
+        http.post(format!("{base}/v1/authenticate"))
+            .header("x-api-key", &client_key)
+            .json(&json!({"id": id, "custom": {"vip": vip, "nick": "Neo"}}))
+    };
+    let vip: Value = auth(format!("it-vip-{suffix}"), true)
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    let plain: Value = auth(format!("it-plain-{suffix}"), false)
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    let vip_token = vip["token"].as_str().unwrap();
+    let plain_token = plain["token"].as_str().unwrap();
+    let vip_ext = format!("it-vip-{suffix}");
+
+    // Live events: active only by default, upcoming on request, targeting respected.
+    let e: Value = http
+        .get(format!("{base}/v1/live-events?names={ev_now},{ev_later}"))
+        .bearer_auth(vip_token)
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    let list = e["live_events"].as_array().unwrap();
+    assert_eq!(list.len(), 1);
+    assert_eq!(list[0]["key"], ev_now);
+    assert_eq!(list[0]["value"]["xp"], 2);
+    assert!(list[0]["active"].as_bool().unwrap() && list[0]["current"].is_object());
+    let e: Value = http
+        .get(format!(
+            "{base}/v1/live-events?names={ev_now},{ev_later}&upcoming=true"
+        ))
+        .bearer_auth(vip_token)
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    let list = e["live_events"].as_array().unwrap();
+    assert_eq!(list.len(), 2);
+    let later = list.iter().find(|x| x["key"] == ev_later).unwrap();
+    assert!(!later["active"].as_bool().unwrap() && later["next"].is_object());
+    let e: Value = http
+        .get(format!("{base}/v1/live-events?names={ev_now},{ev_later}"))
+        .bearer_auth(plain_token)
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(
+        e["live_events"].as_array().unwrap().len(),
+        0,
+        "non-VIP must not see the VIP event"
+    );
+    let e: Value = http
+        .get(format!(
+            "{base}/server/v1/live-events?external_id={vip_ext}&names={ev_now}"
+        ))
+        .header("x-api-key", &server_key)
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(e["live_events"].as_array().unwrap().len(), 1);
+
+    // Inbox: campaign delivered once, rendered, read + consume, direct message.
+    let inbox: Value = http
+        .get(format!("{base}/v1/messages"))
+        .bearer_auth(vip_token)
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    let delivered: Vec<&Value> = inbox["messages"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|m| m["key"] == msg)
+        .collect();
+    assert_eq!(delivered.len(), 1);
+    assert_eq!(delivered[0]["title"], "Welcome Neo");
+    assert!(delivered[0]["read_at"].is_null());
+    let id = delivered[0]["id"].as_str().unwrap().to_string();
+    let inbox: Value = http
+        .get(format!("{base}/v1/messages"))
+        .bearer_auth(vip_token)
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(
+        inbox["messages"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|m| m["key"] == msg)
+            .count(),
+        1,
+        "no duplicate delivery"
+    );
+    let inbox: Value = http
+        .get(format!("{base}/v1/messages"))
+        .bearer_auth(plain_token)
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(
+        inbox["messages"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|m| m["key"] == msg)
+            .count(),
+        0
+    );
+    let m: Value = http
+        .put(format!("{base}/v1/messages/{id}"))
+        .bearer_auth(vip_token)
+        .json(&json!({"read": true}))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert!(m["read_at"].is_string());
+    let stats: Value = admin(http.get(format!("{base}/admin/v1/messages/{msg}/stats")))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(stats["delivered"], 1);
+    assert_eq!(stats["read"], 1);
+    let r = http
+        .delete(format!("{base}/v1/messages/{id}"))
+        .bearer_auth(vip_token)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(r.status(), 200);
+    let r = http
+        .delete(format!("{base}/v1/messages/{id}"))
+        .bearer_auth(vip_token)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(r.status(), 404);
+    let inbox: Value = http
+        .get(format!("{base}/v1/messages"))
+        .bearer_auth(vip_token)
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(
+        inbox["messages"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|m| m["key"] == msg)
+            .count(),
+        0,
+        "consumed copy is gone and not redelivered"
+    );
+
+    let r = http
+        .post(format!("{base}/server/v1/messages"))
+        .header("x-api-key", &server_key)
+        .json(&json!({"external_id": vip_ext, "title": "Hi {{custom.nick}}", "body": "direct", "ttl_secs": 3600}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(r.status(), 201);
+    let inbox: Value = http
+        .get(format!("{base}/v1/messages"))
+        .bearer_auth(vip_token)
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    let direct = inbox["messages"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|m| m["title"] == "Hi Neo")
+        .expect("direct message delivered");
+    assert!(direct["key"].is_null() && direct["expires_at"].is_string());
+
+    for path in [
+        format!("/admin/v1/messages/{msg}"),
+        format!("/admin/v1/live-events/{ev_now}"),
+        format!("/admin/v1/live-events/{ev_later}"),
+    ] {
+        let r = admin(http.delete(format!("{base}{path}")))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(r.status(), 200);
+    }
+}

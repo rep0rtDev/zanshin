@@ -14,7 +14,7 @@ use crate::state::AppState;
 use super::{
     auth::ServerAuth,
     error::ApiResult,
-    v1::{split_names, AudienceList, ExperimentList, FlagList},
+    v1::{split_names, AudienceList, ExperimentList, FlagList, LiveEventList},
 };
 
 pub fn router() -> Router<AppState> {
@@ -23,6 +23,8 @@ pub fn router() -> Router<AppState> {
         .route("/audiences", get(audiences))
         .route("/experiments", get(experiments))
         .route("/experiments/{key}/expose", post(expose))
+        .route("/live-events", get(live_events))
+        .route("/messages", post(send_message))
 }
 
 #[derive(Debug, Deserialize)]
@@ -30,6 +32,8 @@ pub struct IdentityQuery {
     pub external_id: String,
     #[serde(default)]
     pub names: Option<String>,
+    #[serde(default)]
+    pub upcoming: bool,
 }
 
 impl IdentityQuery {
@@ -90,4 +94,42 @@ async fn expose(
     let identity = state.eval.identity_by_external_id(&q.external_id).await?;
     state.experiments.expose(&identity, &key).await?;
     Ok(Json(serde_json::json!({})))
+}
+
+async fn live_events(
+    State(state): State<AppState>,
+    ServerAuth(_): ServerAuth,
+    Query(q): Query<IdentityQuery>,
+) -> ApiResult<Json<LiveEventList>> {
+    q.check()?;
+    let identity = state.eval.identity_by_external_id(&q.external_id).await?;
+    Ok(Json(LiveEventList {
+        live_events: state
+            .eval
+            .live_events(&identity, &split_names(q.names), !q.upcoming)
+            .await,
+    }))
+}
+
+#[derive(Debug, Deserialize)]
+pub struct SendMessageRequest {
+    pub external_id: String,
+    #[serde(flatten)]
+    pub message: crate::services::messages::DirectMessage,
+}
+
+async fn send_message(
+    State(state): State<AppState>,
+    ServerAuth(_): ServerAuth,
+    Json(req): Json<SendMessageRequest>,
+) -> ApiResult<(axum::http::StatusCode, Json<serde_json::Value>)> {
+    if req.external_id.is_empty() {
+        return Err(Error::invalid("external_id is required").into());
+    }
+    let identity = state.eval.identity_by_external_id(&req.external_id).await?;
+    let id = state.messages.send_direct(&identity, req.message).await?;
+    Ok((
+        axum::http::StatusCode::CREATED,
+        Json(serde_json::json!({ "id": id })),
+    ))
 }

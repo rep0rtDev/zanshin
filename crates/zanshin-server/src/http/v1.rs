@@ -7,7 +7,8 @@ use axum::{
 };
 use serde::{Deserialize, Serialize};
 use zanshin_core::{
-    experiments::Assignment, flags::Evaluation, properties::PropertyMap, Identity, PropertySet,
+    experiments::Assignment, flags::Evaluation, live_events::ActiveEvent, messages::InboxMessage,
+    properties::PropertyMap, Identity, PropertySet,
 };
 
 use crate::state::AppState;
@@ -29,6 +30,12 @@ pub fn router() -> Router<AppState> {
         .route("/audiences", get(get_audiences))
         .route("/experiments", get(get_experiments))
         .route("/experiments/{key}/expose", post(expose_experiment))
+        .route("/live-events", get(get_live_events))
+        .route("/messages", get(get_messages))
+        .route(
+            "/messages/{id}",
+            axum::routing::put(update_message).delete(delete_message),
+        )
         .route("/stream", get(super::ws::stream))
         .route("/healthcheck", get(healthcheck))
 }
@@ -256,6 +263,83 @@ async fn expose_experiment(
 ) -> ApiResult<Json<serde_json::Value>> {
     let identity = state.identity.get(ctx.identity_id()).await?;
     state.experiments.expose(&identity, &key).await?;
+    Ok(Json(serde_json::json!({})))
+}
+
+#[derive(Debug, Default, Deserialize)]
+pub struct LiveEventsQuery {
+    #[serde(default)]
+    pub names: Option<String>,
+    /// Also return targeted events that are not active right now, with their next occurrence.
+    #[serde(default)]
+    pub upcoming: bool,
+}
+
+#[derive(Debug, Serialize)]
+pub struct LiveEventList {
+    pub live_events: Vec<ActiveEvent>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct MessageList {
+    pub messages: Vec<InboxMessage>,
+}
+
+#[derive(Debug, Default, Deserialize)]
+pub struct InboxQuery {
+    #[serde(default)]
+    pub limit: Option<i64>,
+}
+
+#[derive(Debug, Default, Deserialize)]
+pub struct UpdateMessageRequest {
+    #[serde(default)]
+    pub read: bool,
+}
+
+async fn get_live_events(
+    State(state): State<AppState>,
+    SessionAuth(ctx): SessionAuth,
+    Query(q): Query<LiveEventsQuery>,
+) -> ApiResult<Json<LiveEventList>> {
+    let identity = state.identity.get(ctx.identity_id()).await?;
+    Ok(Json(LiveEventList {
+        live_events: state
+            .eval
+            .live_events(&identity, &split_names(q.names), !q.upcoming)
+            .await,
+    }))
+}
+
+async fn get_messages(
+    State(state): State<AppState>,
+    SessionAuth(ctx): SessionAuth,
+    Query(q): Query<InboxQuery>,
+) -> ApiResult<Json<MessageList>> {
+    let identity = state.identity.get(ctx.identity_id()).await?;
+    Ok(Json(MessageList {
+        messages: state.eval.inbox(&identity, q.limit.unwrap_or(50)).await?,
+    }))
+}
+
+async fn update_message(
+    State(state): State<AppState>,
+    SessionAuth(ctx): SessionAuth,
+    Path(id): Path<uuid::Uuid>,
+    body: Option<Json<UpdateMessageRequest>>,
+) -> ApiResult<Json<InboxMessage>> {
+    let identity = state.identity.get(ctx.identity_id()).await?;
+    let _ = body;
+    Ok(Json(state.messages.mark_read(&identity, id).await?))
+}
+
+async fn delete_message(
+    State(state): State<AppState>,
+    SessionAuth(ctx): SessionAuth,
+    Path(id): Path<uuid::Uuid>,
+) -> ApiResult<Json<serde_json::Value>> {
+    let identity = state.identity.get(ctx.identity_id()).await?;
+    state.messages.consume(&identity, id).await?;
     Ok(Json(serde_json::json!({})))
 }
 

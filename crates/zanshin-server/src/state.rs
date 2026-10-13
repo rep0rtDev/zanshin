@@ -3,7 +3,8 @@ use std::sync::Arc;
 use zanshin_core::token::TokenIssuer;
 use zanshin_store::{
     api_keys::ApiKeyRepo, audiences::AudienceRepo, experiments::ExperimentRepo, flags::FlagRepo,
-    identities::IdentityRepo, sessions::SessionRepo, Stores,
+    identities::IdentityRepo, live_events::LiveEventRepo, messages::MessageRepo,
+    sessions::SessionRepo, Stores,
 };
 
 use crate::{
@@ -16,6 +17,8 @@ use crate::{
         experiments::ExperimentService,
         flags::FlagService,
         identity::IdentityService,
+        live_events::LiveEventService,
+        messages::MessageService,
     },
 };
 
@@ -29,6 +32,8 @@ pub struct AppState {
     pub flags: FlagService,
     pub audiences: AudienceService,
     pub experiments: ExperimentService,
+    pub live_events: LiveEventService,
+    pub messages: MessageService,
     pub eval: Evaluator,
     pub started_at: chrono::DateTime<chrono::Utc>,
 }
@@ -49,12 +54,29 @@ impl AppState {
             .bus
             .register(ChangeKind::Experiment, state.experiments.catalog.clone())
             .await;
-        let (f, a, e) = tokio::try_join!(
+        state
+            .bus
+            .register(ChangeKind::LiveEvent, state.live_events.catalog.clone())
+            .await;
+        state
+            .bus
+            .register(ChangeKind::Message, state.messages.catalog.clone())
+            .await;
+        let (f, a, e, l, m) = tokio::try_join!(
             state.flags.catalog.load_all(),
             state.audiences.catalog.load_all(),
-            state.experiments.catalog.load_all()
+            state.experiments.catalog.load_all(),
+            state.live_events.catalog.load_all(),
+            state.messages.catalog.load_all(),
         )?;
-        tracing::info!(flags = f, audiences = a, experiments = e, "catalogs loaded");
+        tracing::info!(
+            flags = f,
+            audiences = a,
+            experiments = e,
+            live_events = l,
+            messages = m,
+            "catalogs loaded"
+        );
         state.bus.spawn_listener();
         Ok(state)
     }
@@ -87,10 +109,14 @@ impl AppState {
         let audiences = AudienceService::new(AudienceRepo::new(stores.pg.clone()), bus.clone());
         let experiments =
             ExperimentService::new(ExperimentRepo::new(stores.pg.clone()), bus.clone());
+        let live_events = LiveEventService::new(LiveEventRepo::new(stores.pg.clone()), bus.clone());
+        let messages = MessageService::new(MessageRepo::new(stores.pg.clone()), bus.clone());
         let eval = Evaluator::new(
             flags.clone(),
             audiences.clone(),
             experiments.clone(),
+            live_events.clone(),
+            messages.clone(),
             identities,
         );
         Ok(Self {
@@ -102,6 +128,8 @@ impl AppState {
             flags,
             audiences,
             experiments,
+            live_events,
+            messages,
             eval,
             started_at: chrono::Utc::now(),
         })
