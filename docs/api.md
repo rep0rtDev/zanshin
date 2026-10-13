@@ -107,6 +107,36 @@ draft experiments return nothing.
 Records that the identity actually saw its variant (`exposures` + 1, first `exposed_at`). 404 when
 not enrolled, 400 when the experiment is not live.
 
+### `POST /v1/events` — session
+
+Report analytics events. Up to 500 per request; names are `[A-Za-z0-9_.:-]` up to 128 chars and
+may not start with `$` (reserved for server-emitted events). `timestamp` more than 30 days old or
+5 minutes in the future is replaced by receipt time. `id` is an optional idempotency key.
+
+```json
+{ "events": [
+  { "name": "purchase", "value": "9.99", "metadata": { "sku": "gold_pack" }, "timestamp": "2026-01-03T18:00:00Z", "id": "0193…" },
+  { "name": "level.up", "value": "7" }
+] }
+→ { "accepted": 2 }
+```
+
+Events are queued and written in batches (≈ every 500 ms) to ClickHouse, or to PostgreSQL when
+ClickHouse is disabled. Every event is tagged with the identity's current experiment assignments so
+results can be sliced per variant without joins. The server itself emits `$authenticate` on every
+authenticate and `$exposure` (value = variant, `metadata.experiment`) on exposure.
+
+#### Computed properties
+
+Each flush folds the batch into `computed.*` of the identity, which any rule can target:
+
+| key | meaning |
+|---|---|
+| `session_count`, `first_seen_at`, `last_seen_at` | from `$authenticate` |
+| `event_count`, `first_event_at`, `last_event_at` | all non-`$authenticate` events |
+| `events.<name>.count`, `events.<name>.last_at` | per event name (`.` in names becomes `_`) |
+| `events.<name>.sum` | when `value` parses as a number |
+
 ### `GET /v1/live-events?names=a,b&upcoming=true` — session
 
 Live events whose targeting (rules + audiences) matches the identity. By default only events with
@@ -178,8 +208,9 @@ For trusted backends (game servers, the Nakama module). Identities are addressed
 | `POST` | `/experiments/{key}/expose?external_id=<id>` | `{}` |
 | `GET` | `/live-events?external_id=<id>&names=a,b&upcoming=true` | `{ "live_events": [ … ] }` |
 | `POST` | `/messages` body `{ "external_id", "title", "body", "image_url", "payload", "priority", "ttl_secs" }` | `201 { "id": "…" }` — direct message into that identity's inbox |
+| `POST` | `/events` body `{ "external_id", "events": [ … ] }` | `{ "accepted": n }` — `$`-prefixed names allowed |
 
-gRPC: `ServerGetFlags`, `ServerGetAudiences`, `ServerGetExperiments`, `ServerGetLiveEvents`, `ServerSendMessage`.
+gRPC: `ServerGetFlags`, `ServerGetAudiences`, `ServerGetExperiments`, `ServerGetLiveEvents`, `ServerSendMessage`, `ServerSendEvents`.
 
 ## Admin API — `/admin/v1` (admin key)
 
@@ -210,7 +241,7 @@ gRPC: `ServerGetFlags`, `ServerGetAudiences`, `ServerGetExperiments`, `ServerGet
 | `GET` / `PUT` / `PATCH` / `DELETE` | `/experiments/{key}` | partial definition | definition |
 | `POST` | `/experiments/{key}/start` · `/pause` · `/stop` | — | definition; transitions: draft→running, running⇄paused, running/paused→stopped |
 | `POST` | `/experiments/{key}/reset` | — | `{ "deleted_assignments": n }` |
-| `GET` | `/experiments/{key}/results` | — | assigned / exposed / exposures per variant |
+| `GET` | `/experiments/{key}/results?metric=purchase&from=&to=` | — | assigned / exposed / exposures per variant; with `metric`: `count`, `identities`, `sum`, `conversion` (= identities / assigned) of that event per variant |
 | `GET` / `PUT` / `DELETE` | `/experiments/{key}/assignments/{identity_id}` | `{ "variant": "…" }` for `PUT` | inspect / force / clear one identity's assignment |
 
 | `GET` / `POST` | `/live-events` | live event definition (below) | definitions |
@@ -219,6 +250,10 @@ gRPC: `ServerGetFlags`, `ServerGetAudiences`, `ServerGetExperiments`, `ServerGet
 | `GET` / `PUT` / `PATCH` / `DELETE` | `/messages/{key}` | partial definition | definition |
 | `GET` | `/messages/{key}/stats` | — | `{ "delivered", "read", "consumed" }` |
 | `POST` | `/identities/{identity_id}/messages` | direct message (same body as the server API minus `external_id`) | `201 { "id" }` |
+
+| `GET` | `/analytics/events?name=purchase&from=&to=&granularity=hour\|day` | — | `{ "buckets": [ { "bucket", "count", "identities", "sum" } ], "backend": "clickhouse" \| "postgres" }` (default window: last 7 days) |
+| `GET` | `/analytics/events/names?from=&to=&limit=` | — | event names by volume with unique identities |
+| `GET` | `/identities/{identity_id}/events?limit=` | — | most recent events of one identity (with `experiments` tags) |
 
 ### Live event definition
 

@@ -22,8 +22,10 @@ console comes last once the model is stable.
       clients, live push on change
 - [ ] **Messages / inbox**: scheduled or triggered in-app messages, per-identity read /
       consumed state, templating with identity properties
-- [ ] **Analytics**: batched event ingest, ClickHouse sink with PostgreSQL fallback,
-      event→property rules (computed properties), basic aggregations API
+- [x] **Analytics**: `POST /v1/events` (client) and `/server/v1/events` (trusted), batched writer
+      into ClickHouse or PostgreSQL, events tagged with the identity's live experiment
+      assignments, admin timeseries / top names / per-identity log, experiment results by metric
+      (count, unique identities, sum, conversion per variant)
 - [ ] **Identify / merge**: link an anonymous identity to an authenticated id, merge
       properties and history
 - [ ] **Go SDK** (`sdk/go`) with local evaluation cache + **Nakama runtime module**

@@ -126,6 +126,9 @@ pub fn router() -> Router<AppState> {
             "/identities/{identity_id}/messages",
             axum::routing::post(send_direct_message),
         )
+        .route("/analytics/events", get(analytics_timeseries))
+        .route("/analytics/events/names", get(analytics_names))
+        .route("/identities/{identity_id}/events", get(identity_events))
         .route("/stats", get(stats))
 }
 
@@ -246,6 +249,7 @@ async fn delete_identity(
     Path(id): Path<Uuid>,
 ) -> ApiResult<Json<serde_json::Value>> {
     state.identity.delete(id).await?;
+    let _ = state.events.delete_identity(id).await;
     Ok(Json(serde_json::json!({})))
 }
 
@@ -638,23 +642,62 @@ async fn reset_experiment(
     Ok(Json(serde_json::json!({ "deleted_assignments": n })))
 }
 
+#[derive(Debug, Default, Deserialize)]
+pub struct ResultsQuery {
+    /// Event name to measure per variant (e.g. `purchase`).
+    #[serde(default)]
+    pub metric: Option<String>,
+    #[serde(default)]
+    pub from: Option<chrono::DateTime<chrono::Utc>>,
+    #[serde(default)]
+    pub to: Option<chrono::DateTime<chrono::Utc>>,
+}
+
 async fn experiment_results(
     State(state): State<AppState>,
     AdminAuth(_): AdminAuth,
     Path(key): Path<String>,
+    Query(q): Query<ResultsQuery>,
 ) -> ApiResult<Json<serde_json::Value>> {
     let (exp, stats) = state.experiments.results(&key).await?;
     let total: i64 = stats.iter().map(|s| s.assigned).sum();
+    let metric = match &q.metric {
+        Some(m) => {
+            let to = q.to.unwrap_or_else(chrono::Utc::now);
+            let from = q.from.unwrap_or(exp.created_at);
+            Some((
+                m.clone(),
+                state
+                    .events
+                    .experiment_metric(&exp.key, m, from, to)
+                    .await?,
+            ))
+        }
+        None => None,
+    };
     Ok(Json(serde_json::json!({
         "experiment": exp.key, "status": exp.status, "control": exp.control, "total_assigned": total,
+        "metric": metric.as_ref().map(|(m, _)| m.clone()),
         "variants": exp.variants.iter().map(|v| {
             let s = stats.iter().find(|s| s.variant == v.key);
-            serde_json::json!({
+            let assigned = s.map(|s| s.assigned).unwrap_or(0);
+            let mut row = serde_json::json!({
                 "variant": v.key, "weight": v.weight,
-                "assigned": s.map(|s| s.assigned).unwrap_or(0),
+                "assigned": assigned,
                 "exposed": s.map(|s| s.exposed).unwrap_or(0),
                 "exposures": s.map(|s| s.exposures).unwrap_or(0),
-            })
+            });
+            if let Some((_, rows)) = &metric {
+                let m = rows.iter().find(|r| r.variant == v.key);
+                let identities = m.map(|m| m.identities).unwrap_or(0);
+                row["metric"] = serde_json::json!({
+                    "count": m.map(|m| m.count).unwrap_or(0),
+                    "identities": identities,
+                    "sum": m.map(|m| m.sum).unwrap_or(0.0),
+                    "conversion": if assigned > 0 { identities as f64 / assigned as f64 } else { 0.0 },
+                });
+            }
+            row
         }).collect::<Vec<_>>()
     })))
 }
@@ -850,5 +893,92 @@ async fn send_direct_message(
     Ok((
         axum::http::StatusCode::CREATED,
         Json(serde_json::json!({ "id": id })),
+    ))
+}
+
+// ---- analytics ------------------------------------------------------------------------------
+
+use zanshin_store::events::Granularity;
+
+#[derive(Debug, Deserialize)]
+pub struct TimeseriesQuery {
+    pub name: String,
+    #[serde(default)]
+    pub from: Option<chrono::DateTime<chrono::Utc>>,
+    #[serde(default)]
+    pub to: Option<chrono::DateTime<chrono::Utc>>,
+    #[serde(default)]
+    pub granularity: Option<Granularity>,
+}
+
+#[derive(Debug, Default, Deserialize)]
+pub struct NamesQuery {
+    #[serde(default)]
+    pub from: Option<chrono::DateTime<chrono::Utc>>,
+    #[serde(default)]
+    pub to: Option<chrono::DateTime<chrono::Utc>>,
+    #[serde(default)]
+    pub limit: Option<i64>,
+}
+
+fn window(
+    from: Option<chrono::DateTime<chrono::Utc>>,
+    to: Option<chrono::DateTime<chrono::Utc>>,
+) -> ApiResult<(chrono::DateTime<chrono::Utc>, chrono::DateTime<chrono::Utc>)> {
+    let to = to.unwrap_or_else(chrono::Utc::now);
+    let from = from.unwrap_or(to - chrono::Duration::days(7));
+    if from >= to {
+        return Err(Error::invalid("from must be before to").into());
+    }
+    Ok((from, to))
+}
+
+async fn analytics_timeseries(
+    State(state): State<AppState>,
+    AdminAuth(_): AdminAuth,
+    Query(q): Query<TimeseriesQuery>,
+) -> ApiResult<Json<serde_json::Value>> {
+    let (from, to) = window(q.from, q.to)?;
+    let g = q.granularity.unwrap_or(Granularity::Day);
+    let buckets = state.events.timeseries(&q.name, from, to, g).await?;
+    Ok(Json(
+        serde_json::json!({ "name": q.name, "from": from, "to": to, "granularity": g, "backend": state.events.backend(), "buckets": buckets }),
+    ))
+}
+
+async fn analytics_names(
+    State(state): State<AppState>,
+    AdminAuth(_): AdminAuth,
+    Query(q): Query<NamesQuery>,
+) -> ApiResult<Json<serde_json::Value>> {
+    let (from, to) = window(q.from, q.to)?;
+    let names = state
+        .events
+        .top_names(from, to, q.limit.unwrap_or(50))
+        .await?;
+    Ok(Json(
+        serde_json::json!({ "from": from, "to": to, "backend": state.events.backend(), "names": names }),
+    ))
+}
+
+#[derive(Debug, Default, Deserialize)]
+pub struct LimitQuery {
+    #[serde(default)]
+    pub limit: Option<i64>,
+}
+
+async fn identity_events(
+    State(state): State<AppState>,
+    AdminAuth(_): AdminAuth,
+    Path(identity_id): Path<Uuid>,
+    Query(q): Query<LimitQuery>,
+) -> ApiResult<Json<serde_json::Value>> {
+    state.identity.get(identity_id).await?;
+    let events = state
+        .events
+        .recent_for_identity(identity_id, q.limit.unwrap_or(100))
+        .await?;
+    Ok(Json(
+        serde_json::json!({ "identity_id": identity_id, "events": events }),
     ))
 }

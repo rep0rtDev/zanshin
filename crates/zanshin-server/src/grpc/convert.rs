@@ -4,6 +4,7 @@ use std::collections::HashMap;
 
 use prost_types::{value::Kind, ListValue, Struct, Timestamp, Value};
 use zanshin_core::{
+    events::EventInput,
     experiments::Assignment,
     flags::{Evaluation, Reason},
     live_events::{ActiveEvent, Occurrence as CoreOccurrence},
@@ -11,7 +12,8 @@ use zanshin_core::{
 };
 use zanshin_core::{properties::PropertyMap, Identity as CoreIdentity, PropertySet};
 use zanshin_proto::api::v1::{
-    Experiment, Flag, Identity, LiveEvent, Message, Occurrence, Properties, Session,
+    Event as ProtoEvent, Experiment, Flag, Identity, LiveEvent, Message, Occurrence, Properties,
+    Session,
 };
 
 use crate::services::identity::SessionTokens;
@@ -159,5 +161,23 @@ pub fn inbox_to_proto(m: InboxMessage) -> Message {
         delivered_unix: m.delivered_at.timestamp(),
         read_unix: m.read_at.map(|t| t.timestamp()).unwrap_or(0),
         expires_unix: m.expires_at.map(|t| t.timestamp()).unwrap_or(0),
+    }
+}
+
+pub fn event_from_proto(e: ProtoEvent) -> EventInput {
+    let metadata = e.metadata.map(|st| {
+        st.fields
+            .into_iter()
+            .map(|(k, v)| (k, value_to_json(v)))
+            .collect()
+    });
+    EventInput {
+        name: e.name,
+        value: (!e.value.is_empty()).then_some(e.value),
+        metadata,
+        timestamp: (e.timestamp_ms > 0)
+            .then(|| chrono::DateTime::from_timestamp_millis(e.timestamp_ms))
+            .flatten(),
+        id: uuid::Uuid::parse_str(&e.id).ok(),
     }
 }

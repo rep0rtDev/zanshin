@@ -3,6 +3,7 @@
 pub mod apikey;
 pub mod audiences;
 pub mod error;
+pub mod events;
 pub mod experiments;
 pub mod flags;
 pub mod hash;

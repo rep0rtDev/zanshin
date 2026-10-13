@@ -25,6 +25,7 @@ pub fn router() -> Router<AppState> {
         .route("/experiments/{key}/expose", post(expose))
         .route("/live-events", get(live_events))
         .route("/messages", post(send_message))
+        .route("/events", post(send_events))
 }
 
 #[derive(Debug, Deserialize)]
@@ -132,4 +133,26 @@ async fn send_message(
         axum::http::StatusCode::CREATED,
         Json(serde_json::json!({ "id": id })),
     ))
+}
+
+#[derive(Debug, Deserialize)]
+pub struct ServerEventBatch {
+    pub external_id: String,
+    pub events: Vec<zanshin_core::events::EventInput>,
+}
+
+async fn send_events(
+    State(state): State<AppState>,
+    ServerAuth(_): ServerAuth,
+    Json(req): Json<ServerEventBatch>,
+) -> ApiResult<Json<serde_json::Value>> {
+    if req.external_id.is_empty() {
+        return Err(Error::invalid("external_id is required").into());
+    }
+    let identity = state.eval.identity_by_external_id(&req.external_id).await?;
+    let n = state
+        .events
+        .track(&identity, req.events, true, None)
+        .await?;
+    Ok(Json(serde_json::json!({ "accepted": n })))
 }
