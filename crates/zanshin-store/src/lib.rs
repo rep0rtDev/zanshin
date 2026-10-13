@@ -4,6 +4,7 @@
 pub mod api_keys;
 pub mod cache;
 pub mod clickhouse_sink;
+pub mod flags;
 pub mod identities;
 pub mod sessions;
 

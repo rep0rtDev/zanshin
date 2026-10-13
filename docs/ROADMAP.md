@@ -7,9 +7,10 @@ console comes last once the model is stable.
 
 - [x] Workspace, configuration, PostgreSQL / Redis / ClickHouse wiring, migrations
 - [x] Identities, sessions, API keys, REST + gRPC, observability
-- [ ] **Feature flags**: typed values (bool / string / number / JSON), targeting rules over
-      properties and audiences, percentage rollouts with deterministic hashing, variants,
-      Redis-backed cache with pub/sub invalidation, WebSocket / server-stream flag updates
+- [x] **Feature flags**: typed values (bool / string / number / JSON), targeting rules over
+      properties (audience gate wired in the next step), percentage rollouts with deterministic
+      hashing, weighted variants, per-identity overrides, in-memory catalog replicated through
+      Redis pub/sub, WebSocket / gRPC server-stream flag updates
 - [ ] **Audiences**: rule-based segments (property predicates, and/or/not, set membership,
       ranges, version comparisons), membership evaluation on read, materialised counts
 - [ ] **Experiments**: variants with weights, allocation percentage, audience gate, sticky

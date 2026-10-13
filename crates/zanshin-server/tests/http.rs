@@ -202,3 +202,180 @@ async fn authenticate_properties_refresh_logout_flow() {
         .unwrap();
     assert_eq!(r.status(), 404);
 }
+
+#[tokio::test]
+async fn feature_flags_flow() {
+    let Some((base, http)) = start().await else {
+        eprintln!("skipping: ZANSHIN_TEST_DATABASE_URL / ZANSHIN_TEST_REDIS_URL not set");
+        return;
+    };
+    let suffix = uuid::Uuid::new_v4().simple().to_string();
+    let key = format!("it_flag_{suffix}");
+    let admin = |b: reqwest::RequestBuilder| b.header("x-api-key", ADMIN_KEY);
+
+    let created: Value = admin(http.post(format!("{base}/admin/v1/api-keys")))
+        .json(&json!({"name": "it-flags", "kind": "client"}))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    let client_key = created["secret"].as_str().unwrap().to_string();
+    let server_created: Value = admin(http.post(format!("{base}/admin/v1/api-keys")))
+        .json(&json!({"name": "it-server", "kind": "server"}))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    let server_key = server_created["secret"].as_str().unwrap().to_string();
+
+    // Invalid definition is rejected.
+    let r = admin(http.post(format!("{base}/admin/v1/flags")))
+        .json(&json!({"key": key, "value_type": "bool", "default_value": "nope"}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(r.status(), 400);
+
+    // Create a flag with a country rule.
+    let r = admin(http.post(format!("{base}/admin/v1/flags")))
+        .json(&json!({
+            "key": key, "value_type": "bool", "default_value": false,
+            "rules": [{"id": "de", "condition": {"prop": "default.country", "op": "eq", "value": "DE"}, "value": true}]
+        }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(r.status(), 201);
+    let r = admin(http.post(format!("{base}/admin/v1/flags")))
+        .json(&json!({"key": key, "value_type": "bool", "default_value": false}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(r.status(), 409);
+
+    // Two identities: DE gets true via rule, FR gets the default.
+    let auth = |id: &str, country: &str| {
+        http.post(format!("{base}/v1/authenticate"))
+            .header("x-api-key", &client_key)
+            .json(&json!({"id": id, "default": {"country": country}}))
+    };
+    let de: Value = auth(&format!("it-de-{suffix}"), "DE")
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    let fr: Value = auth(&format!("it-fr-{suffix}"), "FR")
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    let de_token = de["token"].as_str().unwrap();
+    let fr_token = fr["token"].as_str().unwrap();
+
+    let ev: Value = http
+        .get(format!("{base}/v1/flags/{key}"))
+        .bearer_auth(de_token)
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(ev["value"], true);
+    assert_eq!(ev["reason"]["rule_id"], "de");
+    let ev: Value = http
+        .get(format!("{base}/v1/flags/{key}"))
+        .bearer_auth(fr_token)
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(ev["value"], false);
+    assert_eq!(ev["reason"]["kind"], "default");
+
+    // Override pins FR to true; server API sees the same evaluation by external id.
+    let fr_id = fr["identity"]["id"].as_str().unwrap();
+    let r = admin(http.put(format!("{base}/admin/v1/flags/{key}/overrides/{fr_id}")))
+        .json(&json!({"value": true}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(r.status(), 200);
+    let list: Value = http
+        .get(format!(
+            "{base}/server/v1/flags?external_id=it-fr-{suffix}&names={key}"
+        ))
+        .header("x-api-key", &server_key)
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(list["flags"][0]["value"], true);
+    assert_eq!(list["flags"][0]["reason"]["kind"], "override");
+    let r = http
+        .get(format!("{base}/server/v1/flags?external_id=x"))
+        .header("x-api-key", &client_key)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(r.status(), 403);
+
+    // Disabling serves the default to everyone and bumps the version.
+    let updated: Value = admin(http.patch(format!("{base}/admin/v1/flags/{key}")))
+        .json(&json!({"enabled": false}))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(updated["version"], 2);
+    let ev: Value = http
+        .get(format!("{base}/v1/flags/{key}"))
+        .bearer_auth(de_token)
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(ev["reason"]["kind"], "disabled");
+    assert_eq!(ev["value"], false);
+
+    // Dry run with ad-hoc properties.
+    let dry: Value = admin(http.post(format!("{base}/admin/v1/flags/{key}/evaluate")))
+        .json(&json!({"properties": {"default": {"country": "DE"}}}))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(dry["reason"]["kind"], "disabled");
+
+    // Cleanup.
+    let r = admin(http.delete(format!("{base}/admin/v1/flags/{key}")))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(r.status(), 200);
+    let r = http
+        .get(format!("{base}/v1/flags/{key}"))
+        .bearer_auth(de_token)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(r.status(), 404);
+}

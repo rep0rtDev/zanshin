@@ -4,15 +4,18 @@
 
 mod convert;
 
-use std::net::SocketAddr;
+use std::{net::SocketAddr, pin::Pin};
 
+use futures::Stream;
 use tokio::sync::watch;
 use tonic::{metadata::MetadataMap, Request, Response, Status};
 use zanshin_core::Error;
 use zanshin_proto::api::v1::{
+    flag_event,
     zanshin_server::{Zanshin, ZanshinServer},
-    AuthenticateLogoutRequest, AuthenticateRefreshRequest, AuthenticateRequest, Identity,
-    Properties, Session, UpdatePropertiesRequest,
+    AuthenticateLogoutRequest, AuthenticateRefreshRequest, AuthenticateRequest, Flag, FlagEvent,
+    FlagList, GetFlagRequest, GetFlagsRequest, Identity, Properties, ServerGetFlagsRequest,
+    Session, UpdatePropertiesRequest,
 };
 
 use crate::{services::identity::SessionContext, state::AppState};
@@ -64,6 +67,21 @@ impl ZanshinGrpc {
             None if self.state.cfg.auth.allow_anonymous_authenticate => Ok(()),
             None => Err(Status::unauthenticated("api key required")),
         }
+    }
+
+    async fn require_server_key(&self, meta: &MetadataMap) -> Result<(), Status> {
+        let k = Self::api_key(meta)
+            .ok_or_else(|| Status::unauthenticated("server api key required"))?;
+        let p = self
+            .state
+            .api_keys
+            .authenticate(&k)
+            .await
+            .map_err(to_status)?;
+        if !p.is_server() {
+            return Err(Status::permission_denied("server api key required"));
+        }
+        Ok(())
     }
 
     async fn require_session(&self, meta: &MetadataMap) -> Result<SessionContext, Status> {
@@ -207,9 +225,134 @@ impl Zanshin for ZanshinGrpc {
         Ok(Response::new(properties_to_proto(&i.properties)))
     }
 
+    async fn get_flags(
+        &self,
+        request: Request<GetFlagsRequest>,
+    ) -> Result<Response<FlagList>, Status> {
+        let ctx = self.require_session(request.metadata()).await?;
+        let identity = self
+            .state
+            .identity
+            .get(ctx.identity_id())
+            .await
+            .map_err(to_status)?;
+        let evals = self
+            .state
+            .flags
+            .evaluate(&identity, &request.into_inner().names)
+            .await
+            .map_err(to_status)?;
+        Ok(Response::new(FlagList {
+            flags: evals.into_iter().map(evaluation_to_proto).collect(),
+        }))
+    }
+
+    async fn get_flag(&self, request: Request<GetFlagRequest>) -> Result<Response<Flag>, Status> {
+        let ctx = self.require_session(request.metadata()).await?;
+        let identity = self
+            .state
+            .identity
+            .get(ctx.identity_id())
+            .await
+            .map_err(to_status)?;
+        let ev = self
+            .state
+            .flags
+            .evaluate_one(&identity, &request.into_inner().name)
+            .await
+            .map_err(to_status)?;
+        Ok(Response::new(evaluation_to_proto(ev)))
+    }
+
+    type StreamFlagsStream =
+        Pin<Box<dyn Stream<Item = Result<FlagEvent, Status>> + Send + 'static>>;
+
+    async fn stream_flags(
+        &self,
+        request: Request<GetFlagsRequest>,
+    ) -> Result<Response<Self::StreamFlagsStream>, Status> {
+        let ctx = self.require_session(request.metadata()).await?;
+        let names = request.into_inner().names;
+        let state = self.state.clone();
+        let mut rx = state.flags.subscribe();
+        let expires_at = ctx.claims.expires_at();
+        let identity_id = ctx.identity_id();
+        let stream = async_stream(
+            move |tx: tokio::sync::mpsc::Sender<Result<FlagEvent, Status>>| async move {
+                loop {
+                    if chrono::Utc::now() >= expires_at {
+                        let _ = tx
+                            .send(Err(Status::unauthenticated("session expired")))
+                            .await;
+                        return;
+                    }
+                    let change = match rx.recv().await {
+                        Ok(c) => c,
+                        Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => continue,
+                        Err(_) => return,
+                    };
+                    if change.identity_id.is_some_and(|id| id != identity_id) {
+                        continue;
+                    }
+                    if !names.is_empty() && !names.contains(&change.key) {
+                        continue;
+                    }
+                    let event = if change.deleted {
+                        FlagEvent {
+                            event: Some(flag_event::Event::Deleted(change.key)),
+                        }
+                    } else {
+                        let Ok(identity) = state.identity.get(identity_id).await else {
+                            return;
+                        };
+                        match state.flags.evaluate_one(&identity, &change.key).await {
+                            Ok(ev) => FlagEvent {
+                                event: Some(flag_event::Event::Flag(evaluation_to_proto(ev))),
+                            },
+                            Err(_) => continue,
+                        }
+                    };
+                    if tx.send(Ok(event)).await.is_err() {
+                        return;
+                    }
+                }
+            },
+        );
+        Ok(Response::new(Box::pin(stream)))
+    }
+
+    async fn server_get_flags(
+        &self,
+        request: Request<ServerGetFlagsRequest>,
+    ) -> Result<Response<FlagList>, Status> {
+        self.require_server_key(request.metadata()).await?;
+        let req = request.into_inner();
+        let evals = self
+            .state
+            .flags
+            .evaluate_by_external_id(&req.external_id, &req.names)
+            .await
+            .map_err(to_status)?;
+        Ok(Response::new(FlagList {
+            flags: evals.into_iter().map(evaluation_to_proto).collect(),
+        }))
+    }
+
     async fn healthcheck(&self, _request: Request<()>) -> Result<Response<()>, Status> {
         Ok(Response::new(()))
     }
+}
+
+/// Bridge an async producer onto a `Stream` through a bounded channel.
+fn async_stream<T, F, Fut>(producer: F) -> tokio_stream::wrappers::ReceiverStream<T>
+where
+    T: Send + 'static,
+    F: FnOnce(tokio::sync::mpsc::Sender<T>) -> Fut,
+    Fut: std::future::Future<Output = ()> + Send + 'static,
+{
+    let (tx, rx) = tokio::sync::mpsc::channel(32);
+    tokio::spawn(producer(tx));
+    tokio_stream::wrappers::ReceiverStream::new(rx)
 }
 
 pub async fn serve(

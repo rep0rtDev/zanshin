@@ -3,8 +3,9 @@
 use std::collections::HashMap;
 
 use prost_types::{value::Kind, ListValue, Struct, Timestamp, Value};
+use zanshin_core::flags::{Evaluation, Reason};
 use zanshin_core::{properties::PropertyMap, Identity as CoreIdentity, PropertySet};
-use zanshin_proto::api::v1::{Identity, Properties, Session};
+use zanshin_proto::api::v1::{Flag, Identity, Properties, Session};
 
 use crate::services::identity::SessionTokens;
 
@@ -85,5 +86,24 @@ pub fn session_to_proto(s: SessionTokens) -> Session {
         refresh_token: s.refresh_token,
         identity: Some(identity_to_proto(&s.identity)),
         properties: Some(properties_to_proto(&s.identity.properties)),
+    }
+}
+
+pub fn evaluation_to_proto(e: Evaluation) -> Flag {
+    let (reason, rule_id) = match &e.reason {
+        Reason::Disabled => ("disabled", String::new()),
+        Reason::Default => ("default", String::new()),
+        Reason::Override => ("override", String::new()),
+        Reason::Rule { rule_id } => ("rule", rule_id.clone()),
+        Reason::Variant { rule_id, .. } => ("variant", rule_id.clone()),
+    };
+    Flag {
+        name: e.key,
+        value: Some(json_to_value(e.value)),
+        value_type: e.value_type.as_str().to_string(),
+        variant: e.variant.unwrap_or_default(),
+        reason: reason.to_string(),
+        rule_id,
+        version: e.version,
     }
 }

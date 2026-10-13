@@ -29,7 +29,55 @@ service Zanshin {
   // Merge default/custom properties into the current identity.
   rpc UpdateProperties(UpdatePropertiesRequest) returns (Properties);
 
+  // Evaluate feature flags for the current identity (all flags when `names` is empty).
+  rpc GetFlags(GetFlagsRequest) returns (FlagList);
+  // Evaluate one flag for the current identity.
+  rpc GetFlag(GetFlagRequest) returns (Flag);
+  // Push re-evaluated flags whenever their definition (or an override) changes.
+  rpc StreamFlags(GetFlagsRequest) returns (stream FlagEvent);
+
+  // Server-key only: evaluate flags for any identity by external id (used by backends / Nakama).
+  rpc ServerGetFlags(ServerGetFlagsRequest) returns (FlagList);
+
   rpc Healthcheck(google.protobuf.Empty) returns (google.protobuf.Empty);
+}
+
+message GetFlagsRequest {
+  repeated string names = 1;
+}
+
+message GetFlagRequest {
+  string name = 1;
+}
+
+message ServerGetFlagsRequest {
+  string external_id = 1;
+  repeated string names = 2;
+}
+
+message Flag {
+  string name = 1;
+  google.protobuf.Value value = 2;
+  // bool | string | number | json
+  string value_type = 3;
+  // Variant key when the value came from a weighted variant.
+  string variant = 4;
+  // disabled | default | override | rule | variant
+  string reason = 5;
+  // Rule id that produced the value, if any.
+  string rule_id = 6;
+  int64 version = 7;
+}
+
+message FlagList {
+  repeated Flag flags = 1;
+}
+
+message FlagEvent {
+  oneof event {
+    Flag flag = 1;
+    string deleted = 2;
+  }
 }
 
 message Properties {

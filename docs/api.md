@@ -65,9 +65,51 @@ Deletes the identity, its sessions and attached data. → `{}`
 JSON-merge-patch: `null` removes a key. `computed` cannot be written by clients. Returns the full
 property set.
 
+### `GET /v1/flags?names=a,b` — session
+
+Evaluates feature flags for the current identity (`names` omitted = every flag):
+
+```json
+{ "flags": [
+  { "key": "shop_v2", "value": true, "value_type": "bool", "reason": { "kind": "rule", "rule_id": "de" }, "version": 3 },
+  { "key": "ab_banner", "value": "red", "value_type": "string", "variant": "a",
+    "reason": { "kind": "variant", "rule_id": "ab", "variant": "a" }, "version": 1 }
+] }
+```
+
+`reason.kind` is one of `disabled`, `default`, `override`, `rule`, `variant`.
+
+### `GET /v1/flags/{key}` — session
+
+One evaluation; 404 when the flag does not exist.
+
+### `GET /v1/stream?token=<access token>&names=a,b` — WebSocket
+
+Live changes for the current identity. `Authorization: Bearer` also works where headers can be
+set. Messages from the server:
+
+```json
+{ "type": "hello", "identity_id": "…" }
+{ "type": "flag", "flag": { …evaluation… } }        // definition or override changed
+{ "type": "flag_deleted", "key": "shop_v2" }
+{ "type": "error", "message": "session expired" }   // followed by close
+```
+
+Send `{ "type": "ping" }` to receive `{ "type": "pong" }`. gRPC clients use `StreamFlags`.
+
 ### `GET /v1/healthcheck`
 
 → `{}`; no credentials required.
+
+## Server API — `/server/v1` (server or admin key)
+
+For trusted backends (game servers, the Nakama module). Identities are addressed by external id.
+
+| Method | Path | Returns |
+|--------|------|---------|
+| `GET` | `/flags?external_id=<id>&names=a,b` | `{ "flags": [ …evaluations… ] }` |
+
+gRPC: `ServerGetFlags`.
 
 ## Admin API — `/admin/v1` (admin key)
 
@@ -82,6 +124,49 @@ property set.
 | `PUT` | `/identities/{id}/properties` | `{ "default": {…}, "custom": {…} }` | identity + properties |
 | `DELETE` | `/identities/{id}` | — | `{}` |
 | `GET` | `/stats` | — | `{ "identities": n, "uptime_seconds": n, "clickhouse_enabled": bool }` |
+| `GET` | `/flags` | — | every flag definition |
+| `POST` | `/flags` | flag definition (below) | `201` + definition |
+| `GET` / `PUT` / `PATCH` / `DELETE` | `/flags/{key}` | partial definition for `PUT`/`PATCH` | definition (`version` increments on every write) |
+| `GET` | `/flags/{key}/overrides?limit=` | — | `[ { identity_id, external_id, value } ]` |
+| `PUT` / `DELETE` | `/flags/{key}/overrides/{identity_id}` | `{ "value": … }` | `{}` |
+| `GET` | `/flags/{key}/evaluate/{identity_id}` | — | evaluation for that identity (debug) |
+| `POST` | `/flags/{key}/evaluate` | `{ "subject": "…", "properties": { "default": {…}, "custom": {…} } }` | dry-run evaluation with ad-hoc properties |
+
+### Flag definition
+
+```json
+{
+  "key": "shop_v2",
+  "name": "New shop", "description": "…", "tags": ["shop"],
+  "value_type": "bool",            // bool | string | number | json
+  "default_value": false,          // served when disabled or when no rule matches
+  "enabled": true,
+  "salt": "",                      // change to reshuffle every rollout bucket of this flag
+  "rules": [
+    {
+      "id": "de-rollout", "name": "Germany, 50 %",
+      "condition": { "all": [
+        { "prop": "default.country", "op": "in", "value": ["DE", "AT"] },
+        { "prop": "default.app_version", "op": "semver_gte", "value": "1.4.0" },
+        { "not": { "prop": "custom.banned", "op": "exists" } }
+      ] },
+      "audiences": [],               // audience keys (all must match) — lands with audiences
+      "percentage": 50,              // 0..100, fractional allowed; deterministic per identity
+      "value": true                  // or "variants": [ { "key": "a", "value": …, "weight": 70 }, … ]
+    }
+  ]
+}
+```
+
+Rules are evaluated in order; the first whose condition matches *and* whose rollout bucket includes
+the identity wins. Bucketing hashes `flag key + salt + rule id + external id`, so a rollout can be
+raised from 10 % to 20 % without moving anyone who was already in.
+
+Condition operators: `eq` `neq` `gt` `gte` `lt` `lte` `in` `not_in` `contains` `not_contains`
+`starts_with` `ends_with` `matches` (regex) `exists` `not_exists` `semver_eq` `semver_gt`
+`semver_gte` `semver_lt` `semver_lte`. Properties are addressed as `default.*`, `custom.*`,
+`computed.*`, plus `identity.id` and `identity.external_id`. Comparisons tolerate `"5"` vs `5`
+and `"true"` vs `true`.
 
 ## Operations
 
