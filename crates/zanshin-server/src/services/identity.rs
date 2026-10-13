@@ -195,6 +195,26 @@ impl IdentityService {
         self.identities.list(after, limit).await
     }
 
+    /// Create or update an identity without issuing a session (trusted backends).
+    pub async fn upsert(
+        &self,
+        external_id: &str,
+        default: PropertyMap,
+        custom: PropertyMap,
+    ) -> Result<Identity> {
+        validate_external_id(external_id)?;
+        properties::validate(&default)?;
+        properties::validate(&custom)?;
+        let (identity, created) = self
+            .identities
+            .authenticate(external_id, &default, &custom)
+            .await?;
+        if created {
+            metrics::counter!("zanshin_identities_created_total").increment(1);
+        }
+        Ok(identity)
+    }
+
     pub async fn update_properties(
         &self,
         id: Uuid,

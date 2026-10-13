@@ -209,6 +209,10 @@ For trusted backends (game servers, the Nakama module). Identities are addressed
 | `GET` | `/live-events?external_id=<id>&names=a,b&upcoming=true` | `{ "live_events": [ … ] }` |
 | `POST` | `/messages` body `{ "external_id", "title", "body", "image_url", "payload", "priority", "ttl_secs" }` | `201 { "id": "…" }` — direct message into that identity's inbox |
 | `POST` | `/events` body `{ "external_id", "events": [ … ] }` | `{ "accepted": n }` — `$`-prefixed names allowed |
+| `POST` | `/identities` body `{ "external_id", "default", "custom" }` | identity + properties; creates or merges, no session (emits `$authenticate`) |
+| `PUT` | `/identities/{external_id}/properties` body `{ "default", "custom" }` | merged properties (`null` removes) |
+| `GET` | `/messages/inbox?external_id=<id>&limit=` | `{ "messages": [ … ] }` (delivers pending campaigns first) |
+| `WS` | `/stream` (`x-api-key` header or `?api_key=`) | change feed: `{"type":"change","kind":"flag\|audience\|experiment\|live_event\|message","key","version","deleted","identity_id"}`; `{"type":"resync"}` after lag; `ping`/`pong` |
 
 gRPC: `ServerGetFlags`, `ServerGetAudiences`, `ServerGetExperiments`, `ServerGetLiveEvents`, `ServerSendMessage`, `ServerSendEvents`.
 

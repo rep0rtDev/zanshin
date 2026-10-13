@@ -74,7 +74,7 @@ variables. `zanshin --check-config` prints the effective configuration with secr
 | Live events (schedules), in-app messages / inbox | 🔜 |
 | Analytics events: client/server ingest, batching writer, ClickHouse sink (PostgreSQL fallback), events tagged with live experiment assignments, timeseries / top names / per-identity log, per-variant experiment metrics with conversion | ✅ |
 | Computed properties maintained from events: `session_count`, `first/last_seen_at`, `event_count`, per-event `count` / `sum` / `last_at` — targetable from rules | ✅ |
-| Go SDK + Nakama runtime module, TypeScript / Unity / Unreal / Godot SDKs | 🔜 |
+| Go SDK `sdk/go` (server-key client with local cache + change-stream invalidation) | ✅ |
 | Embedded admin console | 🔜 |
 
 ## API at a glance
@@ -93,7 +93,8 @@ variables. `zanshin --check-config` prints the effective configuration with secr
 | `GET` | `/v1/live-events[?names=&upcoming=true]` | session | active (and upcoming) live events targeting the identity |
 | `GET` / `PUT` / `DELETE` | `/v1/messages`, `/v1/messages/{id}` | session | inbox, mark read, consume |
 | `WS` | `/v1/stream[?token=]` | session | live flag / audience / experiment changes pushed to the client |
-| `GET` / `POST` | `/server/v1/{flags,audiences,experiments,live-events}?external_id=`, `/server/v1/{messages,events}` | server key | evaluate for any identity, send direct messages, report events (Nakama / backends) |
+| `GET` / `POST` / `PUT` | `/server/v1/{flags,audiences,experiments,live-events,messages/inbox}?external_id=`, `/server/v1/{identities,messages,events}`, `/server/v1/identities/{external_id}/properties` | server key | identity sync, evaluate for any identity, direct messages, events (Nakama / backends) |
+| `WS` | `/server/v1/stream` | server key | change feed for backend caches |
 | `GET` / `POST` | `/admin/v1/api-keys` | admin | list / mint API keys |
 | `DELETE` | `/admin/v1/api-keys/{id}` | admin | revoke a key |
 | `GET` | `/admin/v1/identities[?after=&limit=]` | admin | paginate identities |
