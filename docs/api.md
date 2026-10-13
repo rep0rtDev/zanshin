@@ -107,6 +107,43 @@ draft experiments return nothing.
 Records that the identity actually saw its variant (`exposures` + 1, first `exposed_at`). 404 when
 not enrolled, 400 when the experiment is not live.
 
+### `GET /v1/live-events?names=a,b&upcoming=true` — session
+
+Live events whose targeting (rules + audiences) matches the identity. By default only events with
+a current occurrence are returned; `upcoming=true` adds targeted events that are not active yet,
+each with its `next` occurrence.
+
+```json
+{ "live_events": [ {
+  "key": "weekend_xp", "name": "Double XP weekend", "description": "", "value": { "xp": 2 },
+  "active": true,
+  "current": { "start": "2026-01-03T18:00:00Z", "end": "2026-01-05T18:00:00Z" },
+  "next":    { "start": "2026-01-10T18:00:00Z", "end": "2026-01-12T18:00:00Z" },
+  "version": 3
+} ] }
+```
+
+### `GET /v1/messages?limit=50` — session
+
+Inbox. Every live campaign that targets the identity and has not been delivered yet is delivered
+first (one copy per identity, title/body rendered), then unconsumed, unexpired copies are returned
+ordered by priority then recency.
+
+```json
+{ "messages": [ {
+  "id": "01a1…", "key": "welcome_gift", "title": "Welcome, Neo", "body": "Here is your gift.",
+  "image_url": "", "payload": { "gift": 100 }, "priority": 5,
+  "delivered_at": "…", "read_at": null, "expires_at": "…"
+} ] }
+```
+
+`key` is `null` for direct messages.
+
+### `PUT /v1/messages/{id}` · `DELETE /v1/messages/{id}` — session
+
+`PUT` marks the copy read (`{ "read": true }`) and returns it. `DELETE` consumes it: it disappears
+from the inbox and is never redelivered.
+
 ### `GET /v1/stream?token=<access token>&names=a,b` — WebSocket
 
 Live changes for the current identity. `Authorization: Bearer` also works where headers can be
@@ -118,6 +155,8 @@ set. Messages from the server:
 { "type": "flag_deleted", "key": "shop_v2" }
 { "type": "flags", "flags": [ … ] }                  // after an audience / experiment change
 { "type": "experiments", "experiments": [ … ] }
+{ "type": "live_events", "live_events": [ … ] }      // after a live event change (active + upcoming)
+{ "type": "inbox", "messages": [ … ] }               // after a campaign change or a direct message
 { "type": "error", "message": "session expired" }   // followed by close
 ```
 
@@ -137,8 +176,10 @@ For trusted backends (game servers, the Nakama module). Identities are addressed
 | `GET` | `/audiences?external_id=<id>` | `{ "audiences": [ … ] }` |
 | `GET` | `/experiments?external_id=<id>&names=a,b` | `{ "experiments": [ … ] }` (assigns when eligible) |
 | `POST` | `/experiments/{key}/expose?external_id=<id>` | `{}` |
+| `GET` | `/live-events?external_id=<id>&names=a,b&upcoming=true` | `{ "live_events": [ … ] }` |
+| `POST` | `/messages` body `{ "external_id", "title", "body", "image_url", "payload", "priority", "ttl_secs" }` | `201 { "id": "…" }` — direct message into that identity's inbox |
 
-gRPC: `ServerGetFlags`, `ServerGetAudiences`, `ServerGetExperiments`.
+gRPC: `ServerGetFlags`, `ServerGetAudiences`, `ServerGetExperiments`, `ServerGetLiveEvents`, `ServerSendMessage`.
 
 ## Admin API — `/admin/v1` (admin key)
 
@@ -171,6 +212,47 @@ gRPC: `ServerGetFlags`, `ServerGetAudiences`, `ServerGetExperiments`.
 | `POST` | `/experiments/{key}/reset` | — | `{ "deleted_assignments": n }` |
 | `GET` | `/experiments/{key}/results` | — | assigned / exposed / exposures per variant |
 | `GET` / `PUT` / `DELETE` | `/experiments/{key}/assignments/{identity_id}` | `{ "variant": "…" }` for `PUT` | inspect / force / clear one identity's assignment |
+
+| `GET` / `POST` | `/live-events` | live event definition (below) | definitions |
+| `GET` / `PUT` / `PATCH` / `DELETE` | `/live-events/{key}` | partial definition | definition |
+| `GET` / `POST` | `/messages` | message campaign (below) | definitions |
+| `GET` / `PUT` / `PATCH` / `DELETE` | `/messages/{key}` | partial definition | definition |
+| `GET` | `/messages/{key}/stats` | — | `{ "delivered", "read", "consumed" }` |
+| `POST` | `/identities/{identity_id}/messages` | direct message (same body as the server API minus `external_id`) | `201 { "id" }` |
+
+### Live event definition
+
+```json
+{
+  "key": "weekend_xp", "name": "Double XP weekend", "enabled": true,
+  "condition": { "prop": "default.country", "op": "neq", "value": "CN" },
+  "audiences": ["active_players"],
+  "starts_at": "2026-01-01T00:00:00Z",   // first occurrence / schedule start
+  "ends_at": null,                        // hard end of the whole event (optional)
+  "recurrence": "0 0 18 * * Sat *",       // cron, UTC: sec min hour day month weekday [year]; omit for one-shot
+  "duration_secs": 172800,                // length of each occurrence (required when recurring)
+  "payload": { "xp": 2 }, "tags": []
+}
+```
+
+A one-shot event needs `ends_at` or `duration_secs`.
+
+### Message campaign definition
+
+```json
+{
+  "key": "welcome_gift", "name": "Welcome gift", "enabled": true,
+  "title": "Welcome, {{custom.nickname}}", "body": "Here is your gift.", "image_url": "", "payload": { "gift": 100 },
+  "condition": { "prop": "computed.session_count", "op": "lte", "value": 1 },
+  "audiences": [], "percentage": 100,
+  "starts_at": null, "ends_at": null,     // campaign window
+  "ttl_secs": 604800,                     // how long a delivered copy stays in the inbox
+  "priority": 5, "tags": []
+}
+```
+
+`{{path}}` placeholders in `title` and `body` are rendered from the identity's flattened properties
+at delivery time.
 
 ### Experiment definition
 

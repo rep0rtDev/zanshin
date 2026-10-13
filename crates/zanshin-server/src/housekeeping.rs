@@ -16,6 +16,11 @@ pub async fn run(state: AppState, mut shutdown: watch::Receiver<bool>) {
                     Ok(_) => {}
                     Err(e) => tracing::warn!(error = %e, "session purge failed"),
                 }
+                match state.messages.purge_expired().await {
+                    Ok(n) if n > 0 => tracing::info!(purged = n, "expired inbox messages purged"),
+                    Ok(_) => {}
+                    Err(e) => tracing::warn!(error = %e, "inbox purge failed"),
+                }
             }
             _ = shutdown.changed() => {
                 if *shutdown.borrow() { break; }

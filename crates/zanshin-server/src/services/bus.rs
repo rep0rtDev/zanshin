@@ -19,6 +19,8 @@ pub enum ChangeKind {
     Flag,
     Audience,
     Experiment,
+    LiveEvent,
+    Message,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

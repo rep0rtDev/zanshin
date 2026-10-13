@@ -102,6 +102,30 @@ pub fn router() -> Router<AppState> {
                 .put(force_assignment)
                 .delete(delete_assignment),
         )
+        .route(
+            "/live-events",
+            get(list_live_events).post(create_live_event),
+        )
+        .route(
+            "/live-events/{key}",
+            get(get_live_event)
+                .put(update_live_event)
+                .patch(update_live_event)
+                .delete(delete_live_event),
+        )
+        .route("/messages", get(list_messages).post(create_message))
+        .route(
+            "/messages/{key}",
+            get(get_message)
+                .put(update_message_def)
+                .patch(update_message_def)
+                .delete(delete_message_def),
+        )
+        .route("/messages/{key}/stats", get(message_stats))
+        .route(
+            "/identities/{identity_id}/messages",
+            axum::routing::post(send_direct_message),
+        )
         .route("/stats", get(stats))
 }
 
@@ -674,4 +698,157 @@ async fn delete_assignment(
         .delete_assignment(&key, identity_id)
         .await?;
     Ok(Json(serde_json::json!({})))
+}
+
+// ---- live events ---------------------------------------------------------------------------
+
+use crate::services::{
+    live_events::LiveEventPatch,
+    messages::{DirectMessage, MessagePatch},
+};
+use zanshin_core::{live_events::LiveEvent, messages::MessageCampaign};
+
+#[derive(Debug, Deserialize)]
+pub struct CreateLiveEventRequest {
+    pub key: String,
+    #[serde(flatten)]
+    pub patch: LiveEventPatch,
+}
+
+async fn list_live_events(
+    State(state): State<AppState>,
+    AdminAuth(_): AdminAuth,
+) -> ApiResult<Json<Vec<LiveEvent>>> {
+    Ok(Json(
+        state
+            .live_events
+            .list()
+            .await
+            .iter()
+            .map(|e| (**e).clone())
+            .collect(),
+    ))
+}
+
+async fn create_live_event(
+    State(state): State<AppState>,
+    AdminAuth(_): AdminAuth,
+    Json(req): Json<CreateLiveEventRequest>,
+) -> ApiResult<(axum::http::StatusCode, Json<LiveEvent>)> {
+    Ok((
+        axum::http::StatusCode::CREATED,
+        Json(state.live_events.create(&req.key, req.patch).await?),
+    ))
+}
+
+async fn get_live_event(
+    State(state): State<AppState>,
+    AdminAuth(_): AdminAuth,
+    Path(key): Path<String>,
+) -> ApiResult<Json<LiveEvent>> {
+    Ok(Json((*state.live_events.get(&key).await?).clone()))
+}
+
+async fn update_live_event(
+    State(state): State<AppState>,
+    AdminAuth(_): AdminAuth,
+    Path(key): Path<String>,
+    Json(patch): Json<LiveEventPatch>,
+) -> ApiResult<Json<LiveEvent>> {
+    Ok(Json(state.live_events.update(&key, patch).await?))
+}
+
+async fn delete_live_event(
+    State(state): State<AppState>,
+    AdminAuth(_): AdminAuth,
+    Path(key): Path<String>,
+) -> ApiResult<Json<serde_json::Value>> {
+    state.live_events.delete(&key).await?;
+    Ok(Json(serde_json::json!({})))
+}
+
+// ---- messages ------------------------------------------------------------------------------
+
+#[derive(Debug, Deserialize)]
+pub struct CreateMessageRequest {
+    pub key: String,
+    #[serde(flatten)]
+    pub patch: MessagePatch,
+}
+
+async fn list_messages(
+    State(state): State<AppState>,
+    AdminAuth(_): AdminAuth,
+) -> ApiResult<Json<Vec<MessageCampaign>>> {
+    Ok(Json(
+        state
+            .messages
+            .list()
+            .await
+            .iter()
+            .map(|m| (**m).clone())
+            .collect(),
+    ))
+}
+
+async fn create_message(
+    State(state): State<AppState>,
+    AdminAuth(_): AdminAuth,
+    Json(req): Json<CreateMessageRequest>,
+) -> ApiResult<(axum::http::StatusCode, Json<MessageCampaign>)> {
+    Ok((
+        axum::http::StatusCode::CREATED,
+        Json(state.messages.create(&req.key, req.patch).await?),
+    ))
+}
+
+async fn get_message(
+    State(state): State<AppState>,
+    AdminAuth(_): AdminAuth,
+    Path(key): Path<String>,
+) -> ApiResult<Json<MessageCampaign>> {
+    Ok(Json((*state.messages.get(&key).await?).clone()))
+}
+
+async fn update_message_def(
+    State(state): State<AppState>,
+    AdminAuth(_): AdminAuth,
+    Path(key): Path<String>,
+    Json(patch): Json<MessagePatch>,
+) -> ApiResult<Json<MessageCampaign>> {
+    Ok(Json(state.messages.update(&key, patch).await?))
+}
+
+async fn delete_message_def(
+    State(state): State<AppState>,
+    AdminAuth(_): AdminAuth,
+    Path(key): Path<String>,
+) -> ApiResult<Json<serde_json::Value>> {
+    state.messages.delete(&key).await?;
+    Ok(Json(serde_json::json!({})))
+}
+
+async fn message_stats(
+    State(state): State<AppState>,
+    AdminAuth(_): AdminAuth,
+    Path(key): Path<String>,
+) -> ApiResult<Json<serde_json::Value>> {
+    let (m, (delivered, read, consumed)) = state.messages.stats(&key).await?;
+    Ok(Json(
+        serde_json::json!({ "message": m.key, "delivered": delivered, "read": read, "consumed": consumed }),
+    ))
+}
+
+async fn send_direct_message(
+    State(state): State<AppState>,
+    AdminAuth(_): AdminAuth,
+    Path(identity_id): Path<Uuid>,
+    Json(msg): Json<DirectMessage>,
+) -> ApiResult<(axum::http::StatusCode, Json<serde_json::Value>)> {
+    let identity = state.identity.get(identity_id).await?;
+    let id = state.messages.send_direct(&identity, msg).await?;
+    Ok((
+        axum::http::StatusCode::CREATED,
+        Json(serde_json::json!({ "id": id })),
+    ))
 }

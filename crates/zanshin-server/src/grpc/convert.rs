@@ -6,9 +6,13 @@ use prost_types::{value::Kind, ListValue, Struct, Timestamp, Value};
 use zanshin_core::{
     experiments::Assignment,
     flags::{Evaluation, Reason},
+    live_events::{ActiveEvent, Occurrence as CoreOccurrence},
+    messages::InboxMessage,
 };
 use zanshin_core::{properties::PropertyMap, Identity as CoreIdentity, PropertySet};
-use zanshin_proto::api::v1::{Experiment, Flag, Identity, Properties, Session};
+use zanshin_proto::api::v1::{
+    Experiment, Flag, Identity, LiveEvent, Message, Occurrence, Properties, Session,
+};
 
 use crate::services::identity::SessionTokens;
 
@@ -120,5 +124,40 @@ pub fn assignment_to_proto(a: Assignment) -> Experiment {
         variant: a.variant,
         value: Some(json_to_value(a.value)),
         version: a.version,
+    }
+}
+
+fn occurrence_to_proto(o: CoreOccurrence) -> Occurrence {
+    Occurrence {
+        start_unix: o.start.timestamp(),
+        end_unix: o.end.timestamp(),
+    }
+}
+
+pub fn live_event_to_proto(e: ActiveEvent) -> LiveEvent {
+    LiveEvent {
+        name: e.key,
+        display_name: e.name,
+        description: e.description,
+        value: Some(json_to_value(e.value)),
+        active: e.active,
+        current: e.current.map(occurrence_to_proto),
+        next: e.next.map(occurrence_to_proto),
+        version: e.version,
+    }
+}
+
+pub fn inbox_to_proto(m: InboxMessage) -> Message {
+    Message {
+        id: m.id.to_string(),
+        key: m.key.unwrap_or_default(),
+        title: m.title,
+        body: m.body,
+        image_url: m.image_url,
+        payload: Some(json_to_value(m.payload)),
+        priority: m.priority,
+        delivered_unix: m.delivered_at.timestamp(),
+        read_unix: m.read_at.map(|t| t.timestamp()).unwrap_or(0),
+        expires_unix: m.expires_at.map(|t| t.timestamp()).unwrap_or(0),
     }
 }

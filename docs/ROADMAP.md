@@ -17,8 +17,9 @@ console comes last once the model is stable.
 - [x] **Experiments**: variants with weights, allocation percentage, audience gate, sticky
       assignment stored per identity, exposure tracking, draft → running → paused → stopped,
       per-variant results, optional link to a flag whose value the variant overrides
-- [ ] **Live events**: start/end, recurring schedules (cron + duration), audience gate,
-      per-identity active list, per-event JSON payload, timezone handling
+- [x] **Live events**: one-shot windows and cron recurrence (UTC) with per-occurrence duration,
+      targeting by rules and audiences, free-form payload, current and next occurrence exposed to
+      clients, live push on change
 - [ ] **Messages / inbox**: scheduled or triggered in-app messages, per-identity read /
       consumed state, templating with identity properties
 - [ ] **Analytics**: batched event ingest, ClickHouse sink with PostgreSQL fallback,
