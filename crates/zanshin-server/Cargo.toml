@@ -1,0 +1,53 @@
+[package]
+name = "zanshin-server"
+description = "Zanshin LiveOps server"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+default-run = "zanshin"
+
+[[bin]]
+name = "zanshin"
+path = "src/main.rs"
+
+[dependencies]
+zanshin-core.workspace = true
+zanshin-proto.workspace = true
+zanshin-store.workspace = true
+
+tokio.workspace = true
+tokio-stream.workspace = true
+futures.workspace = true
+
+axum.workspace = true
+tower.workspace = true
+tower-http.workspace = true
+http.workspace = true
+tonic.workspace = true
+tonic-health.workspace = true
+tonic-reflection.workspace = true
+prost.workspace = true
+prost-types.workspace = true
+
+serde.workspace = true
+serde_json.workspace = true
+humantime-serde.workspace = true
+humantime.workspace = true
+figment.workspace = true
+clap.workspace = true
+
+thiserror.workspace = true
+anyhow.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+metrics.workspace = true
+metrics-exporter-prometheus.workspace = true
+
+sha2.workspace = true
+base64.workspace = true
+uuid.workspace = true
+chrono.workspace = true
+
+[dev-dependencies]
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }

@@ -1,0 +1,22 @@
+[package]
+name = "zanshin-core"
+description = "Domain model and pure logic for Zanshin"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+anyhow.workspace = true
+uuid.workspace = true
+chrono.workspace = true
+jsonwebtoken.workspace = true
+sha2.workspace = true
+rand.workspace = true
+base64.workspace = true
+regex.workspace = true
+once_cell.workspace = true
+tracing.workspace = true

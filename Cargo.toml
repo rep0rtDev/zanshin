@@ -1,0 +1,65 @@
+[workspace]
+resolver = "2"
+members = ["crates/*"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "Apache-2.0"
+repository = "https://github.com/rep0rtDev/zanshin"
+rust-version = "1.82"
+
+[workspace.dependencies]
+zanshin-core = { path = "crates/zanshin-core" }
+zanshin-proto = { path = "crates/zanshin-proto" }
+zanshin-store = { path = "crates/zanshin-store" }
+
+tokio = { version = "1", features = ["full"] }
+tokio-stream = "0.1"
+futures = "0.3"
+async-trait = "0.1"
+
+axum = { version = "0.8", features = ["macros", "ws"] }
+tower = "0.5"
+tower-http = { version = "0.6", features = ["trace", "cors", "compression-gzip", "request-id", "util", "timeout", "limit"] }
+http = "1"
+
+tonic = "0.12"
+tonic-health = "0.12"
+tonic-reflection = "0.12"
+tonic-build = "0.12"
+prost = "0.13"
+prost-types = "0.13"
+protoc-bin-vendored = "3"
+
+sqlx = { version = "0.8", default-features = false, features = ["runtime-tokio", "tls-rustls", "postgres", "uuid", "chrono", "json", "migrate", "macros"] }
+redis = { version = "0.27", features = ["tokio-comp", "connection-manager"] }
+clickhouse = { version = "0.13" }
+
+serde = { version = "1", features = ["derive"] }
+serde_json = { version = "1", features = ["preserve_order"] }
+humantime-serde = "1"
+humantime = "2"
+figment = { version = "0.10", features = ["yaml", "env"] }
+clap = { version = "4", features = ["derive", "env"] }
+
+thiserror = "2"
+anyhow = "1"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
+metrics = "0.24"
+metrics-exporter-prometheus = { version = "0.16", default-features = false }
+
+jsonwebtoken = "9"
+sha2 = "0.10"
+rand = "0.8"
+base64 = "0.22"
+uuid = { version = "1", features = ["v4", "v7", "serde"] }
+chrono = { version = "0.4", features = ["serde"] }
+regex = "1"
+once_cell = "1"
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
+strip = true
