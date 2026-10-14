@@ -1,0 +1,36 @@
+name: publish ts sdk
+
+# Tag `sdk-ts-vX.Y.Z` (matching sdk/ts/package.json) to publish @zanshin/sdk to npm with provenance.
+# Requires the NPM_TOKEN repository secret (automation token).
+on:
+  push:
+    tags: ["sdk-ts-v*"]
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          registry-url: https://registry.npmjs.org
+      - name: version matches tag
+        working-directory: sdk/ts
+        run: |
+          tag="${GITHUB_REF_NAME#sdk-ts-v}"
+          pkg="$(node -p "require('./package.json').version")"
+          test "$tag" = "$pkg" || { echo "tag $tag != package.json $pkg"; exit 1; }
+      - working-directory: sdk/ts
+        run: |
+          npm ci
+          npm run lint
+          npm run build
+      - working-directory: sdk/ts
+        run: npm publish --access public --provenance
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

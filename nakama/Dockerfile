@@ -12,4 +12,13 @@ COPY nakama/ .
 RUN go build --trimpath --buildmode=plugin -o ./zanshin.so
 
 FROM heroiclabs/nakama:${NAKAMA_VERSION}
+ARG NAKAMA_VERSION
+ARG VERSION=dev
+ARG COMMIT=unknown
+LABEL org.opencontainers.image.title="zanshin-nakama" \
+      org.opencontainers.image.description="Nakama ${NAKAMA_VERSION} with the Zanshin runtime module" \
+      org.opencontainers.image.source="https://github.com/rep0rtDev/zanshin" \
+      org.opencontainers.image.licenses="Apache-2.0" \
+      org.opencontainers.image.version="${VERSION}" \
+      org.opencontainers.image.revision="${COMMIT}"
 COPY --from=builder /backend/zanshin.so /nakama/data/modules/

@@ -363,18 +363,16 @@ impl TaxonomyService {
 
     pub fn lookup_geo(&self, ip: IpAddr) -> Option<GeoInfo> {
         let reader = self.geo.as_ref()?;
-        let city: maxminddb::geoip2::City = reader.lookup(ip).ok()?;
-        let name = |m: Option<std::collections::BTreeMap<&str, &str>>| {
-            m.and_then(|m| m.get("en").map(|s| s.to_string()))
-        };
+        let city: maxminddb::geoip2::City = reader.lookup(ip).ok()?.decode().ok().flatten()?;
         Some(GeoInfo {
-            country: city.country.and_then(|c| c.iso_code.map(str::to_string)),
+            country: city.country.iso_code.map(str::to_string),
             region: city
                 .subdivisions
-                .and_then(|s| s.into_iter().next())
+                .into_iter()
+                .next()
                 .and_then(|s| s.iso_code.map(str::to_string)),
-            city: city.city.and_then(|c| name(c.names)),
-            timezone: city.location.and_then(|l| l.time_zone.map(str::to_string)),
+            city: city.city.names.english.map(str::to_string),
+            timezone: city.location.time_zone.map(str::to_string),
         })
     }
 }

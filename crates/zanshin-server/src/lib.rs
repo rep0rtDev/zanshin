@@ -1,3 +1,4 @@
+pub mod build_info;
 pub mod config;
 pub mod grpc;
 pub mod housekeeping;

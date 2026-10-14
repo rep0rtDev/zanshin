@@ -1259,6 +1259,7 @@ async fn system(
     });
     Ok(Json(serde_json::json!({
         "version": env!("CARGO_PKG_VERSION"),
+        "build": crate::build_info::json(),
         "started_at": state.started_at,
         "uptime_secs": (now - state.started_at).num_seconds().max(0),
         "stores": {

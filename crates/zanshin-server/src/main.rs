@@ -6,7 +6,12 @@ use tokio::signal;
 use zanshin_server::{config::Config, grpc, http, state::AppState, telemetry};
 
 #[derive(Parser, Debug)]
-#[command(name = "zanshin", version, about = "Zanshin LiveOps server")]
+#[command(
+    name = "zanshin",
+    version,
+    long_version = zanshin_server::build_info::LONG_VERSION,
+    about = "Zanshin LiveOps server"
+)]
 struct Cli {
     /// Path to a YAML config file. Every value can also be set with `ZANSHIN__SECTION__KEY` env vars.
     #[arg(short, long, env = "ZANSHIN_CONFIG")]
@@ -36,6 +41,7 @@ async fn main() -> anyhow::Result<()> {
     }
     tracing::info!(
         version = env!("CARGO_PKG_VERSION"),
+        commit = zanshin_server::build_info::COMMIT_SHORT,
         production = cfg.server.production,
         "starting zanshin"
     );

@@ -1,0 +1,90 @@
+name: security
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  schedule:
+    - cron: "0 6 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  cargo-deny:
+    name: cargo deny (advisories / licenses / bans / sources)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: EmbarkStudios/cargo-deny-action@v2
+        with:
+          command: check
+          arguments: --all-features
+
+  cargo-audit:
+    name: cargo audit
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write
+      checks: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: rustsec/audit-check@v2
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          # RUSTSEC-2023-0071: `rsa` Marvin timing attack on RSA *decryption* — Zanshin only verifies
+          # RS256 signatures (public-key operations); no patched release exists upstream.
+          # RUSTSEC-2024-0449: unsafe-libyaml via serde_yaml, trusted config file only (see deny.toml).
+          ignore: RUSTSEC-2023-0071,RUSTSEC-2024-0449
+
+  npm-audit:
+    name: npm audit (console, ts sdk)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: console
+        working-directory: console
+        run: npm audit --audit-level=high
+      - name: ts sdk
+        working-directory: sdk/ts
+        run: npm audit --audit-level=high
+
+  govulncheck:
+    name: govulncheck (go sdk, nakama module)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: stable
+          cache-dependency-path: |
+            sdk/go/go.sum
+            nakama/go.sum
+      - run: go install golang.org/x/vuln/cmd/govulncheck@latest
+      - name: go sdk
+        working-directory: sdk/go
+        run: govulncheck ./...
+      - name: nakama module
+        working-directory: nakama
+        run: govulncheck ./...
+
+  trivy:
+    name: trivy (filesystem + config)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          scan-type: fs
+          scanners: vuln,secret,misconfig
+          severity: CRITICAL,HIGH
+          ignore-unfixed: true
+          exit-code: "1"
+          skip-dirs: target,console/node_modules,sdk/ts/node_modules
+        env:
+          TRIVY_IGNOREFILE: .trivyignore.yaml
