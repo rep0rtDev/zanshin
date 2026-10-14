@@ -7,6 +7,10 @@ Release automation reads the section whose heading contains the tagged version.
 ## [Unreleased]
 
 ### Added
+- gRPC follows project routing: the `x-zanshin-project` metadata key, else the `prj` claim of the
+  session token, selects the project (default otherwise); unknown projects answer `NOT_FOUND`.
+- Swagger UI on `/docs` is vendored and served from the binary (no unpkg CDN); the page works
+  offline and behind a strict CSP.
 - Multi-project: several isolated games / environments in one deployment. Every non-default project
   gets its own PostgreSQL schema (`zanshin_<slug>`, migrated on creation), Redis namespace and
   ClickHouse database, with its own configuration, players, events, API keys and housekeeping;
