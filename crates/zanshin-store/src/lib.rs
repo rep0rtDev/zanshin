@@ -8,6 +8,7 @@ pub mod audit;
 pub mod cache;
 pub mod clickhouse_sink;
 pub mod console_users;
+pub mod currency;
 pub mod events;
 pub mod experiments;
 pub mod export;

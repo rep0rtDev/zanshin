@@ -127,11 +127,37 @@ async fn label_usage(
 
 // ---- event definitions ----------------------------------------------------------------------
 
+#[derive(Deserialize, Default)]
+struct DefFilter {
+    /// Only core (`true`) or only custom (`false`) definitions.
+    #[serde(default)]
+    core: Option<bool>,
+    /// Only synthetic `$…` events (`true`) or hide them (`false`).
+    #[serde(default)]
+    synthetic: Option<bool>,
+    #[serde(default)]
+    discovered: Option<bool>,
+    #[serde(default)]
+    q: Option<String>,
+}
+
 async fn list_event_defs(
     State(state): State<AppState>,
     AdminAuth(_): AdminAuth,
+    Query(f): Query<DefFilter>,
 ) -> ApiResult<Json<Vec<EventDefinition>>> {
-    Ok(Json(svc(&state).repo.list_event_definitions().await?))
+    let q = f.q.unwrap_or_default().to_lowercase();
+    let items = svc(&state)
+        .repo
+        .list_event_definitions()
+        .await?
+        .into_iter()
+        .filter(|d| f.core.is_none_or(|c| d.is_core == c))
+        .filter(|d| f.synthetic.is_none_or(|s| d.name.starts_with('$') == s))
+        .filter(|d| f.discovered.is_none_or(|x| d.discovered == x))
+        .filter(|d| q.is_empty() || d.name.to_lowercase().contains(&q) || d.description.to_lowercase().contains(&q))
+        .collect();
+    Ok(Json(items))
 }
 
 #[derive(Deserialize)]

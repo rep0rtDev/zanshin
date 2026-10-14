@@ -44,8 +44,49 @@ function useErr() {
 
 const EMPTY_DEF: Partial<EventDef> = { name: '', description: '', value_type: 'any', metadata_schema: null, exclude_from_activity: false, tags: [] };
 
+type Rate = { day: string; code: string; usd_per_unit: number; source: string };
+
+function CurrencyRates() {
+  const q = useLoad(() => get<{ items: Rate[]; currencies: string[]; remote_configured: boolean }>('/currency-rates'));
+  const [open, setOpen] = useState(false);
+  const [code, setCode] = useState('EUR');
+  const [rate, setRate] = useState('1.08');
+  const { error, run } = useErr();
+  const latest = new Map<string, Rate>();
+  for (const r of q.data?.items ?? []) latest.set(r.code, r);
+  const add = () => run(async () => { await put('/currency-rates', { rates: { [code.toUpperCase()]: Number(rate) } }); q.reload(); });
+  const refresh = () => run(async () => { await post('/currency-rates/refresh', {}); q.reload(); });
+  return (
+    <div className="card stack">
+      <div className="row" style={{ alignItems: 'center' }}>
+        <strong>Currency → USD rates</strong>
+        <span className="hint">{latest.size} currencies · revenue metadata gets <code>amount_usd</code> at ingest · feed {q.data?.remote_configured ? 'configured' : 'not configured (taxonomy.currency_rates_url)'}</span>
+        <div className="spacer" />
+        {q.data?.remote_configured && <button className="btn secondary" onClick={refresh}>Refresh from feed</button>}
+        <button className="btn secondary" onClick={() => setOpen(!open)}>{open ? 'Hide' : 'Show'}</button>
+      </div>
+      <ErrorBox error={error ?? q.error} />
+      {open && (
+        <>
+          <div className="row" style={{ alignItems: 'end' }}>
+            <Field label="Code"><input value={code} onChange={(e) => setCode(e.target.value)} style={{ width: 80 }} /></Field>
+            <Field label="USD per unit"><input value={rate} onChange={(e) => setRate(e.target.value)} style={{ width: 120 }} /></Field>
+            <button className="btn" onClick={add} disabled={!/^[A-Za-z]{3}$/.test(code) || !(Number(rate) > 0)}>Set today's rate</button>
+          </div>
+          <Table<Rate> rows={Array.from(latest.values())} rowKey={(r) => r.code} empty="No rates yet — USD amounts are taken as-is" cols={[
+            { h: 'Code', c: (r) => <code>{r.code}</code> }, { h: 'USD per unit', c: (r) => r.usd_per_unit }, { h: 'Day', c: (r) => r.day }, { h: 'Source', c: (r) => r.source },
+          ]} />
+        </>
+      )}
+    </div>
+  );
+}
+
 function Events() {
-  const defs = useLoad(() => get<EventDef[]>('/taxonomy/events'));
+  const [showCore, setShowCore] = useState(true);
+  const [showSynthetic, setShowSynthetic] = useState(false);
+  const [onlyDiscovered, setOnlyDiscovered] = useState(false);
+  const defs = useLoad(() => get<EventDef[]>('/taxonomy/events' + qs({ core: showCore ? undefined : false, synthetic: showSynthetic ? undefined : false, discovered: onlyDiscovered ? true : undefined })), [showCore, showSynthetic, onlyDiscovered]);
   const settings = useLoad(() => get<Settings>('/taxonomy/settings'));
   const rejected = useLoad(() => get<Rejected[]>('/taxonomy/rejected' + qs({ limit: 100 })));
   const [edit, setEdit] = useState<Partial<EventDef> | null>(null);
@@ -70,9 +111,13 @@ function Events() {
         <div className="field"><span className="label">Geo-IP</span><Badge tone={settings.data?.geoip_enabled ? 'ok' : 'muted'}>{settings.data?.geoip_enabled ? 'enabled' : 'not configured'}</Badge></div>
         <div className="field"><span className="label">Session inactivity</span><span>{settings.data ? `${Math.round(settings.data.session_inactivity_secs / 60)} min` : '…'}</span></div>
         <div className="spacer" />
+        <label className="hint" style={{ whiteSpace: 'nowrap' }}><input type="checkbox" checked={showCore} onChange={(e) => setShowCore(e.target.checked)} /> Show core</label>
+        <label className="hint" style={{ whiteSpace: 'nowrap' }}><input type="checkbox" checked={showSynthetic} onChange={(e) => setShowSynthetic(e.target.checked)} /> Show synthetic</label>
+        <label className="hint" style={{ whiteSpace: 'nowrap' }}><input type="checkbox" checked={onlyDiscovered} onChange={(e) => setOnlyDiscovered(e.target.checked)} /> Only discovered</label>
         <input placeholder="Filter events" value={filter} onChange={(e) => setFilter(e.target.value)} style={{ maxWidth: 220 }} />
         <button className="btn" onClick={() => setEdit({ ...EMPTY_DEF })}>New event</button>
       </div>
+      <CurrencyRates />
       <ErrorBox error={error ?? defs.error ?? settings.error} />
       {edit && (
         <div className="card">

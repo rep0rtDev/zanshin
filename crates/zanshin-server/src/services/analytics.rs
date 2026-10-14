@@ -8,7 +8,7 @@ use serde_json::{json, Value};
 use uuid::Uuid;
 use zanshin_core::{
     analytics::{
-        fold_funnel_model, Annotation, Dashboard, EventFilter, FunnelModel, FunnelStep, Widget,
+        Annotation, Dashboard, EventFilter, FunnelModel, FunnelStep, Widget,
         WidgetKind,
     },
     flags::validate_key,
@@ -53,12 +53,20 @@ pub struct FunnelQuery {
     #[serde(default)]
     pub model: FunnelModel,
     #[serde(default)]
+    pub count: zanshin_core::analytics::FunnelCount,
+    #[serde(default)]
+    pub cohort: zanshin_core::analytics::FunnelCohort,
+    #[serde(default)]
     pub filter: EventFilter,
 }
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct ExploreQuery {
+    #[serde(default)]
     pub event: String,
+    /// Overlay mode: several events computed with the same range/granularity/filter.
+    #[serde(default)]
+    pub events: Vec<String>,
     #[serde(default)]
     pub from: Option<DateTime<Utc>>,
     #[serde(default)]
@@ -362,7 +370,17 @@ impl AnalyticsService {
         q.filter.validate().map_err(Error::invalid)?;
         let rows = self
             .events
-            .funnel_rows(&names, from, to, FUNNEL_ROW_CAP, &q.filter)
+            .funnel_rows(
+                &names,
+                if q.cohort == zanshin_core::analytics::FunnelCohort::Shifting {
+                    from - chrono::Duration::seconds(window_secs)
+                } else {
+                    from
+                },
+                to,
+                FUNNEL_ROW_CAP,
+                &q.filter,
+            )
             .await?;
         let truncated = rows.len() as i64 >= FUNNEL_ROW_CAP;
         let mut folded = Vec::with_capacity(rows.len());
@@ -373,7 +391,14 @@ impl AnalyticsService {
                 }
             }
         }
-        let counts = fold_funnel_model(folded, q.steps.len(), window_secs, q.model);
+        let counts = zanshin_core::analytics::fold_funnel_v2(
+            folded,
+            q.steps.len(),
+            window_secs,
+            q.model,
+            q.count,
+            (q.cohort == zanshin_core::analytics::FunnelCohort::Shifting).then_some(from),
+        );
         let first = counts.first().copied().unwrap_or(0);
         let steps: Vec<Value> = q
             .steps
@@ -396,7 +421,26 @@ impl AnalyticsService {
     }
 
     /// Ad-hoc event explorer: buckets × optional group with count / identities / sums.
+    /// Explore several events side by side (`events`), one series per event.
+    pub async fn explore_many(&self, q: &ExploreQuery) -> Result<Value> {
+        if q.events.len() > 8 {
+            return Err(Error::invalid("at most 8 events can be overlaid"));
+        }
+        let mut series = Vec::with_capacity(q.events.len());
+        for ev in &q.events {
+            let mut sub = q.clone();
+            sub.events.clear();
+            sub.event = ev.clone();
+            let result = self.explore(&sub).await?;
+            series.push(json!({ "event": ev, "result": result }));
+        }
+        Ok(json!({ "series": series }))
+    }
+
     pub async fn explore(&self, q: &ExploreQuery) -> Result<Value> {
+        if q.event.trim().is_empty() {
+            return Err(Error::invalid("event is required"));
+        }
         q.filter.validate().map_err(Error::invalid)?;
         let (from, to) = window(q.from, q.to, 30)?;
         let g = match q.granularity.as_deref() {
@@ -838,6 +882,8 @@ impl AnalyticsService {
                         model: serde_json::from_value(w.config["model"].clone())
                             .unwrap_or_default(),
                         filter: filter.clone(),
+                        count: Default::default(),
+                        cohort: Default::default(),
                     };
                     self.funnel(&q).await
                 }

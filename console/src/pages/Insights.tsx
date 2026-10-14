@@ -89,10 +89,14 @@ function Retention({ filter }: { filter: Filter }) {
   const r = useRange();
   const [days, setDays] = useState('1,3,7,14,30');
   const [cumulative, setCumulative] = useState(false);
-  const q = useLoad(() => get<{ days: number[]; cohorts: Cohort[]; installs: number }>('/analytics/retention' + qs({ from: r.from, days, cumulative, ...filterQs(filter) })), [r.from, days, cumulative, JSON.stringify(filter)]);
+  const [opKind, setOpKind] = useState<'' | 'live' | 'experiment'>('');
+  const [opKey, setOpKey] = useState('');
+  const [opVariant, setOpVariant] = useState('');
+  const opFilter = opKind && opKey ? { ...filter, experiment: opKind === 'live' ? `live:${opKey}` : opKey, variant: opVariant || undefined } : filter;
+  const q = useLoad(() => get<{ days: number[]; cohorts: Cohort[]; installs: number }>('/analytics/retention' + qs({ from: r.from, days, cumulative, ...filterQs(opFilter) })), [r.from, days, cumulative, opKind, opKey, opVariant, JSON.stringify(filter)]);
   return (
     <div className="stack">
-      <div className="row" style={{ alignItems: 'end' }}>{r.picker}<Text label="Days" value={days} onChange={setDays} mono hint="comma-separated, 1..90" /><Field label="Model"><Toggle value={cumulative} onChange={setCumulative} label={cumulative ? 'cumulative — returned by day N' : 'classic — returned on day N'} /></Field><span className="hint">{fmtNum(q.data?.installs ?? 0)} installs in range</span></div>
+      <div className="row" style={{ alignItems: 'end' }}>{r.picker}<Text label="Days" value={days} onChange={setDays} mono hint="comma-separated, 1..90" /><Field label="Operation" hint="retention of participants of a live event or experiment"><select value={opKind} onChange={(e) => setOpKind(e.target.value as typeof opKind)}><option value="">all players</option><option value="live">live event</option><option value="experiment">experiment</option></select></Field>{opKind && <Text label="Key" value={opKey} onChange={setOpKey} mono />}{opKind && <Text label="Variant" value={opVariant} onChange={setOpVariant} mono hint="optional" />}<Field label="Model"><Toggle value={cumulative} onChange={setCumulative} label={cumulative ? 'cumulative — returned by day N' : 'classic — returned on day N'} /></Field><span className="hint">{fmtNum(q.data?.installs ?? 0)} installs in range</span></div>
       <ErrorBox error={q.error} />
       <Table<Cohort> rows={q.data?.cohorts} rowKey={(c) => c.cohort} empty="No sign-ups in this range" cols={[
         { h: 'Cohort', c: (c) => <code>{c.cohort}</code> }, { h: 'Players', c: (c) => fmtNum(c.size) },
@@ -121,18 +125,66 @@ function StepsEditor({ value, onChange }: { value: FunnelStep[]; onChange: (v: F
   );
 }
 
+type LifetimeRes = { players: number; truncated: boolean; averages: Record<string, number>; buckets: Record<string, { label: string; players: number }[]> };
+
+function Lifetime() {
+  const r = useRange();
+  const q = useLoad(() => get<LifetimeRes>('/analytics/lifetime' + qs({ from: r.from })), [r.from]);
+  const a = q.data?.averages ?? {};
+  const dur = (s: number) => (s >= 3600 ? `${(s / 3600).toFixed(1)} h` : `${Math.round(s / 60)} min`);
+  const Buckets = ({ title, rows }: { title: string; rows?: { label: string; players: number }[] }) => {
+    const max = Math.max(1, ...(rows ?? []).map((b) => b.players));
+    return (
+      <div className="card stack" style={{ flex: 1, minWidth: 220 }}>
+        <strong>{title}</strong>
+        {(rows ?? []).map((b) => (
+          <div key={b.label} className="row" style={{ alignItems: 'center' }}>
+            <span className="mono" style={{ width: 70 }}>{b.label}</span>
+            <div style={{ flex: 1, background: 'var(--border)', height: 14, borderRadius: 4 }}><div style={{ width: `${(b.players / max) * 100}%`, background: '#1a5fb4', height: '100%', borderRadius: 4 }} /></div>
+            <span style={{ width: 70, textAlign: 'right' }}>{fmtNum(b.players)}</span>
+          </div>
+        ))}
+      </div>
+    );
+  };
+  return (
+    <div className="stack">
+      <div className="row" style={{ alignItems: 'end' }}>{r.picker}<span className="hint">Players who installed in the range · lifetime figures from computed properties</span></div>
+      <ErrorBox error={q.error} />
+      <div className="stats">
+        <Stat label="Players" value={fmtNum(q.data?.players ?? 0)} />
+        <Stat label="Avg sessions" value={(a.sessions ?? 0).toFixed(1)} />
+        <Stat label="Avg play time" value={dur(a.play_time_sec ?? 0)} />
+        <Stat label="Avg lifetime" value={`${(a.lifetime_days ?? 0).toFixed(1)} d`} />
+        <Stat label="Payers" value={pct((a.payers_pct ?? 0) / 100)} />
+        <Stat label="Avg spend" value={money(a.spend_usd ?? 0)} />
+        <Stat label="ARPPU" value={money(a.arppu_usd ?? 0)} />
+      </div>
+      {q.data?.truncated && <div className="hint">Computed on the first 200k players of the range.</div>}
+      <div className="row" style={{ alignItems: 'stretch', flexWrap: 'wrap' }}>
+        <Buckets title="Sessions" rows={q.data?.buckets.sessions} />
+        <Buckets title="Play time" rows={q.data?.buckets.play_time} />
+        <Buckets title="Lifetime" rows={q.data?.buckets.lifetime_days} />
+        <Buckets title="Spend (USD)" rows={q.data?.buckets.spend_usd} />
+      </div>
+    </div>
+  );
+}
+
 function Funnels({ filter }: { filter: Filter }) {
   const r = useRange();
   const [model, setModel] = useState<'unlimited' | 'window' | 'step' | 'session'>('window');
+  const [count, setCount] = useState<'unique' | 'total'>('unique');
+  const [cohort, setCohort] = useState<'static' | 'shifting'>('static');
   const [steps, setSteps] = useState<FunnelStep[]>([{ name: '$session_start' }, { name: 'purchase' }]);
   const [windowSecs, setWindowSecs] = useState(7 * 86400);
   const [res, setRes] = useState<{ entered: number; steps: FunnelStep[]; truncated: boolean } | null>(null);
   const [err, setErr] = useState<Error | null>(null);
-  const run = () => post<{ entered: number; steps: FunnelStep[]; truncated: boolean }>('/analytics/funnel', { steps, window_secs: windowSecs, from: r.from, model, filter }).then((d) => { setRes(d); setErr(null); }, setErr);
+  const run = () => post<{ entered: number; steps: FunnelStep[]; truncated: boolean }>('/analytics/funnel', { steps, window_secs: windowSecs, from: r.from, model, count, cohort, filter }).then((d) => { setRes(d); setErr(null); }, setErr);
   const max = Math.max(1, res?.entered ?? 1);
   return (
     <div className="stack">
-      <div className="row" style={{ alignItems: 'end' }}>{r.picker}<Field label="Model"><select value={model} onChange={(e) => setModel(e.target.value as typeof model)}><option value="window">window — all steps within N s of the first</option><option value="step">step — each step within N s of the previous</option><option value="session">session — all steps in one play session</option><option value="unlimited">unlimited — any time in range</option></select></Field>{model !== 'session' && model !== 'unlimited' && <Num label="Window (s)" value={windowSecs} onChange={(v) => setWindowSecs(v ?? 86400)} min={1} />}<button className="btn" onClick={run} disabled={steps.some((s) => !s.name)}>Run</button></div>
+      <div className="row" style={{ alignItems: 'end' }}>{r.picker}<Field label="Count" hint="unique: once per player · total: every entry"><select value={count} onChange={(e) => setCount(e.target.value as typeof count)}><option value="unique">unique players</option><option value="total">total entries</option></select></Field><Field label="Cohort" hint="static: entered in range · shifting: conversions in range, entry may be earlier"><select value={cohort} onChange={(e) => setCohort(e.target.value as typeof cohort)}><option value="static">static</option><option value="shifting">shifting</option></select></Field><Field label="Model"><select value={model} onChange={(e) => setModel(e.target.value as typeof model)}><option value="window">window — all steps within N s of the first</option><option value="step">step — each step within N s of the previous</option><option value="session">session — all steps in one play session</option><option value="unlimited">unlimited — any time in range</option></select></Field>{model !== 'session' && model !== 'unlimited' && <Num label="Window (s)" value={windowSecs} onChange={(v) => setWindowSecs(v ?? 86400)} min={1} />}<button className="btn" onClick={run} disabled={steps.some((s) => !s.name)}>Run</button></div>
       <StepsEditor value={steps} onChange={setSteps} />
       <ErrorBox error={err} />
       {res && (
@@ -237,7 +289,7 @@ export default function Insights() {
   const [filter, setFilter] = useState<Filter>(() => { try { return JSON.parse(localStorage.getItem('zanshin.insights.filter') || '{}'); } catch { return {}; } });
   const pick = (t: Tab) => { setTab(t); localStorage.setItem('zanshin.insights.tab', t); };
   const setF = (f: Filter) => { setFilter(f); localStorage.setItem('zanshin.insights.filter', JSON.stringify(f)); };
-  const tabs: [Tab, string][] = [['status', 'Status'], ['calendar', 'Calendar'], ['metrics', 'Game metrics'], ['explore', 'Explore'], ['map', 'Map'], ['playtime', 'Playtime'], ['retention', 'Retention'], ['funnels', 'Funnels'], ['ltv', 'LTV / RoAS'], ['errors', 'Errors'], ['dashboards', 'Dashboards']];
+  const tabs: [Tab, string][] = [['status', 'Status'], ['calendar', 'Calendar'], ['metrics', 'Game metrics'], ['explore', 'Explore'], ['lifetime', 'Lifetime'], ['map', 'Map'], ['playtime', 'Playtime'], ['retention', 'Retention'], ['funnels', 'Funnels'], ['ltv', 'LTV / RoAS'], ['errors', 'Errors'], ['dashboards', 'Dashboards']];
   const chips = <div className="chips" style={{ marginBottom: 12 }}>{tabs.map(([k, l]) => <button key={k} className={'chip' + (k === tab ? ' on' : '')} onClick={() => pick(k)}>{l}</button>)}</div>;
   if (tab === 'dashboards') return <>{chips}<Dashboards /></>;
   return (
@@ -248,6 +300,7 @@ export default function Insights() {
       {tab === 'calendar' && <Calendar />}
       {tab === 'metrics' && <GameMetrics filter={filter} />}
       {tab === 'explore' && <Explore filter={filter} />}
+      {tab === 'lifetime' && <Lifetime />}
       {tab === 'map' && <PlayerMap filter={filter} />}
       {tab === 'playtime' && <Playtime filter={filter} />}
       {tab === 'retention' && <Retention filter={filter} />}

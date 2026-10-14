@@ -223,7 +223,7 @@ pub fn resource_for_path(path: &str) -> Option<&'static str> {
         "journeys" => "journeys",
         "identities" => "identities",
         "taxonomy" | "labels" | "schemas" => "taxonomy",
-        "analytics" | "dashboards" | "stats" => "analytics",
+        "analytics" | "dashboards" | "stats" | "currency-rates" => "analytics",
         "data" | "export-sinks" | "config" => "data",
         "audit" => "audit",
         "api-keys" => "api_keys",

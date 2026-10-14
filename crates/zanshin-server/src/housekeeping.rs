@@ -57,6 +57,12 @@ async fn sweeps(state: &AppState) {
     locked(state, "scheduled_sweep", || sweep_scheduled(state)).await;
     locked(state, "idle_sessions", || close_idle_sessions(state)).await;
     locked(state, "export_runs", || state.export.run_due()).await;
+    locked(state, "currency_rates", || async {
+        if let Err(e) = state.currency.refresh_remote(false).await {
+            tracing::warn!(error = %e, "currency rate refresh failed");
+        }
+    })
+    .await;
     locked(state, "audience_recompute", || async {
         for key in state.audiences.due_for_recompute().await {
             if let Err(e) = state.audiences.recompute(&key).await {

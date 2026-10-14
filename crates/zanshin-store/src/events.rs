@@ -183,14 +183,14 @@ fn ch_err(e: clickhouse::error::Error) -> Error {
 /// Constant-shape filter clauses: every dimension is always bound (empty = no restriction), so
 /// the SQL text never changes with the filter. ClickHouse binds positionally (`?`), Postgres by
 /// number starting at `$base`.
-const CH_FILTER: &str = " AND (? = '' OR country = ?) AND (? = '' OR platform = ?) AND (? = '' OR app_version = ?) AND (? = '' OR experiments[?] = ?)";
+const CH_FILTER: &str = " AND (? = '' OR country = ?) AND (? = '' OR platform = ?) AND (? = '' OR app_version = ?) AND (? = '' OR experiments[?] = ?) AND (? = '1' OR NOT mapContains(experiments, '$test'))";
 
 fn pg_filter(base: usize) -> String {
-    let (c, p, v, e, x) = (base, base + 1, base + 2, base + 3, base + 4);
-    format!(" AND (${c} = '' OR country = ${c}) AND (${p} = '' OR platform = ${p}) AND (${v} = '' OR app_version = ${v}) AND (${e} = '' OR experiments->>${e} = ${x})")
+    let (c, p, v, e, x, t) = (base, base + 1, base + 2, base + 3, base + 4, base + 5);
+    format!(" AND (${c} = '' OR country = ${c}) AND (${p} = '' OR platform = ${p}) AND (${v} = '' OR app_version = ${v}) AND (${e} = '' OR experiments->>${e} = ${x}) AND (${t} = '1' OR NOT (experiments ? '$test'))")
 }
 
-fn fparts(f: &EventFilter) -> [String; 5] {
+fn fparts(f: &EventFilter) -> [String; 6] {
     let g = |o: &Option<String>| o.clone().unwrap_or_default();
     [
         g(&f.country),
@@ -198,6 +198,7 @@ fn fparts(f: &EventFilter) -> [String; 5] {
         g(&f.app_version),
         g(&f.experiment),
         g(&f.variant),
+        if f.include_test { "1".into() } else { String::new() },
     ]
 }
 
@@ -207,7 +208,7 @@ trait BindFilter: Sized {
 
 impl BindFilter for clickhouse::query::Query {
     fn bind_filter(self, f: &EventFilter) -> Self {
-        let [c, p, v, e, x] = fparts(f);
+        let [c, p, v, e, x, t] = fparts(f);
         self.bind(c.clone())
             .bind(c)
             .bind(p.clone())
@@ -217,6 +218,7 @@ impl BindFilter for clickhouse::query::Query {
             .bind(e.clone())
             .bind(e)
             .bind(x)
+            .bind(t)
     }
 }
 
@@ -224,8 +226,8 @@ impl<'q, O> BindFilter
     for sqlx::query::QueryAs<'q, sqlx::Postgres, O, sqlx::postgres::PgArguments>
 {
     fn bind_filter(self, f: &EventFilter) -> Self {
-        let [c, p, v, e, x] = fparts(f);
-        self.bind(c).bind(p).bind(v).bind(e).bind(x)
+        let [c, p, v, e, x, t] = fparts(f);
+        self.bind(c).bind(p).bind(v).bind(e).bind(x).bind(t)
     }
 }
 

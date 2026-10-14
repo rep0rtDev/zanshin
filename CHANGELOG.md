@@ -7,6 +7,21 @@ Release automation reads the section whose heading contains the tagged version.
 ## [Unreleased]
 
 ### Added
+- Core events + analytics v4: the rest of the standard core catalog (`adImpression`,
+  `currencyGranted/Spent`, `itemGranted/Spent/Consumed`, `eventLeaderboardScore/Rank`,
+  `achievementUnlocked`, `questStarted/Completed`, `inviteSent/Accepted`, `socialShare`,
+  `appUpdated`) with immutable schemas (value type and metadata schema of core events can't be
+  changed; description/tags can), daily currency → USD rates (`/admin/v1/currency-rates` manual
+  table, optional feed `taxonomy.currency_rates_url` polled by housekeeping, `metadata.amount_usd`
+  filled at ingest), computed core properties per player (`purchases`, `spend_usd`,
+  `last_purchase_at`, `ad_impressions`, `ads_completed`, `ad_revenue_usd`,
+  `currency.<code>.granted/spent`), `metadata.test = true` marks QA events (excluded from computed
+  properties and from every report unless the filter sets `include_test`), taxonomy list filters
+  `core` / `synthetic` / `discovered` / `q` with Show core / Show synthetic toggles in the console,
+  funnels v2 (`count: unique|total`, `cohort: static|shifting`), retention by operation (live event
+  / experiment participants) in the console, `GET /admin/v1/analytics/lifetime` (lifetime
+  engagement: sessions / play time / lifetime / spend distributions, payer share, ARPPU) and
+  multi-event Explore overlay (`events: [...]` → one series per event).
 - Live events v3: variants inside a live event (deterministic per-player assignment by weight,
   per-variant payload and flag overrides on top of the event's), monitor metrics attached to an
   event (`metrics`), analytics events tagged `live:<key>` → variant while the player is in the
