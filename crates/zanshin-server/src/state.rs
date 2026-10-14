@@ -4,7 +4,7 @@ use zanshin_core::token::TokenIssuer;
 use zanshin_store::{
     api_keys::ApiKeyRepo, audiences::AudienceRepo, experiments::ExperimentRepo, flags::FlagRepo,
     identities::IdentityRepo, live_events::LiveEventRepo, messages::MessageRepo,
-    sessions::SessionRepo, Stores,
+    push::PushTokenRepo, sessions::SessionRepo, Stores,
 };
 
 use crate::{
@@ -20,6 +20,7 @@ use crate::{
         identity::IdentityService,
         live_events::LiveEventService,
         messages::MessageService,
+        push::PushService,
     },
 };
 
@@ -36,6 +37,7 @@ pub struct AppState {
     pub events: EventService,
     pub live_events: LiveEventService,
     pub messages: MessageService,
+    pub push: PushService,
     pub eval: Evaluator,
     pub started_at: chrono::DateTime<chrono::Utc>,
 }
@@ -126,7 +128,12 @@ impl AppState {
             events.clone(),
         );
         let live_events = LiveEventService::new(LiveEventRepo::new(stores.pg.clone()), bus.clone());
-        let messages = MessageService::new(MessageRepo::new(stores.pg.clone()), bus.clone());
+        let push = PushService::new(PushTokenRepo::new(stores.pg.clone()), &cfg.push)?;
+        let messages = MessageService::new(
+            MessageRepo::new(stores.pg.clone()),
+            bus.clone(),
+            push.clone(),
+        );
         let eval = Evaluator::new(
             flags.clone(),
             audiences.clone(),
@@ -147,6 +154,7 @@ impl AppState {
             events,
             live_events,
             messages,
+            push,
             eval,
             started_at: chrono::Utc::now(),
         })

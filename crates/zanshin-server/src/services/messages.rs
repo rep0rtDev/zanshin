@@ -77,6 +77,8 @@ pub struct MessagePatch {
     #[serde(default)]
     pub priority: Option<i32>,
     #[serde(default)]
+    pub push: Option<bool>,
+    #[serde(default)]
     pub tags: Option<Vec<String>>,
 }
 
@@ -84,6 +86,9 @@ pub struct MessagePatch {
 #[derive(Debug, Clone, Deserialize)]
 pub struct DirectMessage {
     pub title: String,
+    /// Also send a push notification.
+    #[serde(default)]
+    pub push: bool,
     #[serde(default)]
     pub body: String,
     #[serde(default)]
@@ -100,13 +105,159 @@ pub struct DirectMessage {
 pub struct MessageService {
     repo: MessageRepo,
     bus: ChangeBus,
+    push: super::push::PushService,
     pub catalog: Arc<Catalog<MessageCampaign>>,
 }
 
 impl MessageService {
-    pub fn new(repo: MessageRepo, bus: ChangeBus) -> Self {
+    pub fn new(repo: MessageRepo, bus: ChangeBus, push: super::push::PushService) -> Self {
         let catalog = Catalog::new(ChangeKind::Message, "message", Arc::new(repo.clone()));
-        Self { repo, bus, catalog }
+        Self {
+            repo,
+            bus,
+            push,
+            catalog,
+        }
+    }
+
+    fn notification(
+        title: &str,
+        body: &str,
+        image_url: &str,
+        inbox_id: Uuid,
+        key: Option<&str>,
+    ) -> zanshin_core::push::Notification {
+        let mut data = serde_json::Map::new();
+        data.insert(
+            "zanshin_message_id".into(),
+            Value::String(inbox_id.to_string()),
+        );
+        if let Some(k) = key {
+            data.insert("zanshin_message_key".into(), Value::String(k.to_string()));
+        }
+        zanshin_core::push::Notification {
+            title: title.to_string(),
+            body: body.to_string(),
+            image_url: image_url.to_string(),
+            data,
+        }
+    }
+
+    async fn push_copy(
+        &self,
+        identity_id: Uuid,
+        inbox_id: Uuid,
+        n: &zanshin_core::push::Notification,
+    ) {
+        if self.push.notify(identity_id, n).await > 0 {
+            let _ = self.repo.mark_pushed(inbox_id).await;
+        }
+    }
+
+    /// Deliver one campaign to one identity if it targets it and was not delivered yet.
+    /// Returns the new inbox id.
+    async fn deliver_campaign(
+        &self,
+        m: &MessageCampaign,
+        identity: &Identity,
+        flat: &PropertyMap,
+        audiences: &HashSet<String>,
+        now: chrono::DateTime<chrono::Utc>,
+    ) -> Result<Option<Uuid>> {
+        let member = |k: &str| audiences.contains(k);
+        if !m.targets(&identity.external_id, flat, &member) {
+            return Ok(None);
+        }
+        let title = MessageCampaign::render(&m.title, flat);
+        let body = MessageCampaign::render(&m.body, flat);
+        let expires_at = m.ttl_secs.map(|t| now + chrono::Duration::seconds(t));
+        let inserted = self
+            .repo
+            .deliver(
+                identity.id,
+                Delivery {
+                    message_id: Some(m.id),
+                    key: Some(&m.key),
+                    title: &title,
+                    body: &body,
+                    image_url: &m.image_url,
+                    payload: &m.payload,
+                    priority: m.priority,
+                    expires_at,
+                },
+            )
+            .await?;
+        if let Some(id) = inserted {
+            metrics::counter!("zanshin_messages_delivered_total", "message" => m.key.clone())
+                .increment(1);
+            if m.push {
+                self.push_copy(
+                    identity.id,
+                    id,
+                    &Self::notification(&title, &body, &m.image_url, id, Some(&m.key)),
+                )
+                .await;
+            }
+        }
+        Ok(inserted)
+    }
+
+    /// Proactively deliver live push campaigns to every identity with a registered device, so the
+    /// notification goes out without waiting for the client to open its inbox. Returns deliveries.
+    pub async fn sweep_push_campaigns(
+        &self,
+        eval: &super::eval::Evaluator,
+        identities: &zanshin_store::identities::IdentityRepo,
+    ) -> Result<usize> {
+        let now = chrono::Utc::now();
+        let campaigns: Vec<_> = self
+            .catalog
+            .list()
+            .await
+            .into_iter()
+            .filter(|m| m.push && m.is_live(now))
+            .collect();
+        if campaigns.is_empty() || !self.push.enabled() {
+            return Ok(0);
+        }
+        let mut delivered = 0;
+        let mut after = None;
+        loop {
+            let ids = self.push.identities_with_tokens(after, 500).await?;
+            let Some(last) = ids.last().copied() else {
+                break;
+            };
+            for id in ids {
+                let Ok(identity) = identities.get(id).await else {
+                    continue;
+                };
+                let flat = super::eval::flatten_with_identity(&identity, &identity.properties);
+                let audiences = eval
+                    .audiences
+                    .memberships(&identity.external_id, &flat)
+                    .await;
+                let done: HashSet<Uuid> = self
+                    .repo
+                    .delivered_campaigns(identity.id)
+                    .await?
+                    .into_iter()
+                    .collect();
+                for m in campaigns.iter().filter(|m| !done.contains(&m.id)) {
+                    if self
+                        .deliver_campaign(m, &identity, &flat, &audiences, now)
+                        .await?
+                        .is_some()
+                    {
+                        delivered += 1;
+                    }
+                }
+            }
+            after = Some(last);
+        }
+        if delivered > 0 {
+            tracing::info!(delivered, "push campaigns swept");
+        }
+        Ok(delivered)
     }
 
     pub async fn list(&self) -> Vec<Arc<MessageCampaign>> {
@@ -127,7 +278,6 @@ impl MessageService {
         limit: i64,
     ) -> Result<Vec<InboxMessage>> {
         let now = chrono::Utc::now();
-        let member = |k: &str| audiences.contains(k);
         let live: Vec<_> = self
             .catalog
             .list()
@@ -142,31 +292,9 @@ impl MessageService {
                 .await?
                 .into_iter()
                 .collect();
-            for m in live.iter().filter(|m| {
-                !delivered.contains(&m.id) && m.targets(&identity.external_id, flat, &member)
-            }) {
-                let title = MessageCampaign::render(&m.title, flat);
-                let body = MessageCampaign::render(&m.body, flat);
-                let expires_at = m.ttl_secs.map(|t| now + chrono::Duration::seconds(t));
-                let inserted = self
-                    .repo
-                    .deliver(
-                        identity.id,
-                        Delivery {
-                            message_id: Some(m.id),
-                            key: Some(&m.key),
-                            title: &title,
-                            body: &body,
-                            image_url: &m.image_url,
-                            payload: &m.payload,
-                            priority: m.priority,
-                            expires_at,
-                        },
-                    )
+            for m in live.iter().filter(|m| !delivered.contains(&m.id)) {
+                self.deliver_campaign(m, identity, flat, audiences, now)
                     .await?;
-                if inserted.is_some() {
-                    metrics::counter!("zanshin_messages_delivered_total", "message" => m.key.clone()).increment(1);
-                }
             }
         }
         self.repo.inbox(identity.id, limit).await
@@ -213,6 +341,14 @@ impl MessageService {
             )
             .await?
             .ok_or_else(|| Error::internal(anyhow::anyhow!("direct message not inserted")))?;
+        if msg.push {
+            self.push_copy(
+                identity.id,
+                id,
+                &Self::notification(&title, &body, &msg.image_url, id, None),
+            )
+            .await;
+        }
         let mut c = self.bus.change(ChangeKind::Message, "direct", 0);
         c.identity_id = Some(identity.id);
         self.bus.publish(c).await;
@@ -245,6 +381,7 @@ impl MessageService {
             ends_at: p.ends_at.flatten(),
             ttl_secs: p.ttl_secs.flatten(),
             priority: p.priority.unwrap_or(0),
+            push: p.push.unwrap_or(false),
             tags: normalize_tags(p.tags.unwrap_or_default())?,
             version: 1,
             created_at: now,
@@ -301,6 +438,9 @@ impl MessageService {
         }
         if let Some(v) = p.priority {
             m.priority = v;
+        }
+        if let Some(v) = p.push {
+            m.push = v;
         }
         if let Some(v) = p.tags {
             m.tags = normalize_tags(v)?;

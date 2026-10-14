@@ -45,6 +45,9 @@ pub struct MessageCampaign {
     pub ttl_secs: Option<i64>,
     #[serde(default)]
     pub priority: i32,
+    /// Also send a push notification to the identity's registered devices on delivery.
+    #[serde(default)]
+    pub push: bool,
     #[serde(default)]
     pub tags: Vec<String>,
     pub version: i64,

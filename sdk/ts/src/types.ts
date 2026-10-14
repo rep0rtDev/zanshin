@@ -77,6 +77,16 @@ export interface InboxMessage<T = JsonValue> {
   expires_at: string | null;
 }
 
+export interface PushToken {
+  identity_id: string;
+  platform: 'fcm' | 'apns';
+  token: string;
+  device_id: string;
+  created_at: string;
+  updated_at: string;
+  failures: number;
+}
+
 export interface EventInput {
   name: string;
   value?: string;

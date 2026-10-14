@@ -7,6 +7,7 @@ import {
   LiveEvent,
   Properties,
   PropertyMap,
+  PushToken,
   Session,
   ZanshinError,
 } from './types.js';
@@ -267,6 +268,21 @@ export class ZanshinClient {
   /** Consume (remove) a message; it is never redelivered. */
   async consume(id: string): Promise<void> {
     await this.request('DELETE', '/v1/messages/' + encodeURIComponent(id));
+  }
+
+  // ---- push tokens -------------------------------------------------------------------------
+
+  /** Register this device for push notifications (FCM registration token or APNs hex token). */
+  registerPushToken(platform: 'fcm' | 'apns', token: string, deviceId?: string): Promise<PushToken> {
+    return this.request('PUT', '/v1/push-tokens', { body: { platform, token, device_id: deviceId ?? '' } });
+  }
+
+  async pushTokens(): Promise<PushToken[]> {
+    return (await this.request<{ tokens: PushToken[] }>('GET', '/v1/push-tokens')).tokens;
+  }
+
+  async unregisterPushToken(token: string): Promise<void> {
+    await this.request('DELETE', '/v1/push-tokens/' + encodeURIComponent(token));
   }
 
   // ---- analytics ---------------------------------------------------------------------------

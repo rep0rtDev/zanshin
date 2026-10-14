@@ -27,6 +27,7 @@ struct Row {
     ends_at: Option<DateTime<Utc>>,
     ttl_secs: Option<i64>,
     priority: i32,
+    push: bool,
     tags: Vec<String>,
     version: i64,
     created_at: DateTime<Utc>,
@@ -53,6 +54,7 @@ impl TryFrom<Row> for MessageCampaign {
             ends_at: r.ends_at,
             ttl_secs: r.ttl_secs,
             priority: r.priority,
+            push: r.push,
             tags: r.tags,
             version: r.version,
             created_at: r.created_at,
@@ -92,7 +94,7 @@ impl From<InboxRow> for InboxMessage {
     }
 }
 
-const COLS: &str = "id, key, name, enabled, title, body, image_url, payload, condition, audiences, percentage, starts_at, ends_at, ttl_secs, priority, tags, version, created_at, updated_at";
+const COLS: &str = "id, key, name, enabled, title, body, image_url, payload, condition, audiences, percentage, starts_at, ends_at, ttl_secs, priority, push, tags, version, created_at, updated_at";
 const INBOX_COLS: &str =
     "id, key, title, body, image_url, payload, priority, delivered_at, read_at, expires_at";
 
@@ -140,8 +142,8 @@ impl MessageRepo {
 
     pub async fn create(&self, m: &MessageCampaign) -> Result<MessageCampaign> {
         let row: Row = sqlx::query_as(&format!(
-            "INSERT INTO messages (id, key, name, enabled, title, body, image_url, payload, condition, audiences, percentage, starts_at, ends_at, ttl_secs, priority, tags)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16) RETURNING {COLS}"
+            "INSERT INTO messages (id, key, name, enabled, title, body, image_url, payload, condition, audiences, percentage, starts_at, ends_at, ttl_secs, priority, tags, push)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17) RETURNING {COLS}"
         ))
         .bind(m.id)
         .bind(&m.key)
@@ -159,6 +161,7 @@ impl MessageRepo {
         .bind(m.ttl_secs)
         .bind(m.priority)
         .bind(&m.tags)
+        .bind(m.push)
         .fetch_one(&self.pg)
         .await
         .map_err(|err| match map_sqlx(err) {
@@ -171,7 +174,7 @@ impl MessageRepo {
     pub async fn update(&self, m: &MessageCampaign) -> Result<MessageCampaign> {
         let row: Option<Row> = sqlx::query_as(&format!(
             "UPDATE messages SET name = $2, enabled = $3, title = $4, body = $5, image_url = $6, payload = $7, condition = $8, audiences = $9,
-                                 percentage = $10, starts_at = $11, ends_at = $12, ttl_secs = $13, priority = $14, tags = $15,
+                                 percentage = $10, starts_at = $11, ends_at = $12, ttl_secs = $13, priority = $14, tags = $15, push = $16,
                                  version = version + 1, updated_at = now()
              WHERE key = $1 RETURNING {COLS}"
         ))
@@ -190,6 +193,7 @@ impl MessageRepo {
         .bind(m.ttl_secs)
         .bind(m.priority)
         .bind(&m.tags)
+        .bind(m.push)
         .fetch_optional(&self.pg)
         .await
         .map_err(map_sqlx)?;
@@ -286,6 +290,15 @@ impl MessageRepo {
         if res.rows_affected() == 0 {
             return Err(Error::not_found("message not found"));
         }
+        Ok(())
+    }
+
+    pub async fn mark_pushed(&self, inbox_id: Uuid) -> Result<()> {
+        sqlx::query("UPDATE inbox SET pushed_at = now() WHERE id = $1")
+            .bind(inbox_id)
+            .execute(&self.pg)
+            .await
+            .map_err(map_sqlx)?;
         Ok(())
     }
 
