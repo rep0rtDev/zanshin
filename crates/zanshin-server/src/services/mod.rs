@@ -20,6 +20,7 @@ pub mod limits;
 pub mod live_events;
 pub mod messages;
 pub mod metrics;
+pub mod notifications;
 pub mod oidc;
 pub mod push;
 pub mod refs;

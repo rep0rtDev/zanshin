@@ -91,6 +91,11 @@ variables. `zanshin --check-config` prints the effective configuration with secr
 | Admin console (`console/`, React, embedded in the binary at `/console`): visual rule builder, flags / experiments / audiences / live-event calendar / messages with preview / identities / analytics / API keys / audit log, dark theme | ✅ |
 | Unreal C++ SDK `sdk/unreal` (plugin on engine HTTP/WebSockets/Json modules, Blueprint subsystem) | ✅ |
 | Godot GDScript SDK `sdk/godot` (addon, HTTPRequest + WebSocketPeer, zero deps) | ✅ |
+| Godot 3 GDScript SDK `sdk/godot3` (addon, HTTPRequest + WebSocketClient, zero deps) | ✅ |
+| Defold Lua SDK `sdk/defold` (http + json, optional websocket extension) | ✅ |
+| C++17 SDK `sdk/cpp` (header-only, bring-your-own transport, libcurl adapter) | ✅ |
+| OpenAPI 3 spec + Swagger UI (`/docs`, `/openapi.json`) | ✅ |
+| `zanshinctl` CLI (config export / import / diff / promote, keys, players, flags, sinks) | ✅ |
 | Unity C# SDK `sdk/unity` (UPM, zero deps, netstandard2.1): same surface as the TS SDK incl. push-token registration and WebSocket stream | ✅ |
 | Swift `sdk/swift`, Kotlin / JVM `sdk/kotlin`, Dart / Flutter `sdk/dart` SDKs (zero deps, full client surface, live stream) | ✅ |
 | Nakama runtime modules for Go (`nakama/`), JavaScript (`nakama/ts`) and Lua (`nakama/lua`) with identical RPCs; gRPC at full parity with REST | ✅ |
@@ -221,6 +226,15 @@ version, stores, auth, rate limits and an inventory (`GET /admin/v1/system`).
   endpoints), `FZanshinStream` over the engine `WebSockets` module, Blueprint-friendly `UZanshinSubsystem`.
 - [`sdk/godot`](sdk/godot) — Godot 4.3+ GDScript addon (`Zanshin` autoload): awaitable client with auto refresh,
   typed helpers, `WebSocketPeer` live stream; headless smoke test against a live server.
+- [`sdk/godot3`](sdk/godot3) — Godot 3.5+ GDScript addon with the same surface (`yield(..., "completed")` coroutines,
+  `WebSocketClient` stream).
+- [`sdk/defold`](sdk/defold) — Defold Lua module: callback API over `http`/`json`, auto refresh, live stream through
+  extension-websocket.
+- [`sdk/cpp`](sdk/cpp) — header-only C++17 client (`zanshin::Client`, `Result<T>`, own JSON) with a pluggable `HttpTransport`
+  and a libcurl adapter; for Cocos2d-x and custom engines.
+- `zanshinctl` (`crates/zanshin-cli`, shipped with the release binaries) — `config export|diff|import|promote`, `keys`,
+  `player get|events|flags|delete`, `flags set`, `sinks run`, raw `api` calls; configured via `ZANSHIN_URL` / `ZANSHIN_ADMIN_KEY`.
+- Interactive API reference at `/docs` (Swagger UI) backed by `/openapi.json` / `/openapi.yaml` (`docs/openapi.yaml`).
 - [`sdk/swift`](sdk/swift) — Swift Package (iOS / macOS / tvOS / watchOS / visionOS / Linux): `actor ZanshinClient` with
   `async`/`await`, `ZanshinStream` over `URLSessionWebSocketTask`, zero dependencies.
 - [`sdk/kotlin`](sdk/kotlin) — Kotlin / JVM (Android, servers): JDK 11 `HttpClient` + `WebSocket`, built-in JSON,

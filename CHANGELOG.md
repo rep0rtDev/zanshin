@@ -7,6 +7,20 @@ Release automation reads the section whose heading contains the tagged version.
 ## [Unreleased]
 
 ### Added
+- SDK wave 3 + tooling: Godot 3.5+ addon (`sdk/godot3`), Defold Lua SDK (`sdk/defold`), header-only
+  C++17 SDK with libcurl adapter (`sdk/cpp`), OpenAPI 3 document (`docs/openapi.yaml`, served at
+  `/openapi.yaml` / `/openapi.json`) with Swagger UI on `/docs`, and the `zanshinctl` CLI
+  (`crates/zanshin-cli`: config export / diff / import / promote between servers, history / revert,
+  API keys, player lookup / events / flags / GDPR delete, flags, export sinks, raw API calls) shipped
+  alongside the server binaries.
+- Data lakes v2: Parquet export format (snappy; Databricks / Athena / Spark), `partition: event`
+  (one object per event name under `event=<name>/`), Snowflake sink (S3 stage + `COPY INTO`
+  through the SQL API with key-pair JWT), Redshift sink (S3 + `COPY` through the Data API,
+  provisioned or serverless), `_error` column on exported `$event_error` rows (JSONL / CSV /
+  Parquet / BigQuery). Notification channels (`/admin/v1/notification-channels`): Slack, Discord
+  or generic webhook targets subscribed to `config.changed` / `config.deleted` (optionally only
+  some entity kinds), `export.failed`, `integration.unhealthy`, `alert`; test send, delivery
+  status, console page Platform → Notifications.
 - Core events + analytics v4: the rest of the standard core catalog (`adImpression`,
   `currencyGranted/Spent`, `itemGranted/Spent/Consumed`, `eventLeaderboardScore/Rank`,
   `achievementUnlocked`, `questStarted/Completed`, `inviteSent/Accepted`, `socialShare`,

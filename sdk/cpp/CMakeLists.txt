@@ -1,0 +1,15 @@
+cmake_minimum_required(VERSION 3.14)
+project(zanshin_cpp VERSION 0.1.0 LANGUAGES CXX)
+
+add_library(zanshin INTERFACE)
+target_include_directories(zanshin INTERFACE ${CMAKE_CURRENT_SOURCE_DIR}/include)
+target_compile_features(zanshin INTERFACE cxx_std_17)
+
+option(ZANSHIN_BUILD_TESTS "Build the SDK unit tests" ON)
+if(ZANSHIN_BUILD_TESTS)
+  enable_testing()
+  add_executable(zanshin_tests tests/test.cpp)
+  target_link_libraries(zanshin_tests PRIVATE zanshin)
+  target_compile_options(zanshin_tests PRIVATE -Wall -Wextra -pedantic)
+  add_test(NAME zanshin_tests COMMAND zanshin_tests)
+endif()

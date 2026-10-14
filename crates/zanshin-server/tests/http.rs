@@ -1110,6 +1110,7 @@ async fn analytics_events_flow() {
             .get(format!("events.{metric}.count"))
             .is_some()
             && props["computed"].get("session_count").is_some()
+            && props["computed"]["event_count"].as_i64() >= Some(4)
         {
             break;
         }

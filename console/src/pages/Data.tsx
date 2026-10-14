@@ -3,7 +3,7 @@ import { del, get, post, useLoad } from '../api';
 import { EntityPage, Num, Tags, Text } from '../crud';
 import { ErrorBox, Field, JsonField, Page, Table, fmtDate, fmtNum } from '../ui';
 
-type Sink = { id: string; key: string; name: string; kind: 'http' | 's3' | 'bigquery'; config: Record<string, unknown>; format: 'jsonl' | 'csv'; gzip: boolean; enabled: boolean; events: string[]; interval_secs: number; batch_size: number; cursor_at: string | null; last_run_at: string | null; last_error: string; tags: string[]; version: number; updated_at: string };
+type Sink = { id: string; key: string; name: string; kind: 'http' | 's3' | 'bigquery' | 'snowflake' | 'redshift'; config: Record<string, unknown>; format: 'jsonl' | 'csv' | 'parquet'; gzip: boolean; enabled: boolean; events: string[]; interval_secs: number; batch_size: number; cursor_at: string | null; last_run_at: string | null; last_error: string; tags: string[]; version: number; updated_at: string };
 type Run = { id: string; started_at: string; finished_at: string | null; status: string; rows: number; bytes: number; object: string; error: string };
 type Snapshot = { id: string; kind: string; key: string; version: number; body: unknown; deleted: boolean; actor: string; at: string };
 
@@ -11,6 +11,8 @@ const KIND_FIELDS: Record<Sink['kind'], [string, string][]> = {
   http: [['url', 'URL'], ['secret', 'HMAC secret (optional)']],
   s3: [['bucket', 'Bucket'], ['region', 'Region'], ['access_key', 'Access key'], ['secret_key', 'Secret key'], ['endpoint', 'Endpoint (S3-compatible, optional)'], ['prefix', 'Key prefix']],
   bigquery: [['project', 'Project'], ['dataset', 'Dataset'], ['table', 'Table']],
+  snowflake: [['bucket', 'Stage bucket'], ['region', 'Bucket region'], ['access_key', 'AWS access key'], ['secret_key', 'AWS secret key'], ['prefix', 'Key prefix (= stage URL path)'], ['account', 'Account identifier'], ['host', 'Host (xy12345.eu-central-1.snowflakecomputing.com)'], ['user', 'User'], ['public_key_fp', 'Public key fingerprint (SHA256:…)'], ['database', 'Database'], ['schema', 'Schema'], ['table', 'Table'], ['stage', 'External stage'], ['warehouse', 'Warehouse (optional)'], ['role', 'Role (optional)']],
+  redshift: [['bucket', 'Staging bucket'], ['region', 'Region'], ['access_key', 'AWS access key'], ['secret_key', 'AWS secret key'], ['prefix', 'Key prefix'], ['database', 'Database'], ['table', 'Table'], ['iam_role', 'IAM role ARN (COPY)'], ['cluster_id', 'Cluster id (provisioned)'], ['workgroup', 'Workgroup (serverless)'], ['db_user', 'DB user (optional)'], ['secret_arn', 'Secrets Manager ARN (optional)']],
 };
 
 function SinkRuns({ s }: { s: Sink }) {
@@ -43,21 +45,23 @@ function Sinks() {
     <EntityPage<Sink>
       title="Export sinks"
       path="/export-sinks"
-      blurb="Ship raw events to S3-compatible storage, an HTTP endpoint (Snowflake/Redshift loaders, your warehouse) or BigQuery. Each sink keeps its own cursor and run log."
+      blurb="Ship raw events to S3-compatible storage (JSONL / CSV / Parquet, optionally one object per event), an HTTP endpoint, BigQuery streaming, Snowflake (stage + COPY INTO) or Redshift (S3 + COPY). Rejected events carry `_error`. Each sink keeps its own cursor and run log."
       cols={[{ h: 'Key', c: (s) => <><strong>{s.key}</strong><div className="hint">{s.name}</div></> }, { h: 'Kind', c: (s) => <code>{s.kind}</code> }, { h: 'Every', c: (s) => `${s.interval_secs}s` }, { h: 'Last run', c: (s) => s.last_run_at ? fmtDate(s.last_run_at) : '—' }, { h: 'State', c: (s) => s.last_error ? <span style={{ color: 'var(--danger)' }}>error</span> : s.enabled ? 'on' : 'off' }]}
       blank={() => ({ key: '', name: '', kind: 'http', config: {}, format: 'jsonl', gzip: true, enabled: true, events: [], interval_secs: 300, batch_size: 10000, tags: [] })}
       form={(s, set, isNew) => (
         <>
           <div className="row"><Text label="Key" value={s.key} onChange={(key) => set({ key })} disabled={!isNew} mono /><Text label="Name" value={s.name} onChange={(name) => set({ name })} /></div>
           <div className="row">
-            <Field label="Kind"><select value={s.kind ?? 'http'} onChange={(e) => set({ kind: e.target.value as Sink['kind'], config: {} })}><option value="http">HTTP endpoint</option><option value="s3">S3 / compatible</option><option value="bigquery">BigQuery</option></select></Field>
-            <Field label="Format"><select value={s.format ?? 'jsonl'} onChange={(e) => set({ format: e.target.value as Sink['format'] })} disabled={s.kind === 'bigquery'}><option value="jsonl">JSON lines</option><option value="csv">CSV</option></select></Field>
-            <Field label="gzip"><input type="checkbox" checked={s.gzip ?? true} onChange={(e) => set({ gzip: e.target.checked })} /></Field>
+            <Field label="Kind"><select value={s.kind ?? 'http'} onChange={(e) => set({ kind: e.target.value as Sink['kind'], config: {} })}><option value="http">HTTP endpoint</option><option value="s3">S3 / compatible</option><option value="snowflake">Snowflake</option><option value="redshift">Redshift</option><option value="bigquery">BigQuery</option></select></Field>
+            <Field label="Format"><select value={s.format ?? 'jsonl'} onChange={(e) => set({ format: e.target.value as Sink['format'] })} disabled={s.kind === 'bigquery'}><option value="jsonl">JSON lines</option><option value="csv">CSV</option><option value="parquet">Parquet (snappy)</option></select></Field>
+            <Field label="gzip"><input type="checkbox" checked={s.gzip ?? true} onChange={(e) => set({ gzip: e.target.checked })} disabled={s.format === 'parquet'} /></Field>
+            {s.kind !== 'http' && s.kind !== 'bigquery' && <Field label="Object per event"><input type="checkbox" checked={(s.config ?? {}).partition === 'event'} onChange={(e) => set({ config: { ...(s.config ?? {}), partition: e.target.checked ? 'event' : 'none' } })} /></Field>}
             <Field label="Enabled"><input type="checkbox" checked={s.enabled ?? true} onChange={(e) => set({ enabled: e.target.checked })} /></Field>
           </div>
           <div className="row">
             {KIND_FIELDS[s.kind ?? 'http'].map(([k, l]) => <Text key={k} label={l} value={((s.config ?? {})[k] as string) ?? ''} onChange={(v) => set({ config: { ...(s.config ?? {}), [k]: v } })} mono />)}
           </div>
+          {s.kind === 'snowflake' && <Field label="Private key (PEM, key-pair auth)"><textarea rows={4} value={((s.config ?? {}).private_key as string) ?? ''} onChange={(e) => set({ config: { ...(s.config ?? {}), private_key: e.target.value } })} /></Field>}
           {s.kind === 'bigquery' && <Field label="Service account JSON"><JsonField value={((s.config ?? {}).service_account as object) ?? {}} onChange={(service_account) => set({ config: { ...(s.config ?? {}), service_account } })} rows={4} /></Field>}
           {s.kind === 'http' && <Field label="Extra headers (JSON object)"><JsonField value={((s.config ?? {}).headers as object) ?? {}} onChange={(headers) => set({ config: { ...(s.config ?? {}), headers } })} rows={2} /></Field>}
           <div className="row">

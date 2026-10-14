@@ -192,6 +192,39 @@ jobs:
       - name: parse addon + smoke runner (skips the live flow without a server)
         run: ./godot --headless --path sdk/godot/smoke --script res://smoke.gd
 
+  godot3:
+    name: godot 3 sdk
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: install godot 3.5.3 (headless)
+        run: |
+          curl -sL -o godot3.zip https://github.com/godotengine/godot/releases/download/3.5.3-stable/Godot_v3.5.3-stable_linux_headless.64.zip
+          unzip -q godot3.zip && mv Godot_v3.5.3-stable_linux_headless.64 godot3 && chmod +x godot3
+      - name: parse addon + smoke runner
+        run: ./godot3 --path sdk/godot3/smoke --script res://smoke.gd
+
+  defold:
+    name: defold sdk
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install lupa
+      - run: python3 sdk/defold/test/run.py
+
+  cpp:
+    name: c++ sdk
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: sudo apt-get update -q && sudo apt-get install -y -q libcurl4-openssl-dev
+      - run: make -C sdk/cpp test
+      - run: make -C sdk/cpp curl-check
+      - run: make -C sdk/cpp test CXX=clang++
+
   deploy-kit:
     name: deploy kit (helm / compose / alerts)
     runs-on: ubuntu-latest

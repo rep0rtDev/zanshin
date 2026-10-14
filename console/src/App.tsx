@@ -22,6 +22,7 @@ import Metrics from './pages/Metrics';
 import Templates from './pages/Templates';
 import Integrations from './pages/Integrations';
 import Webhooks from './pages/Webhooks';
+import Notifications from './pages/Notifications';
 import Journeys from './pages/Journeys';
 import Insights from './pages/Insights';
 import Data from './pages/Data';
@@ -130,7 +131,7 @@ const GROUPS: NavGroup[] = [
   { name: 'Engage', items: [['/messages', 'Messages', I.mail], ['/templates', 'Templates', I.doc], ['/journeys', 'Journeys', I.route], ['/integrations', 'Integrations', I.plug], ['/recipes', 'Recipes', I.lab]] },
   { name: 'Players', items: [['/identities', 'Identities', I.users], ['/taxonomy', 'Taxonomy', I.tag]] },
   { name: 'Analytics', items: [['/insights', 'Insights', I.chart], ['/analytics', 'Events', I.pulse], ['/metrics', 'Metrics', I.gauge]] },
-  { name: 'Platform', items: [['/webhooks', 'Webhooks', I.hook], ['/data', 'Data', I.db], ['/api-keys', 'API keys', I.key], ['/users', 'Users', I.users], ['/audit', 'Audit log', I.list], ['/settings', 'Settings', I.gear]] },
+  { name: 'Platform', items: [['/webhooks', 'Webhooks', I.hook], ['/notifications', 'Notifications', I.mail], ['/data', 'Data', I.db], ['/api-keys', 'API keys', I.key], ['/users', 'Users', I.users], ['/audit', 'Audit log', I.list], ['/settings', 'Settings', I.gear]] },
 ];
 
 const THEME_KEY = 'zanshin.theme';
@@ -239,6 +240,7 @@ export default function App() {
               <Route path="/templates/*" element={<Templates />} />
               <Route path="/integrations/*" element={<Integrations />} />
               <Route path="/webhooks/*" element={<Webhooks />} />
+              <Route path="/notifications/*" element={<Notifications />} />
               <Route path="/journeys/*" element={<Journeys />} />
               <Route path="/insights/*" element={<Insights />} />
               <Route path="/data/*" element={<Data />} />

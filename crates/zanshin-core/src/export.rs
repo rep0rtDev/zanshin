@@ -1,4 +1,4 @@
-//! Event export sinks (S3 / HTTP / BigQuery), their runs, and configuration history snapshots.
+//! Event export sinks (S3 / HTTP / BigQuery / Snowflake / Redshift), their runs, and configuration history snapshots.
 
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
@@ -14,14 +14,28 @@ pub enum SinkKind {
     Http,
     #[serde(rename = "bigquery")]
     BigQuery,
+    /// Files land in the S3 bucket behind an external stage, then `COPY INTO` through the SQL API.
+    Snowflake,
+    /// Files land in S3, then `COPY` through the Redshift Data API.
+    Redshift,
 }
 
 impl SinkKind {
+    /// Sinks that write objects to S3 (directly or as a staging area for a warehouse load).
+    pub fn stages_in_s3(&self) -> bool {
+        matches!(
+            self,
+            SinkKind::S3 | SinkKind::Snowflake | SinkKind::Redshift
+        )
+    }
+
     pub fn as_str(&self) -> &'static str {
         match self {
             SinkKind::S3 => "s3",
             SinkKind::Http => "http",
             SinkKind::BigQuery => "bigquery",
+            SinkKind::Snowflake => "snowflake",
+            SinkKind::Redshift => "redshift",
         }
     }
 
@@ -30,6 +44,8 @@ impl SinkKind {
             "s3" => Some(SinkKind::S3),
             "http" => Some(SinkKind::Http),
             "bigquery" => Some(SinkKind::BigQuery),
+            "snowflake" => Some(SinkKind::Snowflake),
+            "redshift" => Some(SinkKind::Redshift),
             _ => None,
         }
     }
@@ -41,6 +57,8 @@ pub enum ExportFormat {
     #[default]
     Jsonl,
     Csv,
+    /// Snappy-compressed Parquet (Databricks / Athena / Spark friendly); `gzip` is ignored.
+    Parquet,
 }
 
 impl ExportFormat {
@@ -48,6 +66,7 @@ impl ExportFormat {
         match self {
             ExportFormat::Jsonl => "jsonl",
             ExportFormat::Csv => "csv",
+            ExportFormat::Parquet => "parquet",
         }
     }
 
@@ -55,6 +74,7 @@ impl ExportFormat {
         match s {
             "jsonl" => Some(ExportFormat::Jsonl),
             "csv" => Some(ExportFormat::Csv),
+            "parquet" => Some(ExportFormat::Parquet),
             _ => None,
         }
     }
@@ -125,12 +145,60 @@ impl ExportSink {
                 _ => Err(Error::invalid(format!("config.{k} is required"))),
             }
         };
+        if let Some(p) = self.config.get("partition") {
+            match p.as_str() {
+                Some("none") | Some("event") => {}
+                _ => {
+                    return Err(Error::invalid(
+                        "config.partition must be \"none\" or \"event\"",
+                    ))
+                }
+            }
+        }
+        if self.kind.stages_in_s3() {
+            need("bucket")?;
+            need("region")?;
+            need("access_key")?;
+            need("secret_key")?;
+        }
         match self.kind {
-            SinkKind::S3 => {
-                need("bucket")?;
-                need("region")?;
-                need("access_key")?;
-                need("secret_key")?;
+            SinkKind::S3 => {}
+            SinkKind::Snowflake => {
+                for k in [
+                    "account",
+                    "host",
+                    "user",
+                    "private_key",
+                    "public_key_fp",
+                    "database",
+                    "schema",
+                    "table",
+                    "stage",
+                ] {
+                    need(k)?;
+                }
+                let pk = self.config["private_key"].as_str().unwrap_or_default();
+                if !pk.contains("PRIVATE KEY") {
+                    return Err(Error::invalid(
+                        "config.private_key must be a PEM private key",
+                    ));
+                }
+            }
+            SinkKind::Redshift => {
+                need("database")?;
+                need("table")?;
+                need("iam_role")?;
+                let has_cluster = self.config["cluster_id"]
+                    .as_str()
+                    .is_some_and(|s| !s.is_empty());
+                let has_wg = self.config["workgroup"]
+                    .as_str()
+                    .is_some_and(|s| !s.is_empty());
+                if has_cluster == has_wg {
+                    return Err(Error::invalid(
+                        "config needs exactly one of cluster_id (provisioned) or workgroup (serverless)",
+                    ));
+                }
             }
             SinkKind::Http => {
                 need("url")?;
@@ -157,6 +225,11 @@ impl ExportSink {
                     ));
                 }
             }
+        }
+        if self.format == ExportFormat::Parquet && !self.kind.stages_in_s3() {
+            return Err(Error::invalid(
+                "parquet is only supported for S3-backed sinks",
+            ));
         }
         for e in &self.events {
             if e.is_empty() || e.len() > 128 {

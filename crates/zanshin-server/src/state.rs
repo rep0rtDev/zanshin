@@ -1,4 +1,5 @@
 use crate::services::currency::CurrencyService;
+use crate::services::notifications::NotificationService;
 use crate::services::taxonomy::TaxonomyService;
 use crate::services::{
     analytics::AnalyticsService,
@@ -85,6 +86,7 @@ pub struct AppState {
     pub eval: Evaluator,
     pub taxonomy: TaxonomyService,
     pub currency: CurrencyService,
+    pub notifications: NotificationService,
     pub started_at: chrono::DateTime<chrono::Utc>,
     /// Cluster-wide job locks (Postgres advisory locks).
     pub locks: zanshin_store::locks::JobLock,
@@ -179,6 +181,10 @@ impl AppState {
         );
         let limits = RateLimiter::new(stores.cache.clone(), cfg.limits.clone());
         let audit = AuditService::new(AuditRepo::new(stores.pg.clone()), cfg.audit.clone());
+        let notifications = NotificationService::new(
+            zanshin_store::notifications::NotificationRepo::new(stores.pg.clone()),
+        );
+        audit.attach_notifier(notifications.clone());
         let bus = ChangeBus::new(stores.cache.clone(), cfg.redis.url.clone());
         let flags = FlagService::new(
             FlagRepo::new(stores.pg.clone()),
@@ -296,6 +302,7 @@ impl AppState {
             ExportRunRepo::new(stores.pg.clone()),
             events.clone(),
         );
+        export.attach_notifier(notifications.clone());
         let config_history = ConfigHistoryRepo::new(stores.pg.clone());
         let locks = zanshin_store::locks::JobLock::new(stores.pg.clone());
         Ok(Self {
@@ -325,6 +332,7 @@ impl AppState {
             eval,
             taxonomy,
             currency,
+            notifications,
             metrics,
             started_at: chrono::Utc::now(),
             locks,
