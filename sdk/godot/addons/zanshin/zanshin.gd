@@ -139,6 +139,29 @@ func mark_read(id: String) -> T.Result:
 func consume(id: String) -> T.Result:
 	return await _request("DELETE", "/v1/messages/" + id.uri_encode())
 
+# Remove a message from the inbox entirely (consume keeps it from being redelivered).
+func delete_inbox_message(id: String) -> T.Result:
+	return await _request("DELETE", "/v1/inbox/" + id.uri_encode())
+
+# Explicitly join a live event with join_mode "explicit"; returns the event as now seen.
+func join_live_event(key: String) -> T.Result:
+	var r := await _request("POST", "/v1/live-events/" + key.uri_encode() + "/join")
+	return T.Result.success(T.LiveEvent.new(r.value)) if r.ok else r
+
+# Leave a live event; the result value is false when the player was not a participant.
+func leave_live_event(key: String) -> T.Result:
+	var r := await _request("POST", "/v1/live-events/" + key.uri_encode() + "/leave")
+	return T.Result.success(bool(r.value.get("left", false))) if r.ok else r
+
+# Link the current (typically anonymous) identity to `id` (merging if it exists); switches to the new session.
+func identify(id: String) -> T.Result:
+	var r := await _request("POST", "/v1/identify", {"id": id})
+	if r.ok:
+		var s := T.Session.new(r.value)
+		_apply_session(s)
+		return T.Result.success(s)
+	return r
+
 # ---- push / analytics ---------------------------------------------------------------------------
 
 func register_push_token(platform: String, push_token: String, device_id: String = "") -> T.Result:

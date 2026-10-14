@@ -49,6 +49,15 @@ pub fn router() -> Router<AppState> {
             axum::routing::put(update_identity_properties),
         )
         .route("/messages/inbox", get(inbox))
+        .route(
+            "/messages/inbox/{id}",
+            axum::routing::put(inbox_read).delete(inbox_delete),
+        )
+        .route("/messages/inbox/{id}/consume", post(inbox_consume))
+        .route("/flags/{key}", get(flag))
+        .route("/flags/{key}/explain", get(explain_flag))
+        .route("/live-events/{key}/join", post(join_live_event))
+        .route("/live-events/{key}/leave", post(leave_live_event))
 }
 
 #[derive(Debug, Deserialize)]
@@ -415,4 +424,95 @@ async fn inbox(
     Ok(Json(MessageList {
         messages: state.eval.inbox(&identity, q.limit.unwrap_or(50)).await?,
     }))
+}
+
+async fn flag(
+    State(state): State<AppState>,
+    ServerAuth(_): ServerAuth,
+    Path(key): Path<String>,
+    Query(q): Query<IdentityQuery>,
+) -> ApiResult<Json<zanshin_core::flags::Evaluation>> {
+    q.check()?;
+    let identity = state.eval.identity_by_external_id(&q.external_id).await?;
+    Ok(Json(state.eval.flag(&identity, &key).await?))
+}
+
+async fn explain_flag(
+    State(state): State<AppState>,
+    ServerAuth(_): ServerAuth,
+    Path(key): Path<String>,
+    Query(q): Query<IdentityQuery>,
+) -> ApiResult<Json<serde_json::Value>> {
+    q.check()?;
+    let identity = state.eval.identity_by_external_id(&q.external_id).await?;
+    Ok(Json(state.eval.explain_flag(&identity, &key).await?))
+}
+
+async fn join_live_event(
+    State(state): State<AppState>,
+    ServerAuth(_): ServerAuth,
+    Path(key): Path<String>,
+    Query(q): Query<IdentityQuery>,
+) -> ApiResult<Json<zanshin_core::live_events::ActiveEvent>> {
+    q.check()?;
+    let identity = state.eval.identity_by_external_id(&q.external_id).await?;
+    let view = state.eval.join_live_event(&identity, &key).await?;
+    state
+        .events
+        .system(
+            &identity,
+            zanshin_core::events::EV_LIVE_EVENT_JOIN,
+            &key,
+            None,
+            None,
+        )
+        .await;
+    Ok(Json(view))
+}
+
+async fn leave_live_event(
+    State(state): State<AppState>,
+    ServerAuth(_): ServerAuth,
+    Path(key): Path<String>,
+    Query(q): Query<IdentityQuery>,
+) -> ApiResult<Json<serde_json::Value>> {
+    q.check()?;
+    let identity = state.eval.identity_by_external_id(&q.external_id).await?;
+    let left = state.live_events.leave(identity.id, &key).await?;
+    Ok(Json(serde_json::json!({ "left": left })))
+}
+
+async fn inbox_read(
+    State(state): State<AppState>,
+    ServerAuth(_): ServerAuth,
+    Path(id): Path<uuid::Uuid>,
+    Query(q): Query<IdentityQuery>,
+) -> ApiResult<Json<zanshin_core::messages::InboxMessage>> {
+    q.check()?;
+    let identity = state.eval.identity_by_external_id(&q.external_id).await?;
+    Ok(Json(state.messages.mark_read(&identity, id).await?))
+}
+
+async fn inbox_consume(
+    State(state): State<AppState>,
+    ServerAuth(_): ServerAuth,
+    Path(id): Path<uuid::Uuid>,
+    Query(q): Query<IdentityQuery>,
+) -> ApiResult<Json<serde_json::Value>> {
+    q.check()?;
+    let identity = state.eval.identity_by_external_id(&q.external_id).await?;
+    state.messages.consume(&identity, id).await?;
+    Ok(Json(serde_json::json!({})))
+}
+
+async fn inbox_delete(
+    State(state): State<AppState>,
+    ServerAuth(_): ServerAuth,
+    Path(id): Path<uuid::Uuid>,
+    Query(q): Query<IdentityQuery>,
+) -> ApiResult<Json<serde_json::Value>> {
+    q.check()?;
+    let identity = state.eval.identity_by_external_id(&q.external_id).await?;
+    state.messages.delete_inbox(&identity, id).await?;
+    Ok(Json(serde_json::json!({ "deleted": id })))
 }

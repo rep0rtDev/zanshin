@@ -43,6 +43,23 @@ func TestAgainstServer(t *testing.T) {
 	if _, err := z.Audiences(ctx, uid); err != nil {
 		t.Fatalf("audiences: %v", err)
 	}
+	if _, err := z.ExplainFlag(ctx, uid, "definitely_missing_flag"); !IsNotFound(err) {
+		t.Fatalf("explain: expected not found, got %v", err)
+	}
+	if _, err := z.LeaveLiveEvent(ctx, uid, "definitely_missing_event"); !IsNotFound(err) {
+		t.Fatalf("leave: expected not found, got %v", err)
+	}
+	if err := z.DeleteInboxMessage(ctx, uid, "00000000-0000-0000-0000-000000000000"); err == nil {
+		t.Fatalf("delete inbox: expected an error for an unknown message")
+	}
+	linked := uid + "-account"
+	if id, err := z.Identify(ctx, uid, linked); err != nil || id.ExternalID != linked {
+		t.Fatalf("identify: %v %+v", err, id)
+	}
+	uid = linked
+	if _, err := z.Flags(ctx, uid); err != nil {
+		t.Fatalf("flags after identify: %v", err)
+	}
 	if _, err := z.Experiments(ctx, uid); err != nil {
 		t.Fatalf("experiments: %v", err)
 	}

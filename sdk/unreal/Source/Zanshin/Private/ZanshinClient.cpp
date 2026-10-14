@@ -373,6 +373,45 @@ void FZanshinClient::Consume(const FString& Id, TFunction<void(const FZanshinVoi
     });
 }
 
+void FZanshinClient::DeleteInboxMessage(const FString& Id, TFunction<void(const FZanshinVoidResult&)> Done)
+{
+    Request(TEXT("DELETE"), TEXT("/v1/inbox/") + FGenericPlatformHttp::UrlEncode(Id), nullptr, EAuth::Session, [Done](const TZanshinResult<TSharedPtr<FJsonValue>>& R) {
+        if (Done) Done(R.bOk ? FZanshinVoidResult::Ok(FZanshinNone()) : Forward<FZanshinNone>(R.Error));
+    });
+}
+
+void FZanshinClient::JoinLiveEvent(const FString& Key, TFunction<void(const TZanshinResult<FZanshinLiveEvent>&)> Done)
+{
+    Request(TEXT("POST"), TEXT("/v1/live-events/") + FGenericPlatformHttp::UrlEncode(Key) + TEXT("/join"), nullptr, EAuth::Session, [Done](const TZanshinResult<TSharedPtr<FJsonValue>>& R) {
+        if (!Done) return;
+        Done(R.bOk ? TZanshinResult<FZanshinLiveEvent>::Ok(FZanshinLiveEvent::FromJson(Obj(R.Value))) : Forward<FZanshinLiveEvent>(R.Error));
+    });
+}
+
+void FZanshinClient::LeaveLiveEvent(const FString& Key, TFunction<void(const TZanshinResult<bool>&)> Done)
+{
+    Request(TEXT("POST"), TEXT("/v1/live-events/") + FGenericPlatformHttp::UrlEncode(Key) + TEXT("/leave"), nullptr, EAuth::Session, [Done](const TZanshinResult<TSharedPtr<FJsonValue>>& R) {
+        if (!Done) return;
+        bool bLeft = false;
+        if (R.bOk && Obj(R.Value).IsValid()) Obj(R.Value)->TryGetBoolField(TEXT("left"), bLeft);
+        Done(R.bOk ? TZanshinResult<bool>::Ok(bLeft) : Forward<bool>(R.Error));
+    });
+}
+
+void FZanshinClient::Identify(const FString& Id, TFunction<void(const TZanshinResult<FZanshinSession>&)> Done)
+{
+    TSharedPtr<FJsonObject> B = MakeShared<FJsonObject>();
+    B->SetStringField(TEXT("id"), Id);
+    TWeakPtr<FZanshinClient> Weak = AsShared();
+    Request(TEXT("POST"), TEXT("/v1/identify"), B, EAuth::Session, [Weak, Done](const TZanshinResult<TSharedPtr<FJsonValue>>& R) {
+        TSharedPtr<FZanshinClient> Self = Weak.Pin();
+        if (!R.bOk || !Self) { if (Done) Done(Forward<FZanshinSession>(R.Error)); return; }
+        FZanshinSession S;
+        Self->ApplySession(Obj(R.Value), S);
+        if (Done) Done(TZanshinResult<FZanshinSession>::Ok(S));
+    });
+}
+
 // ---- push / analytics ---------------------------------------------------------------------------
 
 void FZanshinClient::RegisterPushToken(const FString& Platform, const FString& PushToken, const FString& DeviceId, TFunction<void(const FZanshinVoidResult&)> Done)

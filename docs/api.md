@@ -243,6 +243,15 @@ For trusted backends (game servers, the Nakama module). Identities are addressed
 | `POST` | `/identities` body `{ "external_id", "default", "custom" }` | identity + properties; creates or merges, no session (emits `$authenticate`) |
 | `PUT` | `/identities/{external_id}/properties` body `{ "default", "custom" }` | merged properties (`null` removes) |
 | `GET` | `/messages/inbox?external_id=<id>&limit=` | `{ "messages": [ … ] }` (delivers pending campaigns first) |
+| `PUT` | `/messages/inbox/{id}?external_id=<id>` | the inbox copy, marked read |
+| `POST` | `/messages/inbox/{id}/consume?external_id=<id>` | `{}` — consumed, never redelivered |
+| `DELETE` | `/messages/inbox/{id}?external_id=<id>` | `{ "deleted": id }` — removed from the inbox entirely |
+| `GET` | `/flags/{key}?external_id=<id>` | a single evaluation |
+| `GET` | `/flags/{key}/explain?external_id=<id>` | the override chain for that identity (same shape as the admin explain endpoint) |
+| `POST` | `/live-events/{key}/join?external_id=<id>` | the live event view after an explicit join (emits `$live_event_join`) |
+| `POST` | `/live-events/{key}/leave?external_id=<id>` | `{ "left": bool }` |
+| `POST` | `/identities/{external_id}/identify` body `{ "id" }` | identity + properties after renaming / merging into `id` |
+| `POST` / `DELETE` | `/audiences/{key}/members` body `{ "external_ids": [ … ] }` | `{}` — managed-audience membership |
 | `WS` | `/stream` (`x-api-key` header or `?api_key=`) | change feed: `{"type":"change","kind":"flag\|audience\|experiment\|live_event\|message","key","version","deleted","identity_id"}`; `{"type":"resync"}` after lag; `ping`/`pong` |
 
 gRPC: `ServerGetFlags`, `ServerGetAudiences`, `ServerGetExperiments`, `ServerGetLiveEvents`, `ServerSendMessage`, `ServerSendEvents`.

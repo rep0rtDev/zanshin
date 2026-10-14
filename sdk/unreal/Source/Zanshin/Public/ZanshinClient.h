@@ -59,6 +59,14 @@ public:
     void GetInbox(int32 Limit, TFunction<void(const TZanshinResult<TArray<FZanshinInboxMessage>>&)> Done);
     void MarkRead(const FString& Id, TFunction<void(const TZanshinResult<FZanshinInboxMessage>&)> Done);
     void Consume(const FString& Id, TFunction<void(const FZanshinVoidResult&)> Done);
+    /** Remove a message from the inbox entirely (Consume keeps it from being redelivered). */
+    void DeleteInboxMessage(const FString& Id, TFunction<void(const FZanshinVoidResult&)> Done);
+    /** Explicitly join a live event with join_mode "explicit"; returns the event as now seen. */
+    void JoinLiveEvent(const FString& Key, TFunction<void(const TZanshinResult<FZanshinLiveEvent>&)> Done);
+    /** Leave a live event; false when the player was not a participant. */
+    void LeaveLiveEvent(const FString& Key, TFunction<void(const TZanshinResult<bool>&)> Done);
+    /** Link the current (typically anonymous) identity to Id, merging if it exists; switches to the new session. */
+    void Identify(const FString& Id, TFunction<void(const TZanshinResult<FZanshinSession>&)> Done);
 
     // ---- push / analytics -------------------------------------------------------------------
     void RegisterPushToken(const FString& Platform, const FString& PushToken, const FString& DeviceId, TFunction<void(const FZanshinVoidResult&)> Done);

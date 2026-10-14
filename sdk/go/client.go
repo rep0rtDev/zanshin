@@ -321,3 +321,89 @@ func (c *Client) Track(ctx context.Context, externalID string, events ...Event) 
 	err := c.do(ctx, http.MethodPost, "/server/v1/events", nil, map[string]any{"external_id": externalID, "events": events}, &out)
 	return out.Accepted, err
 }
+
+// Identify links externalID to a new external id (e.g. an anonymous device id to the account that
+// just signed in). If newID already exists the two identities are merged into it. Cached
+// evaluations for both ids are dropped.
+func (c *Client) Identify(ctx context.Context, externalID, newID string) (*Identity, error) {
+	var out Identity
+	err := c.do(ctx, http.MethodPost, "/server/v1/identities/"+url.PathEscape(externalID)+"/identify", nil, map[string]any{"id": newID}, &out)
+	if err != nil {
+		return nil, err
+	}
+	c.InvalidateIdentity(externalID)
+	c.InvalidateIdentity(newID)
+	return &out, nil
+}
+
+// AddAudienceMembers adds identities (by external id) to a managed audience.
+func (c *Client) AddAudienceMembers(ctx context.Context, audience string, externalIDs ...string) error {
+	return c.audienceMembers(ctx, http.MethodPost, audience, externalIDs)
+}
+
+// RemoveAudienceMembers removes identities (by external id) from a managed audience.
+func (c *Client) RemoveAudienceMembers(ctx context.Context, audience string, externalIDs ...string) error {
+	return c.audienceMembers(ctx, http.MethodDelete, audience, externalIDs)
+}
+
+func (c *Client) audienceMembers(ctx context.Context, method, audience string, externalIDs []string) error {
+	if err := c.do(ctx, method, "/server/v1/audiences/"+url.PathEscape(audience)+"/members", nil, map[string]any{"external_ids": externalIDs}, nil); err != nil {
+		return err
+	}
+	for _, id := range externalIDs {
+		c.InvalidateIdentity(id)
+	}
+	return nil
+}
+
+// ExplainFlag returns the full override chain (identity override, experiment, live event, rules,
+// default) the server walked to evaluate name for the identity. Meant for debugging / support tooling.
+func (c *Client) ExplainFlag(ctx context.Context, externalID, name string) (json.RawMessage, error) {
+	var out json.RawMessage
+	if err := c.do(ctx, http.MethodGet, "/server/v1/flags/"+url.PathEscape(name)+"/explain", idQuery(externalID, nil), nil, &out); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+// JoinLiveEvent explicitly joins the identity to a live event with join_mode "explicit" and
+// returns the event as the identity now sees it.
+func (c *Client) JoinLiveEvent(ctx context.Context, externalID, event string) (*LiveEvent, error) {
+	var out LiveEvent
+	if err := c.do(ctx, http.MethodPost, "/server/v1/live-events/"+url.PathEscape(event)+"/join", idQuery(externalID, nil), nil, &out); err != nil {
+		return nil, err
+	}
+	c.InvalidateIdentity(externalID)
+	return &out, nil
+}
+
+// LeaveLiveEvent removes the identity from a live event; false means it was not a participant.
+func (c *Client) LeaveLiveEvent(ctx context.Context, externalID, event string) (bool, error) {
+	var out struct {
+		Left bool `json:"left"`
+	}
+	if err := c.do(ctx, http.MethodPost, "/server/v1/live-events/"+url.PathEscape(event)+"/leave", idQuery(externalID, nil), nil, &out); err != nil {
+		return false, err
+	}
+	c.InvalidateIdentity(externalID)
+	return out.Left, nil
+}
+
+// MarkRead marks an inbox message read and returns it.
+func (c *Client) MarkRead(ctx context.Context, externalID, messageID string) (*InboxMessage, error) {
+	var out InboxMessage
+	if err := c.do(ctx, http.MethodPut, "/server/v1/messages/inbox/"+url.PathEscape(messageID), idQuery(externalID, nil), nil, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+// Consume consumes an inbox message: it leaves the inbox and is never redelivered.
+func (c *Client) Consume(ctx context.Context, externalID, messageID string) error {
+	return c.do(ctx, http.MethodPost, "/server/v1/messages/inbox/"+url.PathEscape(messageID)+"/consume", idQuery(externalID, nil), nil, nil)
+}
+
+// DeleteInboxMessage removes a message from the inbox entirely.
+func (c *Client) DeleteInboxMessage(ctx context.Context, externalID, messageID string) error {
+	return c.do(ctx, http.MethodDelete, "/server/v1/messages/inbox/"+url.PathEscape(messageID), idQuery(externalID, nil), nil, nil)
+}

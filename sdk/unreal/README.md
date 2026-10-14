@@ -36,6 +36,8 @@ Z->FlagNumber(TEXT("daily_reward_coins"), 100.0, [](double Coins) { ... });
 Z->GetExperiments({}, [](const TZanshinResult<TArray<FZanshinExperiment>>& R) { ... });
 Z->GetLiveEvents({}, /*bUpcoming*/ false, ...);
 Z->GetInbox(20, ...);  Z->MarkRead(Id, ...);  Z->Consume(Id, ...);
+Z->DeleteInboxMessage(Id, ...);  Z->JoinLiveEvent(TEXT("weekend_boost"), ...);  Z->LeaveLiveEvent(TEXT("weekend_boost"), ...);
+Z->Identify(TEXT("account-42"), ...);   // anonymous → account, merges if it exists, switches session
 Z->RegisterPushToken(TEXT("fcm"), Token, DeviceId, ...);
 Z->Track({ Event1, Event2 }, ...);
 

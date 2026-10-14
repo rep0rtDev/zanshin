@@ -28,6 +28,8 @@ test('client flow against a live server', { skip: !url || !apiKey }, async () =>
   assert.ok(Array.isArray(await z.audiences()));
   assert.ok(Array.isArray(await z.experiments()));
   assert.ok(Array.isArray(await z.liveEvents({ upcoming: true })));
+  await assert.rejects(z.leaveLiveEvent('definitely_missing_event'));
+  await assert.rejects(z.deleteInboxMessage('00000000-0000-0000-0000-000000000000'));
   assert.ok(Array.isArray(await z.inbox()));
   assert.equal(await z.track({ name: 'ts.ping', value: '1', metadata: { k: 'v' } }, { name: 'ts.pong' }), 2);
   assert.equal(await z.event('ts.level_up', 7), 1);
@@ -38,6 +40,12 @@ test('client flow against a live server', { skip: !url || !apiKey }, async () =>
   await z.refresh();
   assert.notEqual(z.token, before);
   assert.equal(sessions.length, 2);
+
+  // Identify links the anonymous identity to an account id and hands out a new session.
+  const linked = await z.identify(id + '-account');
+  assert.equal(linked.identity.external_id, id + '-account');
+  assert.equal(sessions.length, 3);
+  assert.ok(Array.isArray(await z.flags()));
 
   // Stream: hello, then live updates when an admin changes a flag.
   const stream = z.stream({ webSocket: (u) => new WebSocket(u) });

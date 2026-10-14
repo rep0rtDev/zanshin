@@ -216,6 +216,33 @@ namespace Zanshin
         public async Task<List<Flag>> Flags(IEnumerable<string> names = null) =>
             Lists.Map(Json.Get(await Request(HttpMethod.Get, "/v1/flags", null, Auth.Session, Names(names)), "flags"), Zanshin.Flag.From);
 
+        /// <summary>
+        /// Link the current (typically anonymous) identity to <paramref name="id"/>, e.g. the account id after
+        /// sign-in; merges into it when it already exists. The client switches to the returned session.
+        /// </summary>
+        public async Task<Session> Identify(string id)
+        {
+            var s = Session.From(await Request(HttpMethod.Post, "/v1/identify", new Dictionary<string, object> { ["id"] = id }));
+            SetTokens(s.Token, s.RefreshToken);
+            SessionChanged?.Invoke(s);
+            return s;
+        }
+
+        /// <summary>Explicitly join a live event with join_mode "explicit"; returns the event as now seen.</summary>
+        public async Task<LiveEvent> JoinLiveEvent(string key) =>
+            LiveEvent.From(await Request(HttpMethod.Post, "/v1/live-events/" + Uri.EscapeDataString(key) + "/join"));
+
+        /// <summary>Leave a live event; false when the player was not a participant.</summary>
+        public async Task<bool> LeaveLiveEvent(string key)
+        {
+            var r = await Request(HttpMethod.Post, "/v1/live-events/" + Uri.EscapeDataString(key) + "/leave");
+            return Json.Bool(r, "left");
+        }
+
+        /// <summary>Remove a message from the inbox entirely (Consume keeps it from being redelivered).</summary>
+        public async Task DeleteInboxMessage(string id) =>
+            await Request(HttpMethod.Delete, "/v1/inbox/" + Uri.EscapeDataString(id));
+
         public async Task<Flag> Flag(string key) => Zanshin.Flag.From(await Request(HttpMethod.Get, "/v1/flags/" + Uri.EscapeDataString(key)));
 
         /// <summary>Flag value or <paramref name="fallback"/> when the flag does not exist.</summary>

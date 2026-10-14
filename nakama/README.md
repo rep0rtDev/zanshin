@@ -17,6 +17,13 @@ Go runtime plugin that connects a Nakama server to Zanshin.
 | `zanshin.inbox` | `{"limit":50}` | `{"messages":[…]}` |
 | `zanshin.track` | `{"events":[{"name":"purchase","value":"9.99"}]}` | `{"accepted":n}` |
 | `zanshin.properties` | `{"custom":{"nickname":"Neo"}}` | properties |
+| `zanshin.flag` | `{"name":"shop_v2"}` | a single evaluation |
+| `zanshin.flag_explain` | `{"name":"shop_v2"}` | override chain (identity → experiment → live event → rules → default) |
+| `zanshin.live_event_join` | `{"key":"weekend_boost"}` | the live event as the player now sees it |
+| `zanshin.live_event_leave` | `{"key":"weekend_boost"}` | `{"left":true}` |
+| `zanshin.inbox_read` | `{"id":"…"}` or `{"id":"…","consume":true}` | the message, or `{"consumed":id}` |
+| `zanshin.inbox_delete` | `{"id":"…"}` | `{"deleted":id}` |
+| `zanshin.audience_members` | `{"audience":"vip","add":[…],"remove":[…]}` — server-to-server only (HTTP key) | `{"added":n,"removed":n}` |
 
 Evaluations are cached in-process (`ZANSHIN_CACHE_TTL`, default 30 s) and invalidated instantly
 through the server change stream, so Nakama answers most flag reads without a network hop.
