@@ -13,3 +13,4 @@ pub mod live_events;
 pub mod messages;
 pub mod oidc;
 pub mod push;
+pub mod taxonomy;

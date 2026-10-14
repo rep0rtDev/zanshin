@@ -177,6 +177,135 @@ impl IdentityRepo {
         Ok(())
     }
 
+    /// Rename an identity's external id in place. Fails with conflict if the id is taken.
+    pub async fn rename(&self, id: Uuid, new_external_id: &str) -> Result<Identity> {
+        let r =
+            sqlx::query("UPDATE identities SET external_id = $2, updated_at = now() WHERE id = $1")
+                .bind(id)
+                .bind(new_external_id)
+                .execute(&self.pg)
+                .await
+                .map_err(map_sqlx)?;
+        if r.rows_affected() == 0 {
+            return Err(Error::not_found("identity"));
+        }
+        sqlx::query("UPDATE events SET external_id = $2 WHERE identity_id = $1")
+            .bind(id)
+            .bind(new_external_id)
+            .execute(&self.pg)
+            .await
+            .ok();
+        self.get(id).await
+    }
+
+    /// Merge `from` into `into`: properties (target wins on conflict, numeric computed counters are
+    /// summed), overrides, assignments, inbox, push tokens, play sessions and Postgres-stored events
+    /// move to the target; `from` is deleted. Returns the merged target.
+    pub async fn merge_into(&self, from: Uuid, into: Uuid) -> Result<Identity> {
+        if from == into {
+            return self.get(into).await;
+        }
+        let src = self.get(from).await?;
+        let dst = self.get(into).await?;
+        let mut tx = self.pg.begin().await.map_err(map_sqlx)?;
+        let mut default = src.properties.default.clone();
+        for (k, v) in &dst.properties.default {
+            default.insert(k.clone(), v.clone());
+        }
+        let mut custom = src.properties.custom.clone();
+        for (k, v) in &dst.properties.custom {
+            custom.insert(k.clone(), v.clone());
+        }
+        let mut computed = dst.properties.computed.clone();
+        for (k, v) in &src.properties.computed {
+            match (computed.get(k), v) {
+                (Some(Value::Number(a)), Value::Number(b))
+                    if k.ends_with("count") || k.ends_with(".sum") =>
+                {
+                    let sum = a.as_f64().unwrap_or(0.0) + b.as_f64().unwrap_or(0.0);
+                    let val = if sum.fract() == 0.0 {
+                        Value::from(sum as i64)
+                    } else {
+                        serde_json::Number::from_f64(sum)
+                            .map(Value::Number)
+                            .unwrap_or(Value::Null)
+                    };
+                    computed.insert(k.clone(), val);
+                }
+                (Some(Value::String(a)), Value::String(b))
+                    if k.ends_with("first_at") || k.ends_with("first_seen_at") =>
+                {
+                    if b < a {
+                        computed.insert(k.clone(), v.clone());
+                    }
+                }
+                (Some(Value::String(a)), Value::String(b))
+                    if k.ends_with("last_at")
+                        || k.ends_with("last_seen_at")
+                        || k.ends_with("last_event_at") =>
+                {
+                    if b > a {
+                        computed.insert(k.clone(), v.clone());
+                    }
+                }
+                (None, _) => {
+                    computed.insert(k.clone(), v.clone());
+                }
+                _ => {}
+            }
+        }
+        sqlx::query(
+            "UPDATE identities SET default_properties = $2, custom_properties = $3, computed_properties = $4,
+                 created_at = LEAST(created_at, $5), updated_at = now(), last_seen_at = now() WHERE id = $1",
+        )
+        .bind(into)
+        .bind(Value::Object(default))
+        .bind(Value::Object(custom))
+        .bind(Value::Object(computed))
+        .bind(src.created_at)
+        .execute(&mut *tx)
+        .await
+        .map_err(map_sqlx)?;
+        for (table, conflict) in [
+            ("flag_overrides", true),
+            ("experiment_assignments", true),
+            ("inbox", false),
+            ("push_tokens", true),
+            ("play_sessions", false),
+            ("sessions", false),
+        ] {
+            let sql = if conflict {
+                format!(
+                    "UPDATE {table} t SET identity_id = $2 WHERE identity_id = $1
+                     AND NOT EXISTS (SELECT 1 FROM {table} o WHERE o.identity_id = $2 AND {})",
+                    conflict_cols(table)
+                )
+            } else {
+                format!("UPDATE {table} SET identity_id = $2 WHERE identity_id = $1")
+            };
+            sqlx::query(&sql)
+                .bind(from)
+                .bind(into)
+                .execute(&mut *tx)
+                .await
+                .map_err(map_sqlx)?;
+        }
+        sqlx::query("UPDATE events SET identity_id = $2, external_id = $3 WHERE identity_id = $1")
+            .bind(from)
+            .bind(into)
+            .bind(&dst.external_id)
+            .execute(&mut *tx)
+            .await
+            .ok();
+        sqlx::query("DELETE FROM identities WHERE id = $1")
+            .bind(from)
+            .execute(&mut *tx)
+            .await
+            .map_err(map_sqlx)?;
+        tx.commit().await.map_err(map_sqlx)?;
+        self.get(into).await
+    }
+
     pub async fn delete(&self, id: Uuid) -> Result<()> {
         let res = sqlx::query("DELETE FROM identities WHERE id = $1")
             .bind(id)
@@ -207,5 +336,14 @@ impl IdentityRepo {
         .await
         .map_err(map_sqlx)?;
         Ok(rows.into_iter().map(Into::into).collect())
+    }
+}
+
+fn conflict_cols(table: &str) -> &'static str {
+    match table {
+        "flag_overrides" => "o.flag_id = t.flag_id",
+        "experiment_assignments" => "o.experiment_id = t.experiment_id",
+        "push_tokens" => "o.token = t.token",
+        _ => "false",
     }
 }

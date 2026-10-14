@@ -1,5 +1,7 @@
+use crate::services::taxonomy::TaxonomyService;
 use crate::services::{audit::AuditService, limits::RateLimiter, oidc::OidcService};
 use std::sync::Arc;
+use zanshin_store::taxonomy::TaxonomyRepo;
 
 use zanshin_core::token::TokenIssuer;
 use zanshin_store::audit::AuditRepo;
@@ -44,6 +46,7 @@ pub struct AppState {
     pub messages: MessageService,
     pub push: PushService,
     pub eval: Evaluator,
+    pub taxonomy: TaxonomyService,
     pub started_at: chrono::DateTime<chrono::Utc>,
 }
 
@@ -146,6 +149,11 @@ impl AppState {
             bus.clone(),
             push.clone(),
         );
+        let taxonomy = TaxonomyService::new(
+            TaxonomyRepo::new(stores.pg.clone()),
+            stores.cache.clone(),
+            cfg.taxonomy.clone(),
+        );
         let eval = Evaluator::new(
             flags.clone(),
             audiences.clone(),
@@ -171,6 +179,7 @@ impl AppState {
             messages,
             push,
             eval,
+            taxonomy,
             started_at: chrono::Utc::now(),
         })
     }

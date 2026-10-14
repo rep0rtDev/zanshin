@@ -9,6 +9,7 @@ import LiveEvents from './pages/LiveEvents';
 import Messages from './pages/Messages';
 import Identities from './pages/Identities';
 import Analytics from './pages/Analytics';
+import Taxonomy from './pages/Taxonomy';
 import ApiKeys from './pages/ApiKeys';
 import Audit from './pages/Audit';
 
@@ -61,6 +62,7 @@ const NAV: [string, string][] = [
   ['/messages', 'Messages'],
   ['/identities', 'Identities'],
   ['/analytics', 'Analytics'],
+  ['/taxonomy', 'Taxonomy'],
   ['/api-keys', 'API keys'],
   ['/audit', 'Audit log'],
 ];
@@ -129,6 +131,7 @@ export default function App() {
           <Route path="/messages/*" element={<Messages />} />
           <Route path="/identities/*" element={<Identities />} />
           <Route path="/analytics" element={<Analytics />} />
+          <Route path="/taxonomy/*" element={<Taxonomy />} />
           {me.role === 'admin' && <Route path="/api-keys" element={<ApiKeys />} />}
           <Route path="/audit" element={<Audit />} />
           <Route path="*" element={<Navigate to="/" replace />} />

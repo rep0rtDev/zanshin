@@ -154,6 +154,20 @@ impl ExperimentService {
                     }) {
                         Some(v) => {
                             let stored = self.repo.assign(exp.id, identity.id, &v.key).await?;
+                            let mut meta = serde_json::Map::new();
+                            meta.insert(
+                                "experiment".into(),
+                                serde_json::Value::String(exp.key.clone()),
+                            );
+                            self.events
+                                .system(
+                                    identity,
+                                    zanshin_core::events::EV_EXPERIMENT_JOIN,
+                                    stored.clone(),
+                                    Some(meta),
+                                    None,
+                                )
+                                .await;
                             metrics::counter!("zanshin_experiment_assignments_total", "experiment" => exp.key.clone()).increment(1);
                             Some(stored)
                         }

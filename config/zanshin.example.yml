@@ -80,3 +80,10 @@ audit:                      # every mutating /admin/v1 call -> audit_log (GET /a
   enabled: true
   store_bodies: true        # redacted JSON request body
   retention: 90d
+
+taxonomy:                   # event definitions, labels, player model (see docs/api.md → Taxonomy)
+  mode: warn                # off | warn (store invalid events, list them in /admin/v1/taxonomy/rejected) | strict (reject)
+  auto_discover: true       # register unknown event names as "discovered" definitions
+  geoip_db: ""              # path to a MaxMind GeoLite2/GeoIP2 City or Country .mmdb for country/region/city defaults
+  session_inactivity: 30m   # play session closes ($session_end) after this much silence
+  rejected_keep: 200        # how many rejected/invalid events the debugger keeps (Redis)

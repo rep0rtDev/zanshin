@@ -132,6 +132,32 @@ impl Cache {
         Ok(())
     }
 
+    /// Push a JSON value onto a capped list (newest first) and trim it to `cap` entries.
+    pub async fn push_capped<T: Serialize>(&self, key: &str, value: &T, cap: usize) -> Result<()> {
+        let raw = serde_json::to_string(value).map_err(Error::internal)?;
+        let mut conn = self.conn.clone();
+        let _: () = redis::pipe()
+            .lpush(key, raw)
+            .ltrim(key, 0, cap.saturating_sub(1) as isize)
+            .query_async(&mut conn)
+            .await
+            .map_err(map_redis)?;
+        Ok(())
+    }
+
+    /// Read up to `n` newest entries of a capped list.
+    pub async fn list_json<T: DeserializeOwned>(&self, key: &str, n: usize) -> Result<Vec<T>> {
+        let mut conn = self.conn.clone();
+        let raws: Vec<String> = conn
+            .lrange(key, 0, n.saturating_sub(1) as isize)
+            .await
+            .map_err(map_redis)?;
+        Ok(raws
+            .iter()
+            .filter_map(|r| serde_json::from_str(r).ok())
+            .collect())
+    }
+
     pub async fn exists(&self, key: &str) -> Result<bool> {
         let mut c = self.conn.clone();
         c.exists(key).await.map_err(map_redis)

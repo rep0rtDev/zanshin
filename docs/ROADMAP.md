@@ -26,7 +26,7 @@ console comes last once the model is stable.
       into ClickHouse or PostgreSQL, events tagged with the identity's live experiment
       assignments, admin timeseries / top names / per-identity log, experiment results by metric
       (count, unique identities, sum, conversion per variant)
-- [ ] **Identify / merge**: link an anonymous identity to an authenticated id, merge
+- [x] **Identify / merge**: link an anonymous identity to an authenticated id, merge
       properties and history
 - [x] **Go SDK** (`sdk/go`): server-key client, per-identity evaluation cache with TTL,
       WebSocket change-stream invalidation with reconnect/backoff, identity upsert, events,
@@ -54,6 +54,32 @@ console comes last once the model is stable.
 - [x] **Unity SDK** (`sdk/unity`): dependency-free UPM package (netstandard2.1, own JSON), async client
       with single-flight refresh, all client endpoints, reconnecting `ClientWebSocket` stream with
       local flag cache; compiled in CI with `dotnet build`, smoke-tested against a live server
+
+## 0.4 — LiveOps parity
+
+- [x] **Taxonomy & player model**: labels registry (`/admin/v1/labels`, rename/delete propagate to every
+  tagged resource, `?tags=` filters), event definitions with value types (`number` / `string` / `object` /
+  `revenue`) and metadata JSON Schema, `off` / `warn` / `strict` enforcement, auto-discovery of unknown
+  events, rejected-event debugger (`/admin/v1/taxonomy/rejected`), read-only custom properties,
+  JSON Schemas for flag / live-event values (`/admin/v1/schemas`), default-property enrichment from
+  `X-Zanshin-*` headers / `Accept-Language` / MaxMind geo-IP, `POST /v1/identify` (rename or merge),
+  play sessions (`/admin/v1/identities/{id}/sessions`) with inactivity timeout, synthetic lifecycle events.
+- [ ] **Audiences v2**: stored membership with scheduled / event-driven recompute, member lists with join
+  time, includes / excludes, managed (external) audiences, usage references, copy, expression language.
+- [ ] **Flags v2 / live events v2**: audience-targeted variants with priority, variant diff, override chain,
+  explicit join / sticky membership, per-event flag overrides, timeline, QA future-date mode.
+- [ ] **Metrics & experiments v2**: metrics catalog (goal / monitor), phases, control variant, split key,
+  caps / deadline / lock, per-variant time series, participants, CSV export.
+- [ ] **Messaging v2**: reusable templates (plaintext / HTML / JSON, translations, test send), schedules
+  (cron and live-event relative), per-channel delivery status, inbox deletion.
+- [ ] **Webhooks**: HMAC-signed deliveries, event subscriptions, batching, retries, delivery log.
+- [ ] **Journeys**: entry triggers, delays, branches, actions (message / live event / experiment / flag /
+  webhook), cooldowns, worker, flow editor.
+- [ ] **Analytics v2**: status / game-metrics dashboards (DAU / MAU / retention / ARPDAU / revenue),
+  custom dashboards, retention report, RoAS, funnels, annotations.
+- [ ] **Data management**: export sinks (S3 / Parquet, BigQuery, HTTP), config export / import with diff,
+  data deletion, sample data, audit undo.
+- [ ] **Console redesign** and **SDK / Nakama parity** for every new API.
 
 ## 0.2 — reach
 

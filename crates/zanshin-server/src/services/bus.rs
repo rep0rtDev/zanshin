@@ -107,6 +107,12 @@ impl ChangeBus {
         let _ = self.tx.send(change.clone());
     }
 
+    /// Reconcile every catalog against storage now (used after bulk DB edits such as label
+    /// renames); other replicas pick the change up on their periodic reconcile.
+    pub async fn reload_all(&self) {
+        self.reconcile_all().await;
+    }
+
     async fn reconcile_all(&self) {
         let handlers: Vec<_> = self.handlers.read().await.values().cloned().collect();
         for h in handlers {

@@ -14,6 +14,7 @@ pub mod live_events;
 pub mod messages;
 pub mod push;
 pub mod sessions;
+pub mod taxonomy;
 
 use std::time::Duration;
 

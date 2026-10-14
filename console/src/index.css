@@ -114,3 +114,7 @@ input[type=range]{padding:0;height:28px}
 .role-admin { color: var(--fg); }
 .role-editor { color: #1a5fb4; border-color: #1a5fb4; }
 .role-viewer { color: #b26a00; border-color: #b26a00; }
+.tabs a{padding:8px 12px;color:var(--muted);text-decoration:none;border-bottom:2px solid transparent;margin-bottom:-1px}
+.tabs a.active{color:var(--fg);border-color:var(--fg)}
+.swatch{width:22px;height:22px;border-radius:50%;border:0;cursor:pointer}
+.label-chip{display:inline-block;padding:2px 10px;border-radius:999px;color:#fff;font-size:12px;font-weight:600}
