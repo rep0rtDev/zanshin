@@ -1,8 +1,12 @@
-import { EntityPage, Text, Num, Tags, DateTime, CONDITION_HINT } from '../crud';
+import { EntityPage, Text, Num, Tags, DateTime } from '../crud';
+import { AudiencePicker, ConditionEditor } from '../RuleBuilder';
+import type { Cond } from '../RuleBuilder';
 import { Badge, Field, JsonField, Toggle, fmtDate } from '../ui';
+import { Calendar } from '../Calendar';
+import { useNavigate } from 'react-router-dom';
 
 type LiveEvent = {
-  key: string; name: string; description: string; enabled: boolean; condition: unknown; audiences: string[];
+  key: string; name: string; description: string; enabled: boolean; condition: Cond | null; audiences: string[];
   starts_at: string; ends_at: string | null; duration_secs: number | null; recurrence: string | null; payload: unknown; tags: string[]; version: number; updated_at: string;
 };
 
@@ -18,8 +22,10 @@ function status(e: LiveEvent): ['ok' | 'muted' | 'info' | 'bad', string] {
 }
 
 export default function LiveEvents() {
+  const nav = useNavigate();
   return (
     <EntityPage<LiveEvent>
+      above={<Calendar onPick={(k) => nav(encodeURIComponent(k))} />}
       title="Live events"
       path="/live-events"
       blurb="Scheduled content windows — one-shot or recurring (cron, UTC) — with a payload the client reads when the event is active."
@@ -49,8 +55,8 @@ export default function LiveEvents() {
             <DateTime label="Ends" value={d.ends_at} onChange={(ends_at) => set({ ends_at })} hint="one-shot: window end · recurring: no occurrences after this" />
           </div>
           <Field label="Payload (JSON)" hint="arbitrary data delivered to clients while the event is active"><JsonField value={d.payload} onChange={(payload) => set({ payload: payload ?? {} })} rows={5} /></Field>
-          <Field label="Targeting condition" hint={CONDITION_HINT}><JsonField value={d.condition ?? undefined} onChange={(condition) => set({ condition: condition ?? null })} rows={3} /></Field>
-          <Text label="Audiences" value={(d.audiences ?? []).join(', ')} onChange={(v) => set({ audiences: v.split(',').map((s) => s.trim()).filter(Boolean) })} hint="audience keys, comma-separated" />
+          <Field label="Targeting condition"><ConditionEditor optional value={d.condition} onChange={(condition) => set({ condition })} /></Field>
+          <Field label="Audiences"><AudiencePicker value={d.audiences ?? []} onChange={(audiences) => set({ audiences })} /></Field>
           <Tags value={d.tags} onChange={(tags) => set({ tags })} />
         </>
       )}

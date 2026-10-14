@@ -1,12 +1,14 @@
 import { useState } from 'react';
 import { get, post, useLoad } from '../api';
-import { EntityPage, Text, Num, Tags, DateTime, CONDITION_HINT } from '../crud';
-import { Badge, ErrorBox, Field, JsonField, fmtDate, fmtNum } from '../ui';
+import { EntityPage, Text, Num, Tags, DateTime } from '../crud';
+import { AudiencePicker, ConditionEditor, VariantsEditor } from '../RuleBuilder';
+import type { Cond } from '../RuleBuilder';
+import { Badge, ErrorBox, Field, fmtDate, fmtNum } from '../ui';
 
 type Variant = { key: string; name: string; value: unknown; weight: number };
 type Experiment = {
   key: string; name: string; description: string; hypothesis: string; status: 'draft' | 'running' | 'paused' | 'stopped';
-  condition: unknown; audiences: string[]; percentage: number; variants: Variant[]; control: string | null; flag_key: string | null;
+  condition: Cond | null; audiences: string[]; percentage: number; variants: Variant[]; control: string | null; flag_key: string | null;
   starts_at: string | null; ends_at: string | null; tags: string[]; version: number; updated_at: string;
 };
 type Results = {
@@ -108,15 +110,15 @@ export default function Experiments() {
           <Text label="Hypothesis" value={d.hypothesis} onChange={(hypothesis) => set({ hypothesis })} placeholder="Showing the offer on day 2 increases D7 retention by 3%" />
           <Text label="Description" value={d.description} onChange={(description) => set({ description })} />
           <Field label="Variants" hint="weights are relative; value is what the SDK receives (and what the linked flag resolves to)">
-            <JsonField value={d.variants} onChange={(v) => set({ variants: (v as Variant[]) ?? [] })} rows={6} />
+            <VariantsEditor type="json" withName value={(d.variants ?? []) as Variant[]} onChange={(variants) => set({ variants: variants as Variant[] })} />
           </Field>
           <div className="row">
             <Text label="Control variant" value={d.control ?? ''} onChange={(v) => set({ control: v || null })} mono />
             <Text label="Linked flag key" value={d.flag_key ?? ''} onChange={(v) => set({ flag_key: v || null })} mono hint="optional: the flag returns the assigned variant's value" />
             <Num label="Traffic %" value={d.percentage} onChange={(percentage) => set({ percentage: percentage ?? 0 })} min={0} max={100} />
           </div>
-          <Field label="Targeting condition" hint={CONDITION_HINT}><JsonField value={d.condition ?? undefined} onChange={(condition) => set({ condition: condition ?? null })} rows={4} /></Field>
-          <Text label="Audiences" value={(d.audiences ?? []).join(', ')} onChange={(v) => set({ audiences: v.split(',').map((s) => s.trim()).filter(Boolean) })} hint="audience keys, comma-separated; identity must be in all of them" />
+          <Field label="Targeting condition"><ConditionEditor optional value={d.condition} onChange={(condition) => set({ condition })} /></Field>
+          <Field label="Audiences" hint="identity must belong to all selected"><AudiencePicker value={d.audiences ?? []} onChange={(audiences) => set({ audiences })} /></Field>
           <div className="row">
             <DateTime label="Starts" value={d.starts_at} onChange={(starts_at) => set({ starts_at })} />
             <DateTime label="Ends" value={d.ends_at} onChange={(ends_at) => set({ ends_at })} />

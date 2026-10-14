@@ -1,13 +1,36 @@
 import { useState } from 'react';
 import { get, post, useLoad } from '../api';
-import { EntityPage, Text, Num, Tags, DateTime, CONDITION_HINT } from '../crud';
+import { EntityPage, Text, Num, Tags, DateTime } from '../crud';
+import { AudiencePicker, ConditionEditor } from '../RuleBuilder';
+import type { Cond } from '../RuleBuilder';
 import { Badge, ErrorBox, Field, JsonField, Stat, Toggle, fmtDate, fmtNum } from '../ui';
 
 type Campaign = {
-  key: string; name: string; enabled: boolean; title: string; body: string; image_url: string; payload: unknown; condition: unknown; audiences: string[];
+  key: string; name: string; enabled: boolean; title: string; body: string; image_url: string; payload: unknown; condition: Cond | null; audiences: string[];
   percentage: number; starts_at: string | null; ends_at: string | null; ttl_secs: number | null; priority: number; push: boolean; tags: string[]; version: number; updated_at: string;
 };
 type Stats = { delivered: number; read: number; consumed: number };
+
+const SAMPLE: Record<string, unknown> = { default: { name: 'Kai', platform: 'ios', country: 'DE', app_version: '1.4.2' }, custom: { level: 12, vip: true }, computed: { session_count: 37 } };
+function render(tpl: string, props: Record<string, unknown> = SAMPLE): string {
+  return (tpl ?? '').replace(/\{\{\s*([a-zA-Z0-9_.]+)\s*\}\}/g, (_, path: string) => {
+    const v = path.split('.').reduce<unknown>((acc, k) => (acc && typeof acc === 'object' ? (acc as Record<string, unknown>)[k] : undefined), props);
+    return v === undefined || v === null ? '' : String(v);
+  });
+}
+
+function Preview({ title, body, image }: { title?: string; body?: string; image?: string }) {
+  return (
+    <div className="field">
+      <span className="label">Preview <span className="hint">(sample identity: Kai, iOS, DE, level 12, vip)</span></span>
+      <div className="preview">
+        <div className="t">{render(title ?? '') || <span className="muted">title</span>}</div>
+        <div>{render(body ?? '') || <span className="muted">body</span>}</div>
+        {image && <img src={image} alt="" onError={(e) => ((e.target as HTMLImageElement).style.display = 'none')} />}
+      </div>
+    </div>
+  );
+}
 
 function CampaignStats({ c }: { c: Campaign }) {
   const q = useLoad(() => get<Stats>(`/messages/${encodeURIComponent(c.key)}/stats`), [c.key, c.version]);
@@ -79,6 +102,7 @@ export default function Messages() {
             <Text label="Image URL" value={d.image_url} onChange={(image_url) => set({ image_url })} />
             <Field label="Payload (JSON)" hint="deep link, reward id, …"><JsonField value={d.payload} onChange={(payload) => set({ payload: payload ?? {} })} rows={1} /></Field>
           </div>
+          <Preview title={d.title} body={d.body} image={d.image_url} />
           <div className="row">
             <DateTime label="Starts" value={d.starts_at} onChange={(starts_at) => set({ starts_at })} />
             <DateTime label="Ends" value={d.ends_at} onChange={(ends_at) => set({ ends_at })} />
@@ -89,8 +113,8 @@ export default function Messages() {
             <Num label="Priority" value={d.priority} onChange={(priority) => set({ priority: priority ?? 0 })} hint="higher first in inbox" />
             <div className="field fixed"><span className="label">Push notification</span><Toggle value={!!d.push} onChange={(push) => set({ push })} label={d.push ? 'also push' : 'inbox only'} /></div>
           </div>
-          <Field label="Targeting condition" hint={CONDITION_HINT}><JsonField value={d.condition ?? undefined} onChange={(condition) => set({ condition: condition ?? null })} rows={3} /></Field>
-          <Text label="Audiences" value={(d.audiences ?? []).join(', ')} onChange={(v) => set({ audiences: v.split(',').map((s) => s.trim()).filter(Boolean) })} hint="audience keys, comma-separated" />
+          <Field label="Targeting condition"><ConditionEditor optional value={d.condition} onChange={(condition) => set({ condition })} /></Field>
+          <Field label="Audiences"><AudiencePicker value={d.audiences ?? []} onChange={(audiences) => set({ audiences })} /></Field>
           <Tags value={d.tags} onChange={(tags) => set({ tags })} />
         </>
       )}

@@ -17,6 +17,7 @@ type Props<T extends Keyed> = {
   extra?: (item: T, reload: () => void) => ReactNode;
   toBody?: (draft: Partial<T>, isNew: boolean) => unknown;
   sort?: (a: T, b: T) => number;
+  above?: ReactNode;
 };
 
 const READONLY = ['id', 'version', 'created_at', 'updated_at', 'salt', 'status'];
@@ -32,13 +33,14 @@ export function EntityPage<T extends Keyed>(p: Props<T>) {
   );
 }
 
-function List<T extends Keyed>({ title, path, blurb, cols, sort }: Props<T>) {
+function List<T extends Keyed>({ title, path, blurb, cols, sort, above }: Props<T>) {
   const nav = useNavigate();
   const q = useLoad(() => get<T[]>(path));
   const rows = q.data ? [...q.data].sort(sort ?? ((a, b) => a.key.localeCompare(b.key))) : null;
   return (
     <Page title={title} actions={<button className="btn" onClick={() => nav('new')}>New</button>}>
       {blurb && <p className="muted" style={{ marginTop: -8 }}>{blurb}</p>}
+      {above}
       <ErrorBox error={q.error} />
       <Table<T> cols={cols} rows={rows} rowKey={(r) => r.key} onRow={(r) => nav(encodeURIComponent(r.key))} />
     </Page>

@@ -1,20 +1,15 @@
 import { useState } from 'react';
 import { get, post, put, useLoad, del } from '../api';
-import { EntityPage, Text, Tags, CONDITION_HINT } from '../crud';
+import { EntityPage, Text, Tags } from '../crud';
+import { RulesEditor, TypedValue } from '../RuleBuilder';
+import type { Rule } from '../RuleBuilder';
 import { Badge, Confirm, ErrorBox, Field, JsonField, Table, Toggle, fmtDate } from '../ui';
 
 type Flag = {
   key: string; name: string; description: string; value_type: 'bool' | 'string' | 'number' | 'json'; default_value: unknown;
-  enabled: boolean; rules: unknown[]; tags: string[]; version: number; updated_at: string;
+  enabled: boolean; rules: Rule[]; tags: string[]; version: number; updated_at: string;
 };
 type Override = { identity_id: string; external_id: string; value: unknown };
-
-const RULES_HINT = (
-  <>
-    Array of rules, first match wins. Each: <code>{'{"id":"r1","name":"beta","condition":{…},"audiences":["beta"],"percentage":100,"value":true}'}</code>{' '}
-    or weighted <code>{'"variants":[{"key":"a","value":1,"weight":50},…]'}</code> instead of <code>value</code>. {CONDITION_HINT}
-  </>
-);
 
 function Overrides({ flag, reload }: { flag: Flag; reload: () => void }) {
   const q = useLoad(() => get<Override[]>(`/flags/${encodeURIComponent(flag.key)}/overrides`), [flag.key]);
@@ -80,7 +75,7 @@ export default function Flags() {
         { h: 'Key', c: (f) => <><strong>{f.key}</strong><div className="hint">{f.name}</div></> },
         { h: 'Type', c: (f) => <Badge tone="info">{f.value_type}</Badge> },
         { h: 'Default', c: (f) => <code>{JSON.stringify(f.default_value)}</code> },
-        { h: 'Rules', c: (f) => f.rules.length },
+        { h: 'Rules', c: (f) => (f.rules ?? []).length },
         { h: 'Status', c: (f) => f.enabled ? <Badge tone="ok">enabled</Badge> : <Badge>disabled</Badge> },
         { h: 'Updated', c: (f) => fmtDate(f.updated_at) },
       ]}
@@ -95,14 +90,15 @@ export default function Flags() {
           <div className="row">
             <label className="field">
               <span className="label">Value type</span>
-              <select value={d.value_type} onChange={(e) => set({ value_type: e.target.value as Flag['value_type'] })}>
+              <select value={d.value_type} onChange={(e) => { const t = e.target.value as Flag['value_type']; set({ value_type: t, default_value: t === 'bool' ? false : t === 'number' ? 0 : t === 'string' ? '' : {} }); }}>
                 <option value="bool">bool</option><option value="string">string</option><option value="number">number</option><option value="json">json</option>
               </select>
             </label>
-            <Field label="Default value (JSON)"><JsonField value={d.default_value} onChange={(v) => set({ default_value: v })} rows={1} /></Field>
+            <Field label="Default value"><TypedValue type={d.value_type ?? 'bool'} value={d.default_value} onChange={(v) => set({ default_value: v })} compact /></Field>
             <div className="field fixed"><span className="label">Enabled</span><Toggle value={!!d.enabled} onChange={(enabled) => set({ enabled })} label={d.enabled ? 'on' : 'off'} /></div>
           </div>
-          <Field label="Rules" hint={RULES_HINT}><JsonField value={d.rules} onChange={(v) => set({ rules: (v as unknown[]) ?? [] })} rows={10} /></Field>
+          <div className="label" style={{ margin: '4px 0 6px' }}>Rules <span className="hint">— evaluated top to bottom, first match wins</span></div>
+          <RulesEditor type={d.value_type ?? 'bool'} value={d.rules ?? []} onChange={(rules) => set({ rules })} />
           <Tags value={d.tags} onChange={(tags) => set({ tags })} />
         </>
       )}
