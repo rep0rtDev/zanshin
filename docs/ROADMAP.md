@@ -86,7 +86,7 @@ console comes last once the model is stable.
   configuration changes + notes), custom dashboards with widgets, Insights console page.
 - [ ] **Data management**: export sinks (S3 / Parquet, BigQuery, HTTP), config export / import with diff,
   data deletion, sample data, audit undo.
-- [ ] **Console redesign** and **SDK / Nakama parity** for every new API.
+- [x] **Console redesign** and **SDK / Nakama parity** for every new API.
 
 ## 0.2 — reach
 

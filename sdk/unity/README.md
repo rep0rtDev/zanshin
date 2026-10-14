@@ -16,6 +16,10 @@ await z.Authenticate(SystemInfo.deviceUniqueIdentifier,
 bool shopV2 = await z.FlagBool("shop_v2");
 var exps = await z.Experiments();           // sticky variants
 await z.Expose("price_test");
+await z.Identify("account-42");            // anonymous → account, merges if it exists, switches session
+var ev = await z.JoinLiveEvent("weekend_boost");
+await z.LeaveLiveEvent("weekend_boost");
+await z.DeleteInboxMessage(messageId);
 var live = await z.LiveEvents();            // active now
 var inbox = await z.Inbox();
 await z.RegisterPushToken("fcm", fcmToken, SystemInfo.deviceUniqueIdentifier);

@@ -246,6 +246,17 @@ export class ZanshinClient {
     await this.request('POST', '/v1/experiments/' + encodeURIComponent(experiment) + '/expose');
   }
 
+  /**
+   * Link the current (typically anonymous) identity to `id`, e.g. the account id after sign-in.
+   * If `id` already exists the two identities are merged into it. Returns a fresh session for the
+   * resulting identity; the client switches to it automatically.
+   */
+  async identify(id: string): Promise<Session> {
+    const s = await this.request<Session>('POST', '/v1/identify', { body: { id } });
+    this.setTokens(s.token, s.refresh_token);
+    return s;
+  }
+
   // ---- live events -------------------------------------------------------------------------
 
   async liveEvents(opts: { names?: string[]; upcoming?: boolean } = {}): Promise<LiveEvent[]> {
@@ -268,6 +279,24 @@ export class ZanshinClient {
   /** Consume (remove) a message; it is never redelivered. */
   async consume(id: string): Promise<void> {
     await this.request('DELETE', '/v1/messages/' + encodeURIComponent(id));
+  }
+
+  /** Remove a message from the inbox entirely (consume keeps a tombstone so it is never redelivered). */
+  async deleteInboxMessage(id: string): Promise<void> {
+    await this.request('DELETE', '/v1/inbox/' + encodeURIComponent(id));
+  }
+
+  // ---- live event participation -----------------------------------------------------------
+
+  /** Explicitly join a live event with `join_mode: "explicit"`; returns the event as now seen. */
+  async joinLiveEvent(key: string): Promise<LiveEvent> {
+    return this.request<LiveEvent>('POST', '/v1/live-events/' + encodeURIComponent(key) + '/join');
+  }
+
+  /** Leave a live event; resolves to false when the identity was not a participant. */
+  async leaveLiveEvent(key: string): Promise<boolean> {
+    const r = await this.request<{ left: boolean }>('POST', '/v1/live-events/' + encodeURIComponent(key) + '/leave');
+    return r.left;
   }
 
   // ---- push tokens -------------------------------------------------------------------------

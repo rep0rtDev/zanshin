@@ -17,6 +17,13 @@ await z.authenticate(deviceId, { default: { platform: 'web', version: '1.4.2' } 
 const shopV2 = await z.flagValue('shop_v2', false);
 const experiments = await z.experiments();      // sticky variants
 await z.expose('price_test');
+
+// link an anonymous identity to the signed-in account (merges if it exists) — the client switches session
+await z.identify('account-42');
+// explicit live-event participation and inbox housekeeping
+const ev = await z.joinLiveEvent('weekend_boost');
+await z.leaveLiveEvent('weekend_boost');
+await z.deleteInboxMessage(messageId);
 const events = await z.liveEvents();            // active now
 const inbox = await z.inbox();                  // delivered campaigns + direct messages
 await z.event('purchase', 9.99, { sku: 'gold' });

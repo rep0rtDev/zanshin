@@ -24,6 +24,10 @@ func _ready() -> void:
 
 	var exps := await Zanshin.experiments()                         # Array[ZanshinTypes.Experiment]
 	await Zanshin.expose("onboarding_v2")
+	await Zanshin.identify("account-42")        # anonymous → account, merges if it exists
+	var ev := await Zanshin.join_live_event("weekend_boost")
+	await Zanshin.leave_live_event("weekend_boost")
+	await Zanshin.delete_inbox_message(message_id)
 	var inbox := await Zanshin.inbox(20)                            # Array[ZanshinTypes.InboxMessage]
 	await Zanshin.track("level.up", 4, {"map": "forest"})
 

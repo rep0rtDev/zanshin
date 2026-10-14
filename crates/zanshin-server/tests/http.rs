@@ -325,6 +325,30 @@ async fn feature_flags_flow() {
         .unwrap();
     assert_eq!(list["flags"][0]["value"], true);
     assert_eq!(list["flags"][0]["reason"]["kind"], "override");
+    let one: Value = http
+        .get(format!(
+            "{base}/server/v1/flags/{key}?external_id=it-fr-{suffix}"
+        ))
+        .header("x-api-key", &server_key)
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(one["value"], true);
+    let explain: Value = http
+        .get(format!(
+            "{base}/server/v1/flags/{key}/explain?external_id=it-fr-{suffix}"
+        ))
+        .header("x-api-key", &server_key)
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert!(explain.is_object(), "{explain}");
     let r = http
         .get(format!("{base}/server/v1/flags?external_id=x"))
         .header("x-api-key", &client_key)

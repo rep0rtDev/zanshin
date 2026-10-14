@@ -32,6 +32,13 @@ const (
 	rpcInbox       = "zanshin.inbox"
 	rpcTrack       = "zanshin.track"
 	rpcProperties  = "zanshin.properties"
+	rpcFlag        = "zanshin.flag"
+	rpcFlagExplain = "zanshin.flag_explain"
+	rpcJoinEvent   = "zanshin.live_event_join"
+	rpcLeaveEvent  = "zanshin.live_event_leave"
+	rpcInboxRead   = "zanshin.inbox_read"
+	rpcInboxDelete = "zanshin.inbox_delete"
+	rpcMembers     = "zanshin.audience_members"
 )
 
 var errNoUser = runtime.NewError("no user in context", 16) // UNAUTHENTICATED
@@ -65,6 +72,13 @@ func InitModule(ctx context.Context, logger runtime.Logger, db *sql.DB, nk runti
 		rpcInbox:       m.rpcInbox,
 		rpcTrack:       m.rpcTrack,
 		rpcProperties:  m.rpcProperties,
+		rpcFlag:        m.rpcFlag,
+		rpcFlagExplain: m.rpcFlagExplain,
+		rpcJoinEvent:   m.rpcJoinEvent,
+		rpcLeaveEvent:  m.rpcLeaveEvent,
+		rpcInboxRead:   m.rpcInboxRead,
+		rpcInboxDelete: m.rpcInboxDelete,
+		rpcMembers:     m.rpcAudienceMembers,
 	} {
 		if err := initializer.RegisterRpc(name, fn); err != nil {
 			return err
@@ -322,6 +336,162 @@ func (m *module) rpcProperties(ctx context.Context, _ runtime.Logger, _ *sql.DB,
 		return "", rpcErr(err)
 	}
 	return respond(props)
+}
+
+type keyPayload struct {
+	Name string `json:"name"`
+	Key  string `json:"key"`
+	ID   string `json:"id"`
+}
+
+func parseKey(payload string) keyPayload {
+	var p keyPayload
+	_ = json.Unmarshal([]byte(payload), &p)
+	if p.Key == "" {
+		p.Key = p.Name
+	}
+	return p
+}
+
+// rpcFlag: payload {"name":"shop_banner"} returns a single evaluation (404 → NOT_FOUND).
+func (m *module) rpcFlag(ctx context.Context, _ runtime.Logger, _ *sql.DB, _ runtime.NakamaModule, payload string) (string, error) {
+	uid, err := userID(ctx)
+	if err != nil {
+		return "", err
+	}
+	p := parseKey(payload)
+	if p.Key == "" {
+		return "", runtime.NewError("name is required", 3)
+	}
+	f, err := m.z.Flag(ctx, uid, p.Key)
+	if err != nil {
+		return "", rpcErr(err)
+	}
+	if f == nil {
+		return "", runtime.NewError("flag not found", 5)
+	}
+	return respond(f)
+}
+
+// rpcFlagExplain: payload {"name":"shop_banner"} returns the override chain for the caller.
+func (m *module) rpcFlagExplain(ctx context.Context, _ runtime.Logger, _ *sql.DB, _ runtime.NakamaModule, payload string) (string, error) {
+	uid, err := userID(ctx)
+	if err != nil {
+		return "", err
+	}
+	p := parseKey(payload)
+	if p.Key == "" {
+		return "", runtime.NewError("name is required", 3)
+	}
+	raw, err := m.z.ExplainFlag(ctx, uid, p.Key)
+	if err != nil {
+		return "", rpcErr(err)
+	}
+	return string(raw), nil
+}
+
+// rpcJoinEvent: payload {"key":"weekend_boost"} explicitly joins the caller to a live event.
+func (m *module) rpcJoinEvent(ctx context.Context, _ runtime.Logger, _ *sql.DB, _ runtime.NakamaModule, payload string) (string, error) {
+	uid, err := userID(ctx)
+	if err != nil {
+		return "", err
+	}
+	p := parseKey(payload)
+	if p.Key == "" {
+		return "", runtime.NewError("key is required", 3)
+	}
+	ev, err := m.z.JoinLiveEvent(ctx, uid, p.Key)
+	if err != nil {
+		return "", rpcErr(err)
+	}
+	return respond(ev)
+}
+
+// rpcLeaveEvent: payload {"key":"weekend_boost"} → {"left":true|false}.
+func (m *module) rpcLeaveEvent(ctx context.Context, _ runtime.Logger, _ *sql.DB, _ runtime.NakamaModule, payload string) (string, error) {
+	uid, err := userID(ctx)
+	if err != nil {
+		return "", err
+	}
+	p := parseKey(payload)
+	if p.Key == "" {
+		return "", runtime.NewError("key is required", 3)
+	}
+	left, err := m.z.LeaveLiveEvent(ctx, uid, p.Key)
+	if err != nil {
+		return "", rpcErr(err)
+	}
+	return respond(map[string]any{"left": left})
+}
+
+// rpcInboxRead: payload {"id":"<message id>","consume":true} marks read, or consumes when consume is set.
+func (m *module) rpcInboxRead(ctx context.Context, _ runtime.Logger, _ *sql.DB, _ runtime.NakamaModule, payload string) (string, error) {
+	uid, err := userID(ctx)
+	if err != nil {
+		return "", err
+	}
+	var p struct {
+		ID      string `json:"id"`
+		Consume bool   `json:"consume"`
+	}
+	if json.Unmarshal([]byte(payload), &p) != nil || p.ID == "" {
+		return "", runtime.NewError("id is required", 3)
+	}
+	if p.Consume {
+		if err := m.z.Consume(ctx, uid, p.ID); err != nil {
+			return "", rpcErr(err)
+		}
+		return respond(map[string]any{"consumed": p.ID})
+	}
+	msg, err := m.z.MarkRead(ctx, uid, p.ID)
+	if err != nil {
+		return "", rpcErr(err)
+	}
+	return respond(msg)
+}
+
+// rpcInboxDelete: payload {"id":"<message id>"} removes the message from the caller's inbox.
+func (m *module) rpcInboxDelete(ctx context.Context, _ runtime.Logger, _ *sql.DB, _ runtime.NakamaModule, payload string) (string, error) {
+	uid, err := userID(ctx)
+	if err != nil {
+		return "", err
+	}
+	p := parseKey(payload)
+	if p.ID == "" {
+		return "", runtime.NewError("id is required", 3)
+	}
+	if err := m.z.DeleteInboxMessage(ctx, uid, p.ID); err != nil {
+		return "", rpcErr(err)
+	}
+	return respond(map[string]any{"deleted": p.ID})
+}
+
+// rpcAudienceMembers: payload {"audience":"vip","add":["<user id>"],"remove":["<user id>"]}.
+// Server-to-server only (Nakama HTTP key, no user in context): lets your own backend manage a
+// managed audience from Nakama's side (e.g. guild roster → audience).
+func (m *module) rpcAudienceMembers(ctx context.Context, _ runtime.Logger, _ *sql.DB, _ runtime.NakamaModule, payload string) (string, error) {
+	if _, err := userID(ctx); err == nil {
+		return "", runtime.NewError("server-to-server only", 7)
+	}
+	var p struct {
+		Audience string   `json:"audience"`
+		Add      []string `json:"add"`
+		Remove   []string `json:"remove"`
+	}
+	if json.Unmarshal([]byte(payload), &p) != nil || p.Audience == "" {
+		return "", runtime.NewError("audience is required", 3)
+	}
+	if len(p.Add) > 0 {
+		if err := m.z.AddAudienceMembers(ctx, p.Audience, p.Add...); err != nil {
+			return "", rpcErr(err)
+		}
+	}
+	if len(p.Remove) > 0 {
+		if err := m.z.RemoveAudienceMembers(ctx, p.Audience, p.Remove...); err != nil {
+			return "", rpcErr(err)
+		}
+	}
+	return respond(map[string]any{"added": len(p.Add), "removed": len(p.Remove)})
 }
 
 // main is required for the plugin build mode; Nakama only calls InitModule.
