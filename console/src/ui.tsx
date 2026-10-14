@@ -47,7 +47,7 @@ export function JsonField({ value, onChange, rows = 6, placeholder }: { value: u
   return (
     <div className={'json' + (bad ? ' bad' : '')}>
       <textarea
-        rows={rows}
+        rows={Math.min(Math.max(3, text.split('\n').length + 1), Math.max(rows, 12))}
         value={text}
         placeholder={placeholder}
         spellCheck={false}
@@ -150,6 +150,60 @@ export function Pager({ page, pages, size, onPage, onSize, total }: { page: numb
       <button className="btn ghost sm" disabled={page <= 0} onClick={() => onPage(page - 1)}>‹</button>
       <span className="hint">{page + 1} / {pages}</span>
       <button className="btn ghost sm" disabled={page >= pages - 1} onClick={() => onPage(page + 1)}>›</button>
+    </div>
+  );
+}
+
+export type PickOption = { key: string; name?: string; hint?: ReactNode };
+/** Multi-select over a catalog: chosen keys as removable chips + a search box with a dropdown. Replaces chip walls. */
+export function KeyPicker({ value, onChange, options, placeholder = 'Search…', empty }: { value: string[]; onChange: (v: string[]) => void; options: PickOption[] | null; placeholder?: string; empty?: ReactNode }) {
+  const [q, setQ] = useState('');
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const h = (e: MouseEvent) => { if (!ref.current?.contains(e.target as Node)) setOpen(false); };
+    document.addEventListener('mousedown', h);
+    return () => document.removeEventListener('mousedown', h);
+  }, [open]);
+  if (!options) return <span className="hint">Loading…</span>;
+  if (!options.length && !value.length) return <span className="hint">{empty ?? 'Nothing to pick from yet'}</span>;
+  const s = q.trim().toLowerCase();
+  const rest = options.filter((o) => !value.includes(o.key) && (!s || `${o.key} ${o.name ?? ''}`.toLowerCase().includes(s))).slice(0, 8);
+  const add = (k: string) => { onChange([...value, k]); setQ(''); };
+  return (
+    <div className="picker" ref={ref}>
+      <div className="picker-box" onClick={() => setOpen(true)}>
+        {value.map((k) => {
+          const o = options.find((x) => x.key === k);
+          return (
+            <span key={k} className={'chip on' + (o ? '' : ' missing')} title={o?.name ?? 'unknown'}>
+              {k}<button type="button" className="chip-x" aria-label={`Remove ${k}`} onClick={(e) => { e.stopPropagation(); onChange(value.filter((x) => x !== k)); }}>×</button>
+            </span>
+          );
+        })}
+        <input
+          className="picker-input"
+          value={q}
+          placeholder={value.length ? '' : placeholder}
+          onFocus={() => setOpen(true)}
+          onChange={(e) => { setQ(e.target.value); setOpen(true); }}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' && rest[0]) { e.preventDefault(); add(rest[0].key); }
+            if (e.key === 'Backspace' && !q && value.length) onChange(value.slice(0, -1));
+            if (e.key === 'Escape') setOpen(false);
+          }}
+        />
+      </div>
+      {open && (
+        <div className="picker-pop">
+          {rest.length === 0 ? <div className="hint" style={{ padding: '6px 10px' }}>{s ? 'No matches' : 'All selected'}</div> : rest.map((o) => (
+            <button key={o.key} type="button" className="menu-item" onMouseDown={(e) => e.preventDefault()} onClick={() => add(o.key)}>
+              <span className="mono">{o.key}</span>{o.name && o.name !== o.key && <span className="hint" style={{ marginLeft: 8 }}>{o.name}</span>}{o.hint && <span className="hint" style={{ marginLeft: 8 }}>{o.hint}</span>}
+            </button>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

@@ -3,7 +3,7 @@ import { download, get, post, useLoad } from '../api';
 import { DateTime, EntityPage, Num, Tags, Text } from '../crud';
 import { AudiencePicker, ConditionEditor, VariantsEditor } from '../RuleBuilder';
 import type { Cond } from '../RuleBuilder';
-import { Badge, Confirm, ErrorBox, Field, Table, fmtDate, fmtNum } from '../ui';
+import { Badge, Confirm, ErrorBox, Field, KeyPicker, Table, fmtDate, fmtNum } from '../ui';
 
 type Variant = { key: string; name: string; value: unknown; weight: number };
 type Experiment = {
@@ -46,16 +46,8 @@ function Lifecycle({ exp, reload }: { exp: Experiment; reload: () => void }) {
 
 export function MetricsPicker({ value, onChange }: { value: string[]; onChange: (v: string[]) => void }) {
   const q = useLoad(() => get<{ items: { key: string; kind: string; name: string }[] }>('/metrics'), []);
-  const items = q.data?.items ?? [];
-  return (
-    <div className="chips">
-      {items.length === 0 && <span className="hint">No metrics in the catalog yet — create them under Metrics.</span>}
-      {items.map((m) => {
-        const on = value.includes(m.key);
-        return <button key={m.key} type="button" className={'chip' + (on ? ' on' : '')} onClick={() => onChange(on ? value.filter((k) => k !== m.key) : [...value, m.key])} title={m.name}>{m.key} <span className="hint">{m.kind}</span></button>;
-      })}
-    </div>
-  );
+  const opts = q.data ? q.data.items.map((m) => ({ key: m.key, name: m.name, hint: m.kind })) : null;
+  return <KeyPicker value={value} onChange={onChange} options={opts} placeholder="Add metric…" empty="No metrics in the catalog yet — create them under Metrics." />;
 }
 
 function Ops({ exp, reload }: { exp: Experiment; reload: () => void }) {

@@ -106,7 +106,7 @@ function List<T extends Keyed>({ title, path, blurb, cols, sort, above, copy, st
     } catch (e) { toast((e as Error).message, 'bad'); }
   };
   const menuCol: Col<T> = { h: '', w: '44px', c: (r) => canEdit ? <Menu items={[{ label: 'Open', onClick: () => nav(encodeURIComponent(r.key)) }, { label: 'Duplicate', onClick: () => duplicate(r) }, { label: 'Delete', danger: true, onClick: () => { if (confirm(`Delete ${r.key}?`)) void remove(r); } }]} /> : null };
-  const updatedCol: Col<T> = { h: 'Updated', w: '150px', c: (r) => <span className="hint">{r.updated_at ? fmtDate(r.updated_at) : ''}</span> };
+  const updatedCol: Col<T> = { h: 'Updated', w: '150px', c: (r) => <span className="hint" style={{ whiteSpace: 'nowrap' }}>{r.updated_at ? fmtDate(r.updated_at) : ''}</span> };
   const showUpdated = all.some((x) => x.updated_at) && !cols.some((c) => c.h === 'Updated');
   const filtered = !!(search || tag || status);
   return (
