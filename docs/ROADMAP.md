@@ -49,13 +49,14 @@ console comes last once the model is stable.
       dark theme
 - [x] **Unreal SDK** (`sdk/unreal`): runtime plugin with `FZanshinClient` / `FZanshinStream` (engine HTTP,
       WebSockets, Json only) and a Blueprint `UZanshinSubsystem` with a synchronous streamed flag cache
+- [x] **Godot SDK** (`sdk/godot`): GDScript addon with awaitable `Zanshin` autoload, typed results, live stream
+      node; headless smoke test passes against the dev server, CI parses it with Godot 4.3
 - [x] **Unity SDK** (`sdk/unity`): dependency-free UPM package (netstandard2.1, own JSON), async client
       with single-flight refresh, all client endpoints, reconnecting `ClientWebSocket` stream with
       local flag cache; compiled in CI with `dotnet build`, smoke-tested against a live server
 
 ## 0.2 — reach
 
-- Godot (GDScript/C#) SDK
 - Webhooks and outbound integrations (Slack / Discord / generic)
 - Multi-project (tenant) support with per-project keys
 - [x] Rate limiting (Redis token bucket per scope/caller, per-key quotas), audit log of admin actions

@@ -1,0 +1,15 @@
+; Headless smoke test project for the Zanshin addon.
+config_version=5
+
+[application]
+
+config/name="zanshin-smoke"
+config/features=PackedStringArray("4.3")
+
+[autoload]
+
+Zanshin="*res://addons/zanshin/zanshin.gd"
+
+[editor_plugins]
+
+enabled=PackedStringArray("res://addons/zanshin/plugin.cfg")
