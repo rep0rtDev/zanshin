@@ -107,6 +107,17 @@ variables. `zanshin --check-config` prints the effective configuration with secr
 
 Full reference: [docs/api.md](docs/api.md). Design: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
+## SDKs
+
+- [`sdk/ts`](sdk/ts) — TypeScript for browsers and Node: `authenticate` / `restore`, automatic
+  token refresh, `flags`, `experiments` + `expose`, `liveEvents`, `inbox`, `track`, and a
+  reconnecting WebSocket stream (`z.stream().onFlag(...)`).
+- [`sdk/go`](sdk/go) — Go for trusted backends: server-key client with a per-identity evaluation
+  cache invalidated by the `/server/v1/stream` change feed, identity sync, direct messages, events.
+- [`nakama/`](nakama) — Nakama runtime plugin on top of the Go SDK: users become Zanshin
+  identities on login; clients call `zanshin.flags`, `zanshin.experiments`, `zanshin.live_events`,
+  `zanshin.inbox`, `zanshin.track`… as regular RPCs. Build with `docker build -f nakama/Dockerfile .`.
+
 ## License
 
 Apache-2.0. See [LICENSE](LICENSE).
