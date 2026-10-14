@@ -31,11 +31,13 @@ console comes last once the model is stable.
 - [x] **Go SDK** (`sdk/go`): server-key client, per-identity evaluation cache with TTL,
       WebSocket change-stream invalidation with reconnect/backoff, identity upsert, events,
       direct messages, inbox
+- [x] **TypeScript SDK** (`sdk/ts`): zero-dependency client for browser/Node, session restore and
+      single-flight refresh, all client endpoints, reconnecting WebSocket stream with local flag
+      cache, integration test against a live server
 
 ## 0.2 — reach
 
-- TypeScript SDK (browser + Node), Unity (C#), Unreal (C++), Godot (GDScript/C#) SDKs
-  generated from `proto/`
+- Unity (C#), Unreal (C++), Godot (GDScript/C#) SDKs
 - Push notifications (FCM / APNs) as a message delivery channel
 - Webhooks and outbound integrations (Slack / Discord / generic)
 - Multi-project (tenant) support with per-project keys

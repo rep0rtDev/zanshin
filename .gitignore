@@ -3,3 +3,5 @@
 .env
 /config/zanshin.yml
 /data
+node_modules/
+sdk/ts/dist/

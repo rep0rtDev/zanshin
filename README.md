@@ -75,6 +75,7 @@ variables. `zanshin --check-config` prints the effective configuration with secr
 | Analytics events: client/server ingest, batching writer, ClickHouse sink (PostgreSQL fallback), events tagged with live experiment assignments, timeseries / top names / per-identity log, per-variant experiment metrics with conversion | ✅ |
 | Computed properties maintained from events: `session_count`, `first/last_seen_at`, `event_count`, per-event `count` / `sum` / `last_at` — targetable from rules | ✅ |
 | Go SDK `sdk/go` (server-key client with local cache + change-stream invalidation) | ✅ |
+| TypeScript SDK `sdk/ts` (browser + Node, zero deps): session with auto-refresh, flags, experiments, live events, inbox, events, WebSocket stream | ✅ |
 | Embedded admin console | 🔜 |
 
 ## API at a glance
