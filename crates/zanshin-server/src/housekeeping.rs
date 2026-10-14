@@ -16,6 +16,7 @@ pub async fn run(state: AppState, mut shutdown: watch::Receiver<bool>) {
                 sweep_push(&state).await;
                 sweep_scheduled(&state).await;
                 close_idle_sessions(&state).await;
+                state.export.run_due().await;
                 for key in state.audiences.due_for_recompute().await {
                     if let Err(e) = state.audiences.recompute(&key).await {
                         tracing::warn!(audience = %key, error = %e, "scheduled recompute failed");
@@ -42,6 +43,12 @@ pub async fn run(state: AppState, mut shutdown: watch::Receiver<bool>) {
                     Ok(n) if n > 0 => tracing::info!(purged = n, "old audit entries purged"),
                     Ok(_) => {}
                     Err(e) => tracing::warn!(error = %e, "audit prune failed"),
+                }
+                if let Err(e) = state.export.purge_runs(chrono::Duration::days(30)).await {
+                    tracing::warn!(error = %e, "export run purge failed");
+                }
+                if let Err(e) = state.config_history.purge(chrono::Duration::days(400)).await {
+                    tracing::warn!(error = %e, "config history purge failed");
                 }
                 if let Err(e) = state.analytics.purge_annotations(chrono::Duration::days(400)).await {
                     tracing::warn!(error = %e, "annotation purge failed");

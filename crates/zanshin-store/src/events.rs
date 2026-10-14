@@ -76,6 +76,40 @@ struct ChRow<'a> {
     experiments: Vec<(&'a str, &'a str)>,
 }
 
+/// One event as written to an export sink.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct ExportedEvent {
+    pub id: Uuid,
+    pub event_time: DateTime<Utc>,
+    pub received_at: DateTime<Utc>,
+    pub identity_id: Uuid,
+    pub external_id: String,
+    pub name: String,
+    pub value: String,
+    pub metadata: Value,
+    pub session_id: Option<Uuid>,
+    pub experiments: Value,
+}
+
+#[derive(Row, Deserialize)]
+struct ChExport {
+    #[serde(with = "clickhouse::serde::uuid")]
+    id: Uuid,
+    #[serde(with = "clickhouse::serde::chrono::datetime64::millis")]
+    event_time: DateTime<Utc>,
+    #[serde(with = "clickhouse::serde::chrono::datetime64::millis")]
+    received_at: DateTime<Utc>,
+    #[serde(with = "clickhouse::serde::uuid")]
+    identity_id: Uuid,
+    external_id: String,
+    name: String,
+    value: String,
+    metadata: String,
+    #[serde(with = "clickhouse::serde::uuid")]
+    session_id: Uuid,
+    experiments: Vec<(String, String)>,
+}
+
 #[derive(Row, Deserialize)]
 struct ChBucket {
     #[serde(with = "clickhouse::serde::chrono::datetime")]
@@ -647,6 +681,102 @@ impl EventStore {
     }
 
     /// Most recent events of one identity.
+    /// Events after the `(received_at, id)` cursor in arrival order, for export sinks.
+    pub async fn export_batch(
+        &self,
+        after: Option<(DateTime<Utc>, Uuid)>,
+        names: &[String],
+        limit: i64,
+    ) -> Result<Vec<ExportedEvent>> {
+        let limit = limit.clamp(1, 100_000);
+        let (at, id) = after.unwrap_or((
+            DateTime::<Utc>::from_timestamp(0, 0).unwrap_or_default(),
+            Uuid::nil(),
+        ));
+        match self {
+            EventStore::ClickHouse(ch) => {
+                let name_filter = if names.is_empty() {
+                    ""
+                } else {
+                    " AND name IN ?"
+                };
+                let mut q = ch.client.query(&format!(
+                    "SELECT id, event_time, received_at, identity_id, external_id, name, value, metadata, session_id, experiments
+                     FROM events WHERE (received_at, id) > (?, ?){name_filter} ORDER BY received_at, id LIMIT ?"
+                ))
+                .bind(at.timestamp_millis() as f64 / 1000.0)
+                .bind(id);
+                if !names.is_empty() {
+                    q = q.bind(names);
+                }
+                let rows: Vec<ChExport> = q.bind(limit as u64).fetch_all().await.map_err(ch_err)?;
+                Ok(rows
+                    .into_iter()
+                    .map(|r| ExportedEvent {
+                        id: r.id,
+                        event_time: r.event_time,
+                        received_at: r.received_at,
+                        identity_id: r.identity_id,
+                        external_id: r.external_id,
+                        name: r.name,
+                        value: r.value,
+                        metadata: serde_json::from_str(&r.metadata).unwrap_or(Value::Null),
+                        session_id: (!r.session_id.is_nil()).then_some(r.session_id),
+                        experiments: Value::Object(
+                            r.experiments
+                                .into_iter()
+                                .map(|(k, v)| (k, Value::String(v)))
+                                .collect(),
+                        ),
+                    })
+                    .collect())
+            }
+            EventStore::Postgres(pg) => {
+                #[allow(clippy::type_complexity)]
+                let rows: Vec<(Uuid, DateTime<Utc>, DateTime<Utc>, Uuid, String, String, String, Value, Option<Uuid>, Value)> = sqlx::query_as(
+                    "SELECT id, event_time, received_at, identity_id, external_id, name, value, metadata, session_id, experiments
+                     FROM events WHERE (received_at, id) > ($1, $2) AND (cardinality($3::text[]) = 0 OR name = ANY($3))
+                     ORDER BY received_at, id LIMIT $4",
+                )
+                .bind(at)
+                .bind(id)
+                .bind(names)
+                .bind(limit)
+                .fetch_all(pg)
+                .await
+                .map_err(map_sqlx)?;
+                Ok(rows
+                    .into_iter()
+                    .map(
+                        |(
+                            id,
+                            event_time,
+                            received_at,
+                            identity_id,
+                            external_id,
+                            name,
+                            value,
+                            metadata,
+                            session_id,
+                            experiments,
+                        )| ExportedEvent {
+                            id,
+                            event_time,
+                            received_at,
+                            identity_id,
+                            external_id,
+                            name,
+                            value,
+                            metadata,
+                            session_id,
+                            experiments,
+                        },
+                    )
+                    .collect())
+            }
+        }
+    }
+
     pub async fn recent_for_identity(
         &self,
         identity_id: Uuid,
@@ -703,6 +833,33 @@ impl EventStore {
                     )
                     .collect())
             }
+        }
+    }
+
+    /// Delete events older than `before` (optionally only the given names). Returns rows affected (0 on ClickHouse, which mutates asynchronously).
+    pub async fn delete_before(&self, before: DateTime<Utc>, names: &[String]) -> Result<u64> {
+        match self {
+            EventStore::ClickHouse(ch) => {
+                let filter = if names.is_empty() { "" } else { " AND name IN ?" };
+                let mut q = ch
+                    .client
+                    .query(&format!("ALTER TABLE events DELETE WHERE event_time < ?{filter}"))
+                    .bind(before.timestamp_millis() as f64 / 1000.0);
+                if !names.is_empty() {
+                    q = q.bind(names);
+                }
+                q.execute().await.map_err(ch_err)?;
+                Ok(0)
+            }
+            EventStore::Postgres(pg) => Ok(sqlx::query(
+                "DELETE FROM events WHERE event_time < $1 AND (cardinality($2::text[]) = 0 OR name = ANY($2))",
+            )
+            .bind(before)
+            .bind(names)
+            .execute(pg)
+            .await
+            .map_err(map_sqlx)?
+            .rows_affected()),
         }
     }
 

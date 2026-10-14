@@ -2,6 +2,7 @@ use crate::services::taxonomy::TaxonomyService;
 use crate::services::{
     analytics::AnalyticsService,
     audit::AuditService,
+    export::ExportService,
     integrations::IntegrationService,
     journeys::{JourneyDeps, JourneyService},
     limits::RateLimiter,
@@ -20,6 +21,7 @@ use zanshin_store::{
     api_keys::ApiKeyRepo,
     audiences::AudienceRepo,
     experiments::ExperimentRepo,
+    export::{ConfigHistoryRepo, ExportRunRepo, ExportSinkRepo},
     flags::FlagRepo,
     identities::IdentityRepo,
     integrations::IntegrationRepo,
@@ -73,6 +75,8 @@ pub struct AppState {
     pub webhooks: WebhookService,
     pub journeys: JourneyService,
     pub analytics: AnalyticsService,
+    pub export: ExportService,
+    pub config_history: ConfigHistoryRepo,
     pub push: PushService,
     pub eval: Evaluator,
     pub taxonomy: TaxonomyService,
@@ -233,6 +237,12 @@ impl AppState {
             },
             hooks,
         );
+        let export = ExportService::new(
+            ExportSinkRepo::new(stores.pg.clone()),
+            ExportRunRepo::new(stores.pg.clone()),
+            events.clone(),
+        );
+        let config_history = ConfigHistoryRepo::new(stores.pg.clone());
         Ok(Self {
             cfg,
             stores,
@@ -253,6 +263,8 @@ impl AppState {
             webhooks,
             journeys,
             analytics,
+            export,
+            config_history,
             push,
             eval,
             taxonomy,

@@ -40,6 +40,10 @@ impl AuditService {
         });
     }
 
+    pub async fn get(&self, id: uuid::Uuid) -> Result<AuditEntry> {
+        self.repo.get(id).await
+    }
+
     pub async fn list(&self, f: &AuditFilter) -> Result<Vec<AuditEntry>> {
         self.repo.list(f).await
     }

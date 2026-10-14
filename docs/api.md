@@ -567,3 +567,40 @@ and `"true"` vs `true`.
 | `GET /metrics` | Prometheus text format |
 
 gRPC: `grpc.health.v1.Health/Check`, `grpc.reflection.v1.ServerReflection`.
+
+## Data export and management
+
+### Export sinks
+
+Ship raw events to external storage. Each sink keeps a `(received_at, id)` cursor and a run log; the housekeeping loop runs due sinks every minute, and a full batch immediately schedules the next one.
+
+| Method | Path | Notes |
+|---|---|---|
+| GET/POST | `/admin/v1/export-sinks` | `kind`: `s3` (`bucket`, `region`, `access_key`, `secret_key`, optional `endpoint` for S3-compatible stores, `prefix`), `http` (`url`, optional `secret` → `X-Zanshin-Signature`, `headers`), `bigquery` (`project`, `dataset`, `table`, `service_account`). `format`: `jsonl` \| `csv`, `gzip`, `events` filter (empty = all), `interval_secs`, `batch_size`. Secrets are masked (`***`) on read and kept when the mask is sent back. |
+| GET/PUT/DELETE | `/admin/v1/export-sinks/{key}` | |
+| POST | `/admin/v1/export-sinks/{key}/test` | Delivers one synthetic `$export_test` event. |
+| POST | `/admin/v1/export-sinks/{key}/run` | Runs one batch now and returns the run. |
+| GET | `/admin/v1/export-sinks/{key}/runs?limit` | Run log (`ok` / `empty` / `failed`, rows, bytes, object). |
+| POST | `/admin/v1/export-sinks/{key}/reset-cursor` | `{ "to": timestamp \| null }` — re-export from a point in time (or from the beginning). |
+
+### Configuration bundles
+
+| Method | Path | Notes |
+|---|---|---|
+| GET | `/admin/v1/config/kinds` | Entity kinds and bundle format. |
+| GET | `/admin/v1/config/export?kinds=flags,audiences` | Bundle `{ format: "zanshin-config/1", exported_at, entities: { kind: [...] } }` with volatile fields (ids, versions, timestamps) stripped. |
+| POST | `/admin/v1/config/diff` | `{ bundle, mode: merge \| replace, kinds? }` → per kind `added` / `changed` (with field names) / `removed` (replace only) / `unchanged`. |
+| POST | `/admin/v1/config/import` | `{ bundle, mode, kinds?, dry_run }` → the plan plus `applied` and per-entity `errors`. |
+| POST | `/admin/v1/config/import-from` | `{ url, admin_key, mode, kinds?, dry_run }` — pulls `/admin/v1/config/export` from another Zanshin server and imports it. |
+| GET | `/admin/v1/config/history?kind&key&limit` | Snapshots of every configuration change (bus-driven for flags/audiences/experiments/live events/messages, plus everything touched by imports and reverts). |
+| POST | `/admin/v1/config/history/{id}/revert` | Restore the entity to that snapshot (or delete it again). |
+| POST | `/admin/v1/audit/{id}/undo` | Undo the change recorded by an audit entry: restores the last snapshot before it, or deletes an entity the entry created. |
+
+### Data tools
+
+| Method | Path | Notes |
+|---|---|---|
+| GET | `/admin/v1/data/identities/{id}/takeout` | Identity, properties, recent events and play sessions as one JSON document. |
+| DELETE | `/admin/v1/data/identities/{id}` | GDPR deletion: identity, sessions, inbox, assignments and all events (ClickHouse mutation). |
+| POST | `/admin/v1/data/events/purge` | `{ before, names? }` — delete events older than a timestamp (at least one hour in the past). |
+| POST | `/admin/v1/data/sample` | `{ players, days, seed }` — deterministic synthetic players with sessions, level-ups and purchases for trying analytics on an empty server. |

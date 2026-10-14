@@ -6,6 +6,7 @@ pub mod audiences;
 pub mod error;
 pub mod events;
 pub mod experiments;
+pub mod export;
 pub mod expr;
 pub mod flags;
 pub mod hash;

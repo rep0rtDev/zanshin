@@ -9,6 +9,7 @@ pub mod cache;
 pub mod clickhouse_sink;
 pub mod events;
 pub mod experiments;
+pub mod export;
 pub mod flags;
 pub mod identities;
 pub mod integrations;

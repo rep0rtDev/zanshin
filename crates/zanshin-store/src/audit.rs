@@ -4,7 +4,7 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use sqlx::{FromRow, PgPool};
 use uuid::Uuid;
-use zanshin_core::Result;
+use zanshin_core::{Error, Result};
 
 use crate::map_sqlx;
 
@@ -82,6 +82,16 @@ impl AuditRepo {
     }
 
     /// Newest first; `after` is the id of the last row of the previous page (ids are UUIDv7, time ordered).
+    pub async fn get(&self, id: Uuid) -> Result<AuditEntry> {
+        let row: Option<AuditEntry> =
+            sqlx::query_as(&format!("SELECT {COLS} FROM audit_log WHERE id = $1"))
+                .bind(id)
+                .fetch_optional(&self.pg)
+                .await
+                .map_err(map_sqlx)?;
+        row.ok_or_else(|| Error::not_found(format!("audit entry {id}")))
+    }
+
     pub async fn list(&self, f: &AuditFilter) -> Result<Vec<AuditEntry>> {
         let path_like = f.path_prefix.as_ref().map(|p| format!("{p}%"));
         sqlx::query_as(&format!(
