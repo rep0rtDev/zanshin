@@ -38,6 +38,7 @@ impl IntoResponse for ApiError {
             Error::NotFound(_) => StatusCode::NOT_FOUND,
             Error::Conflict(_) => StatusCode::CONFLICT,
             Error::Unavailable(_) => StatusCode::SERVICE_UNAVAILABLE,
+            Error::ResourceExhausted(_) => StatusCode::TOO_MANY_REQUESTS,
             Error::Internal(_) => StatusCode::INTERNAL_SERVER_ERROR,
         };
         let message = match &self.0 {

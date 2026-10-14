@@ -6,6 +6,8 @@ server:
   cors_origins: []          # empty = any origin
   body_limit: 1048576       # bytes
   request_timeout: 30s
+  trust_proxy: false        # honour X-Forwarded-For / X-Real-IP from the peer (behind a reverse proxy)
+  hsts: false               # add Strict-Transport-Security (TLS terminated in front of Zanshin)
 
 database:
   url: postgres://zanshin:zanshin@localhost:5432/zanshin
@@ -48,3 +50,17 @@ push:
     key_file: ""               # .p8 token-auth key
     bundle_id: ""
     sandbox: false
+
+limits:                     # token buckets per caller; *_per_minute sustained, burst_factor minutes of burst
+  enabled: true
+  ip_per_minute: 120        # unauthenticated / invalid-key requests, keyed by client IP
+  client_per_minute: 600    # per client API key (override per key with rate_limit_per_minute)
+  session_per_minute: 600   # per identity (session token)
+  server_per_minute: 6000   # per server API key
+  admin_per_minute: 1200    # per admin API key
+  burst_factor: 2.0
+
+audit:                      # every mutating /admin/v1 call -> audit_log (GET /admin/v1/audit)
+  enabled: true
+  store_bodies: true        # redacted JSON request body
+  retention: 90d

@@ -109,6 +109,22 @@ variables. `zanshin --check-config` prints the effective configuration with secr
 
 Full reference: [docs/api.md](docs/api.md). Design: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
+## Hardening
+
+- **Rate limiting** — a Redis token bucket per caller and scope (`ip`, `client`, `session`, `server`,
+  `admin`), configured under `limits:`; every API response carries `X-RateLimit-Limit`,
+  `X-RateLimit-Remaining` and `X-RateLimit-Scope`, throttled calls get `429` + `Retry-After`.
+  Any API key can carry its own budget (`rate_limit_per_minute` when minting it). Redis outages fail open.
+- **API key scopes** — admin keys can be minted `read_only` (GET-only on `/admin/v1`), any key can have
+  an `expires_at`; both are enforced at authentication time.
+- **Audit log** — every mutating `/admin/v1` call (including rejected and unauthenticated attempts) is
+  recorded with actor, method, path, status, client IP, request id and a redacted JSON body; browse it
+  with `GET /admin/v1/audit` (filters: `actor`, `method`, `path`, `since`, cursor `after`). Retention via
+  `audit.retention`.
+- **Headers** — `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, `Referrer-Policy`, optional
+  HSTS (`server.hsts`), a strict CSP on the console; `server.trust_proxy` controls whether
+  `X-Forwarded-For` is believed.
+
 ## Admin console
 
 Open `http://localhost:7550/console/` and sign in with the bootstrap admin key (or any admin

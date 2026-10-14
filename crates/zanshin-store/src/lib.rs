@@ -3,6 +3,7 @@
 
 pub mod api_keys;
 pub mod audiences;
+pub mod audit;
 pub mod cache;
 pub mod clickhouse_sink;
 pub mod events;

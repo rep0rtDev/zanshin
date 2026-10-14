@@ -112,6 +112,7 @@ pub fn to_status(e: Error) -> Status {
         Error::NotFound(m) => Status::not_found(m),
         Error::Conflict(m) => Status::already_exists(m),
         Error::Unavailable(m) => Status::unavailable(m),
+        Error::ResourceExhausted(m) => Status::resource_exhausted(m),
         Error::Internal(err) => {
             tracing::error!(error = ?err, "internal error");
             Status::internal("internal error")

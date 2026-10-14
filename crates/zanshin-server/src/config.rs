@@ -22,6 +22,10 @@ pub struct Config {
     pub log: LogConfig,
     #[serde(default)]
     pub push: PushConfig,
+    #[serde(default)]
+    pub limits: LimitsConfig,
+    #[serde(default)]
+    pub audit: AuditConfig,
 }
 
 /// Push notification delivery. `provider`: `none` (default), `log` (record only; dev/test),
@@ -75,6 +79,73 @@ pub struct ServerConfig {
     /// Per-request timeout.
     #[serde(default = "default_request_timeout", with = "humantime_serde")]
     pub request_timeout: Duration,
+    /// Trust `X-Forwarded-For` / `X-Real-IP` from the immediate peer (set when behind a reverse proxy).
+    #[serde(default)]
+    pub trust_proxy: bool,
+    /// Emit `Strict-Transport-Security` (only when TLS is terminated in front of Zanshin).
+    #[serde(default)]
+    pub hsts: bool,
+}
+
+/// Request budgets. Each scope is a token bucket per caller that refills at `*_per_minute / 60`
+/// tokens per second and holds `burst_factor` minutes worth of tokens.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LimitsConfig {
+    #[serde(default = "default_true")]
+    pub enabled: bool,
+    /// Unauthenticated or unidentified requests, keyed by client IP (e.g. `/v1/authenticate`).
+    #[serde(default = "default_ip_per_minute")]
+    pub ip_per_minute: u32,
+    /// Requests carrying a client API key, keyed by key (overridable per key).
+    #[serde(default = "default_client_per_minute")]
+    pub client_per_minute: u32,
+    /// Requests carrying a session token, keyed by identity.
+    #[serde(default = "default_session_per_minute")]
+    pub session_per_minute: u32,
+    /// Requests carrying a server API key, keyed by key (overridable per key).
+    #[serde(default = "default_server_per_minute")]
+    pub server_per_minute: u32,
+    /// Requests carrying an admin API key, keyed by key (overridable per key).
+    #[serde(default = "default_admin_per_minute")]
+    pub admin_per_minute: u32,
+    #[serde(default = "default_burst_factor")]
+    pub burst_factor: f64,
+}
+
+impl Default for LimitsConfig {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            ip_per_minute: default_ip_per_minute(),
+            client_per_minute: default_client_per_minute(),
+            session_per_minute: default_session_per_minute(),
+            server_per_minute: default_server_per_minute(),
+            admin_per_minute: default_admin_per_minute(),
+            burst_factor: default_burst_factor(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AuditConfig {
+    #[serde(default = "default_true")]
+    pub enabled: bool,
+    /// Store the (redacted) JSON request body of mutating admin calls.
+    #[serde(default = "default_true")]
+    pub store_bodies: bool,
+    /// Entries older than this are pruned by housekeeping.
+    #[serde(default = "default_audit_retention", with = "humantime_serde")]
+    pub retention: Duration,
+}
+
+impl Default for AuditConfig {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            store_bodies: true,
+            retention: default_audit_retention(),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -116,6 +187,30 @@ impl Default for LogConfig {
     }
 }
 
+fn default_true() -> bool {
+    true
+}
+fn default_ip_per_minute() -> u32 {
+    120
+}
+fn default_client_per_minute() -> u32 {
+    600
+}
+fn default_session_per_minute() -> u32 {
+    600
+}
+fn default_server_per_minute() -> u32 {
+    6000
+}
+fn default_admin_per_minute() -> u32 {
+    1200
+}
+fn default_burst_factor() -> f64 {
+    2.0
+}
+fn default_audit_retention() -> Duration {
+    Duration::from_secs(90 * 24 * 3600)
+}
 fn default_http_addr() -> SocketAddr {
     "0.0.0.0:7550".parse().unwrap()
 }

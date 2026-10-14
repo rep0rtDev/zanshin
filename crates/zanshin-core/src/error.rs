@@ -14,6 +14,8 @@ pub enum Error {
     Conflict(String),
     #[error("{0}")]
     Unavailable(String),
+    #[error("{0}")]
+    ResourceExhausted(String),
     #[error(transparent)]
     Internal(#[from] anyhow::Error),
 }
@@ -39,6 +41,9 @@ impl Error {
     pub fn unavailable(msg: impl Into<String>) -> Self {
         Self::Unavailable(msg.into())
     }
+    pub fn exhausted(msg: impl Into<String>) -> Self {
+        Self::ResourceExhausted(msg.into())
+    }
     pub fn internal(err: impl Into<anyhow::Error>) -> Self {
         Self::Internal(err.into())
     }
@@ -52,6 +57,7 @@ impl Error {
             Error::NotFound(_) => "not_found",
             Error::Conflict(_) => "conflict",
             Error::Unavailable(_) => "unavailable",
+            Error::ResourceExhausted(_) => "resource_exhausted",
             Error::Internal(_) => "internal",
         }
     }

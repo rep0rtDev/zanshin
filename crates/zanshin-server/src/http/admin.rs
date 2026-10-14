@@ -8,7 +8,10 @@ use axum::{
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 use zanshin_core::{apikey::ApiKeyKind, properties::PropertyMap, Error};
-use zanshin_store::api_keys::ApiKeyRow;
+use zanshin_store::{
+    api_keys::{ApiKeyRow, KeyOptions},
+    audit::{AuditEntry, AuditFilter},
+};
 
 use crate::state::AppState;
 
@@ -137,12 +140,21 @@ pub fn router() -> Router<AppState> {
             get(identity_push_tokens),
         )
         .route("/stats", get(stats))
+        .route("/audit", get(list_audit))
 }
 
 #[derive(Debug, Deserialize)]
 pub struct CreateKeyRequest {
     pub name: String,
     pub kind: ApiKeyKind,
+    /// Admin keys only: GET-only access to `/admin/v1`.
+    #[serde(default)]
+    pub read_only: bool,
+    #[serde(default)]
+    pub expires_at: Option<chrono::DateTime<chrono::Utc>>,
+    /// Per-key request budget, overrides `limits.*_per_minute` for this key.
+    #[serde(default)]
+    pub rate_limit_per_minute: Option<i32>,
 }
 
 #[derive(Debug, Serialize)]
@@ -158,7 +170,18 @@ async fn create_key(
     AdminAuth(_): AdminAuth,
     Json(req): Json<CreateKeyRequest>,
 ) -> ApiResult<Json<CreatedKey>> {
-    let (key, secret) = state.api_keys.create(&req.name, req.kind).await?;
+    let (key, secret) = state
+        .api_keys
+        .create(
+            &req.name,
+            req.kind,
+            KeyOptions {
+                read_only: req.read_only,
+                expires_at: req.expires_at,
+                rate_limit_per_minute: req.rate_limit_per_minute,
+            },
+        )
+        .await?;
     Ok(Json(CreatedKey { key, secret }))
 }
 
@@ -1035,4 +1058,48 @@ async fn identity_push_tokens(
     Ok(Json(
         serde_json::json!({ "tokens": state.push.tokens(identity_id).await? }),
     ))
+}
+
+// ---- audit log -------------------------------------------------------------
+
+#[derive(Debug, Default, Deserialize)]
+pub struct AuditQuery {
+    #[serde(default)]
+    pub after: Option<Uuid>,
+    #[serde(default)]
+    pub limit: Option<i64>,
+    #[serde(default)]
+    pub actor: Option<String>,
+    #[serde(default)]
+    pub method: Option<String>,
+    /// Path prefix, e.g. `/admin/v1/flags`.
+    #[serde(default)]
+    pub path: Option<String>,
+    #[serde(default)]
+    pub since: Option<chrono::DateTime<chrono::Utc>>,
+}
+
+async fn list_audit(
+    State(state): State<AppState>,
+    AdminAuth(_): AdminAuth,
+    Query(q): Query<AuditQuery>,
+) -> ApiResult<Json<Page<AuditEntry>>> {
+    let limit = q.limit.unwrap_or(100).clamp(1, 500);
+    let items = state
+        .audit
+        .list(&AuditFilter {
+            after: q.after,
+            limit,
+            actor: q.actor,
+            method: q.method.map(|m| m.to_ascii_uppercase()),
+            path_prefix: q.path,
+            since: q.since,
+        })
+        .await?;
+    let next = if items.len() as i64 >= limit {
+        items.last().map(|e| e.id)
+    } else {
+        None
+    };
+    Ok(Json(Page { items, next }))
 }
