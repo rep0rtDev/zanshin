@@ -1361,9 +1361,7 @@ async fn push_notifications_flow() {
     // Direct message with push → outbox gets one entry per device, inbox copy is marked pushed.
     let sent: Value =
         admin(http.post(format!("{base}/admin/v1/identities/{identity_id}/messages")))
-            .json(
-                &json!({ "title": "Hi {{default.platform}}", "body": "direct", "push": true }),
-            )
+            .json(&json!({ "title": "Hi {{default.platform}}", "body": "direct", "push": true }))
             .send()
             .await
             .unwrap()
