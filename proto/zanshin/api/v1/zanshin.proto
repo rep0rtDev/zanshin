@@ -53,6 +53,20 @@ service Zanshin {
   // Report analytics events for the current identity.
   rpc SendEvents(EventBatch) returns (SendEventsResponse);
 
+  // Link the current (typically anonymous) identity to `id`; returns a session for the result.
+  rpc Identify(IdentifyRequest) returns (Session);
+  // Every identity / experiment / live-event override applied to the caller right now.
+  rpc GetFlagOverrides(google.protobuf.Empty) returns (FlagOverrideList);
+  // Explicitly join / leave a live event (`join_mode: explicit`).
+  rpc JoinLiveEvent(LiveEventKeyRequest) returns (LiveEvent);
+  rpc LeaveLiveEvent(LiveEventKeyRequest) returns (LeaveLiveEventResponse);
+  // Remove a message from the inbox entirely (DeleteMessage consumes it and keeps a tombstone).
+  rpc RemoveMessage(MessageIdRequest) returns (google.protobuf.Empty);
+  // Push tokens for this device.
+  rpc RegisterPushToken(RegisterPushTokenRequest) returns (PushToken);
+  rpc GetPushTokens(google.protobuf.Empty) returns (PushTokenList);
+  rpc UnregisterPushToken(UnregisterPushTokenRequest) returns (google.protobuf.Empty);
+
   // Server-key only: evaluate for any identity by external id (used by backends / Nakama).
   rpc ServerGetFlags(ServerGetFlagsRequest) returns (FlagList);
   rpc ServerSendEvents(ServerEventBatch) returns (SendEventsResponse);
@@ -60,6 +74,20 @@ service Zanshin {
   rpc ServerSendMessage(ServerSendMessageRequest) returns (MessageIdRequest);
   rpc ServerGetAudiences(ServerIdentityRequest) returns (AudienceList);
   rpc ServerGetExperiments(ServerGetExperimentsRequest) returns (ExperimentList);
+  rpc ServerGetFlag(ServerGetFlagRequest) returns (Flag);
+  // Override chain for one flag as a free-form document (same shape as the REST explain).
+  rpc ServerExplainFlag(ServerGetFlagRequest) returns (google.protobuf.Struct);
+  rpc ServerUpsertIdentity(ServerUpsertIdentityRequest) returns (IdentityWithProperties);
+  rpc ServerIdentify(ServerIdentifyRequest) returns (IdentityWithProperties);
+  rpc ServerUpdateProperties(ServerUpdatePropertiesRequest) returns (Properties);
+  rpc ServerJoinLiveEvent(ServerLiveEventRequest) returns (LiveEvent);
+  rpc ServerLeaveLiveEvent(ServerLiveEventRequest) returns (LeaveLiveEventResponse);
+  rpc ServerGetMessages(ServerGetMessagesRequest) returns (MessageList);
+  rpc ServerReadMessage(ServerMessageRequest) returns (Message);
+  rpc ServerConsumeMessage(ServerMessageRequest) returns (google.protobuf.Empty);
+  rpc ServerRemoveMessage(ServerMessageRequest) returns (google.protobuf.Empty);
+  // Push membership of a managed audience.
+  rpc ServerUpdateAudienceMembers(ServerAudienceMembersRequest) returns (ServerAudienceMembersResponse);
 
   rpc Healthcheck(google.protobuf.Empty) returns (google.protobuf.Empty);
 }
@@ -278,4 +306,110 @@ message UpdatePropertiesRequest {
   map<string, google.protobuf.Value> custom = 2;
   // Recompute computed properties synchronously before returning.
   bool recompute = 3;
+}
+
+message IdentifyRequest {
+  string id = 1;
+}
+
+message FlagOverride {
+  string flag_key = 1;
+  google.protobuf.Value value = 2;
+  // identity | experiment | live_event
+  string source = 3;
+  // Experiment or live event key behind the override (empty for identity overrides).
+  string source_key = 4;
+  string variant = 5;
+}
+
+message FlagOverrideList {
+  repeated FlagOverride overrides = 1;
+}
+
+message LiveEventKeyRequest {
+  string key = 1;
+}
+
+message LeaveLiveEventResponse {
+  bool left = 1;
+}
+
+message PushToken {
+  string identity_id = 1;
+  // fcm | apns
+  string platform = 2;
+  string token = 3;
+  string device_id = 4;
+  google.protobuf.Timestamp created_at = 5;
+  google.protobuf.Timestamp updated_at = 6;
+  int32 failures = 7;
+}
+
+message PushTokenList {
+  repeated PushToken tokens = 1;
+}
+
+message RegisterPushTokenRequest {
+  // fcm | apns
+  string platform = 1;
+  string token = 2;
+  string device_id = 3;
+}
+
+message UnregisterPushTokenRequest {
+  string token = 1;
+}
+
+message ServerGetFlagRequest {
+  string external_id = 1;
+  string name = 2;
+}
+
+message ServerUpsertIdentityRequest {
+  string external_id = 1;
+  map<string, google.protobuf.Value> default = 2;
+  map<string, google.protobuf.Value> custom = 3;
+}
+
+message ServerIdentifyRequest {
+  string external_id = 1;
+  // New external id; merges into it when it already exists.
+  string id = 2;
+}
+
+message ServerUpdatePropertiesRequest {
+  string external_id = 1;
+  map<string, google.protobuf.Value> default = 2;
+  map<string, google.protobuf.Value> custom = 3;
+}
+
+message IdentityWithProperties {
+  Identity identity = 1;
+  Properties properties = 2;
+}
+
+message ServerLiveEventRequest {
+  string external_id = 1;
+  string key = 2;
+}
+
+message ServerGetMessagesRequest {
+  string external_id = 1;
+  int32 limit = 2;
+}
+
+message ServerMessageRequest {
+  string external_id = 1;
+  string id = 2;
+}
+
+message ServerAudienceMembersRequest {
+  string audience = 1;
+  repeated string add = 2;
+  repeated string remove = 3;
+}
+
+message ServerAudienceMembersResponse {
+  int32 added = 1;
+  int32 removed = 2;
 }

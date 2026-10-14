@@ -16,11 +16,16 @@ use zanshin_proto::api::v1::{
     zanshin_server::{Zanshin, ZanshinServer},
     AudienceList, AuthenticateLogoutRequest, AuthenticateRefreshRequest, AuthenticateRequest,
     EventBatch, ExperimentList, ExposeExperimentRequest, Flag, FlagEvent, FlagList,
-    GetExperimentsRequest, GetFlagRequest, GetFlagsRequest, GetLiveEventsRequest,
-    GetMessagesRequest, Identity, LiveEventList, Message, MessageIdRequest, MessageList,
-    Properties, SendEventsResponse, ServerEventBatch, ServerGetExperimentsRequest,
-    ServerGetFlagsRequest, ServerGetLiveEventsRequest, ServerIdentityRequest,
-    ServerSendMessageRequest, Session, UpdateMessageRequest, UpdatePropertiesRequest,
+    FlagOverrideList, GetExperimentsRequest, GetFlagRequest, GetFlagsRequest, GetLiveEventsRequest,
+    GetMessagesRequest, IdentifyRequest, Identity, IdentityWithProperties, LeaveLiveEventResponse,
+    LiveEvent, LiveEventKeyRequest, LiveEventList, Message, MessageIdRequest, MessageList,
+    Properties, PushToken, PushTokenList, RegisterPushTokenRequest, SendEventsResponse,
+    ServerAudienceMembersRequest, ServerAudienceMembersResponse, ServerEventBatch,
+    ServerGetExperimentsRequest, ServerGetFlagRequest, ServerGetFlagsRequest,
+    ServerGetLiveEventsRequest, ServerGetMessagesRequest, ServerIdentifyRequest,
+    ServerIdentityRequest, ServerLiveEventRequest, ServerMessageRequest, ServerSendMessageRequest,
+    ServerUpdatePropertiesRequest, ServerUpsertIdentityRequest, Session,
+    UnregisterPushTokenRequest, UpdateMessageRequest, UpdatePropertiesRequest,
 };
 
 use crate::{
@@ -187,6 +192,7 @@ impl Zanshin for ZanshinGrpc {
                 None,
             )
             .await;
+        crate::http::v1::begin_play_session(&self.state, &s).await;
         Ok(Response::new(session_to_proto(s)))
     }
 
@@ -727,6 +733,499 @@ impl Zanshin for ZanshinGrpc {
             .await
             .map_err(to_status)?;
         Ok(Response::new(SendEventsResponse { accepted: n as i32 }))
+    }
+
+    async fn identify(
+        &self,
+        request: Request<IdentifyRequest>,
+    ) -> Result<Response<Session>, Status> {
+        let ctx = self.require_session(request.metadata()).await?;
+        let from = self
+            .state
+            .identity
+            .get(ctx.identity_id())
+            .await
+            .map_err(to_status)?;
+        let (s, merged) = self
+            .state
+            .identity
+            .identify(from.id, &request.into_inner().id)
+            .await
+            .map_err(to_status)?;
+        self.state
+            .taxonomy
+            .repo
+            .close_session(ctx.claims.sid, chrono::Utc::now())
+            .await
+            .ok();
+        if let Some(src) = &merged {
+            self.state
+                .taxonomy
+                .repo
+                .record_merge(&zanshin_store::taxonomy::IdentityMerge {
+                    id: uuid::Uuid::now_v7(),
+                    from_identity: src.id,
+                    from_external: src.external_id.clone(),
+                    into_identity: s.identity.id,
+                    into_external: s.identity.external_id.clone(),
+                    merged_at: chrono::Utc::now(),
+                })
+                .await
+                .ok();
+        }
+        let mut meta = serde_json::Map::new();
+        meta.insert("from".into(), serde_json::Value::String(from.external_id));
+        meta.insert(
+            "to".into(),
+            serde_json::Value::String(s.identity.external_id.clone()),
+        );
+        meta.insert("merged".into(), serde_json::Value::Bool(merged.is_some()));
+        self.state
+            .events
+            .system(
+                &s.identity,
+                zanshin_core::events::EV_IDENTIFY,
+                "",
+                Some(meta),
+                Some(s.session_id),
+            )
+            .await;
+        crate::http::v1::begin_play_session(&self.state, &s).await;
+        Ok(Response::new(session_to_proto(s)))
+    }
+
+    async fn get_flag_overrides(
+        &self,
+        request: Request<()>,
+    ) -> Result<Response<FlagOverrideList>, Status> {
+        let ctx = self.require_session(request.metadata()).await?;
+        let identity = self
+            .state
+            .identity
+            .get(ctx.identity_id())
+            .await
+            .map_err(to_status)?;
+        let overrides = self
+            .state
+            .eval
+            .overrides(&identity)
+            .await
+            .map_err(to_status)?;
+        Ok(Response::new(FlagOverrideList {
+            overrides: overrides.into_iter().map(override_to_proto).collect(),
+        }))
+    }
+
+    async fn join_live_event(
+        &self,
+        request: Request<LiveEventKeyRequest>,
+    ) -> Result<Response<LiveEvent>, Status> {
+        let ctx = self.require_session(request.metadata()).await?;
+        let identity = self
+            .state
+            .identity
+            .get(ctx.identity_id())
+            .await
+            .map_err(to_status)?;
+        let key = request.into_inner().key;
+        let view = self
+            .state
+            .eval
+            .join_live_event(&identity, &key)
+            .await
+            .map_err(to_status)?;
+        self.state
+            .events
+            .system(
+                &identity,
+                zanshin_core::events::EV_LIVE_EVENT_JOIN,
+                &key,
+                None,
+                None,
+            )
+            .await;
+        Ok(Response::new(live_event_to_proto(view)))
+    }
+
+    async fn leave_live_event(
+        &self,
+        request: Request<LiveEventKeyRequest>,
+    ) -> Result<Response<LeaveLiveEventResponse>, Status> {
+        let ctx = self.require_session(request.metadata()).await?;
+        let left = self
+            .state
+            .live_events
+            .leave(ctx.identity_id(), &request.into_inner().key)
+            .await
+            .map_err(to_status)?;
+        Ok(Response::new(LeaveLiveEventResponse { left }))
+    }
+
+    async fn remove_message(
+        &self,
+        request: Request<MessageIdRequest>,
+    ) -> Result<Response<()>, Status> {
+        let ctx = self.require_session(request.metadata()).await?;
+        let identity = self
+            .state
+            .identity
+            .get(ctx.identity_id())
+            .await
+            .map_err(to_status)?;
+        let id = uuid::Uuid::parse_str(&request.into_inner().id)
+            .map_err(|_| Status::invalid_argument("id must be a uuid"))?;
+        self.state
+            .messages
+            .delete_inbox(&identity, id)
+            .await
+            .map_err(to_status)?;
+        Ok(Response::new(()))
+    }
+
+    async fn register_push_token(
+        &self,
+        request: Request<RegisterPushTokenRequest>,
+    ) -> Result<Response<PushToken>, Status> {
+        let ctx = self.require_session(request.metadata()).await?;
+        let req = request.into_inner();
+        let platform = zanshin_core::push::Platform::parse(&req.platform).map_err(to_status)?;
+        let t = self
+            .state
+            .push
+            .register(ctx.identity_id(), platform, &req.token, &req.device_id)
+            .await
+            .map_err(to_status)?;
+        Ok(Response::new(push_token_to_proto(t)))
+    }
+
+    async fn get_push_tokens(
+        &self,
+        request: Request<()>,
+    ) -> Result<Response<PushTokenList>, Status> {
+        let ctx = self.require_session(request.metadata()).await?;
+        let tokens = self
+            .state
+            .push
+            .tokens(ctx.identity_id())
+            .await
+            .map_err(to_status)?;
+        Ok(Response::new(PushTokenList {
+            tokens: tokens.into_iter().map(push_token_to_proto).collect(),
+        }))
+    }
+
+    async fn unregister_push_token(
+        &self,
+        request: Request<UnregisterPushTokenRequest>,
+    ) -> Result<Response<()>, Status> {
+        let ctx = self.require_session(request.metadata()).await?;
+        self.state
+            .push
+            .unregister(ctx.identity_id(), &request.into_inner().token)
+            .await
+            .map_err(to_status)?;
+        Ok(Response::new(()))
+    }
+
+    async fn server_get_flag(
+        &self,
+        request: Request<ServerGetFlagRequest>,
+    ) -> Result<Response<Flag>, Status> {
+        self.require_server_key(request.metadata()).await?;
+        let req = request.into_inner();
+        let identity = self
+            .state
+            .eval
+            .identity_by_external_id(&req.external_id)
+            .await
+            .map_err(to_status)?;
+        let ev = self
+            .state
+            .eval
+            .flag(&identity, &req.name)
+            .await
+            .map_err(to_status)?;
+        Ok(Response::new(evaluation_to_proto(ev)))
+    }
+
+    async fn server_explain_flag(
+        &self,
+        request: Request<ServerGetFlagRequest>,
+    ) -> Result<Response<prost_types::Struct>, Status> {
+        self.require_server_key(request.metadata()).await?;
+        let req = request.into_inner();
+        let identity = self
+            .state
+            .eval
+            .identity_by_external_id(&req.external_id)
+            .await
+            .map_err(to_status)?;
+        let doc = self
+            .state
+            .eval
+            .explain_flag(&identity, &req.name)
+            .await
+            .map_err(to_status)?;
+        Ok(Response::new(json_to_struct(doc)))
+    }
+
+    async fn server_upsert_identity(
+        &self,
+        request: Request<ServerUpsertIdentityRequest>,
+    ) -> Result<Response<IdentityWithProperties>, Status> {
+        self.require_server_key(request.metadata()).await?;
+        let req = request.into_inner();
+        let i = self
+            .state
+            .identity
+            .upsert(
+                &req.external_id,
+                value_map_to_json(req.default),
+                value_map_to_json(req.custom),
+            )
+            .await
+            .map_err(to_status)?;
+        self.state
+            .events
+            .system(&i, zanshin_core::events::EV_AUTHENTICATE, "", None, None)
+            .await;
+        Ok(Response::new(identity_with_properties(&i)))
+    }
+
+    async fn server_identify(
+        &self,
+        request: Request<ServerIdentifyRequest>,
+    ) -> Result<Response<IdentityWithProperties>, Status> {
+        self.require_server_key(request.metadata()).await?;
+        let req = request.into_inner();
+        let from = self
+            .state
+            .identity
+            .get_by_external_id(&req.external_id)
+            .await
+            .map_err(to_status)?;
+        let (s, merged) = self
+            .state
+            .identity
+            .identify(from.id, &req.id)
+            .await
+            .map_err(to_status)?;
+        if let Some(src) = &merged {
+            self.state
+                .taxonomy
+                .repo
+                .record_merge(&zanshin_store::taxonomy::IdentityMerge {
+                    id: uuid::Uuid::now_v7(),
+                    from_identity: src.id,
+                    from_external: src.external_id.clone(),
+                    into_identity: s.identity.id,
+                    into_external: s.identity.external_id.clone(),
+                    merged_at: chrono::Utc::now(),
+                })
+                .await
+                .ok();
+        }
+        Ok(Response::new(identity_with_properties(&s.identity)))
+    }
+
+    async fn server_update_properties(
+        &self,
+        request: Request<ServerUpdatePropertiesRequest>,
+    ) -> Result<Response<Properties>, Status> {
+        self.require_server_key(request.metadata()).await?;
+        let req = request.into_inner();
+        let identity = self
+            .state
+            .eval
+            .identity_by_external_id(&req.external_id)
+            .await
+            .map_err(to_status)?;
+        let i = self
+            .state
+            .identity
+            .update_properties(
+                identity.id,
+                value_map_to_json(req.default),
+                value_map_to_json(req.custom),
+            )
+            .await
+            .map_err(to_status)?;
+        Ok(Response::new(properties_to_proto(&i.properties)))
+    }
+
+    async fn server_join_live_event(
+        &self,
+        request: Request<ServerLiveEventRequest>,
+    ) -> Result<Response<LiveEvent>, Status> {
+        self.require_server_key(request.metadata()).await?;
+        let req = request.into_inner();
+        let identity = self
+            .state
+            .eval
+            .identity_by_external_id(&req.external_id)
+            .await
+            .map_err(to_status)?;
+        let view = self
+            .state
+            .eval
+            .join_live_event(&identity, &req.key)
+            .await
+            .map_err(to_status)?;
+        self.state
+            .events
+            .system(
+                &identity,
+                zanshin_core::events::EV_LIVE_EVENT_JOIN,
+                &req.key,
+                None,
+                None,
+            )
+            .await;
+        Ok(Response::new(live_event_to_proto(view)))
+    }
+
+    async fn server_leave_live_event(
+        &self,
+        request: Request<ServerLiveEventRequest>,
+    ) -> Result<Response<LeaveLiveEventResponse>, Status> {
+        self.require_server_key(request.metadata()).await?;
+        let req = request.into_inner();
+        let identity = self
+            .state
+            .eval
+            .identity_by_external_id(&req.external_id)
+            .await
+            .map_err(to_status)?;
+        let left = self
+            .state
+            .live_events
+            .leave(identity.id, &req.key)
+            .await
+            .map_err(to_status)?;
+        Ok(Response::new(LeaveLiveEventResponse { left }))
+    }
+
+    async fn server_get_messages(
+        &self,
+        request: Request<ServerGetMessagesRequest>,
+    ) -> Result<Response<MessageList>, Status> {
+        self.require_server_key(request.metadata()).await?;
+        let req = request.into_inner();
+        let identity = self
+            .state
+            .eval
+            .identity_by_external_id(&req.external_id)
+            .await
+            .map_err(to_status)?;
+        let limit = if req.limit > 0 { req.limit as i64 } else { 50 };
+        let msgs = self
+            .state
+            .eval
+            .inbox(&identity, limit)
+            .await
+            .map_err(to_status)?;
+        Ok(Response::new(MessageList {
+            messages: msgs.into_iter().map(inbox_to_proto).collect(),
+        }))
+    }
+
+    async fn server_read_message(
+        &self,
+        request: Request<ServerMessageRequest>,
+    ) -> Result<Response<Message>, Status> {
+        self.require_server_key(request.metadata()).await?;
+        let req = request.into_inner();
+        let identity = self
+            .state
+            .eval
+            .identity_by_external_id(&req.external_id)
+            .await
+            .map_err(to_status)?;
+        let id = uuid::Uuid::parse_str(&req.id)
+            .map_err(|_| Status::invalid_argument("id must be a uuid"))?;
+        let m = self
+            .state
+            .messages
+            .mark_read(&identity, id)
+            .await
+            .map_err(to_status)?;
+        Ok(Response::new(inbox_to_proto(m)))
+    }
+
+    async fn server_consume_message(
+        &self,
+        request: Request<ServerMessageRequest>,
+    ) -> Result<Response<()>, Status> {
+        self.require_server_key(request.metadata()).await?;
+        let req = request.into_inner();
+        let identity = self
+            .state
+            .eval
+            .identity_by_external_id(&req.external_id)
+            .await
+            .map_err(to_status)?;
+        let id = uuid::Uuid::parse_str(&req.id)
+            .map_err(|_| Status::invalid_argument("id must be a uuid"))?;
+        self.state
+            .messages
+            .consume(&identity, id)
+            .await
+            .map_err(to_status)?;
+        Ok(Response::new(()))
+    }
+
+    async fn server_remove_message(
+        &self,
+        request: Request<ServerMessageRequest>,
+    ) -> Result<Response<()>, Status> {
+        self.require_server_key(request.metadata()).await?;
+        let req = request.into_inner();
+        let identity = self
+            .state
+            .eval
+            .identity_by_external_id(&req.external_id)
+            .await
+            .map_err(to_status)?;
+        let id = uuid::Uuid::parse_str(&req.id)
+            .map_err(|_| Status::invalid_argument("id must be a uuid"))?;
+        self.state
+            .messages
+            .delete_inbox(&identity, id)
+            .await
+            .map_err(to_status)?;
+        Ok(Response::new(()))
+    }
+
+    async fn server_update_audience_members(
+        &self,
+        request: Request<ServerAudienceMembersRequest>,
+    ) -> Result<Response<ServerAudienceMembersResponse>, Status> {
+        self.require_server_key(request.metadata()).await?;
+        let req = request.into_inner();
+        let mut added = 0;
+        let mut removed = 0;
+        if !req.add.is_empty() {
+            let (n, _) = self
+                .state
+                .audiences
+                .set_managed(&req.audience, &req.add, true)
+                .await
+                .map_err(to_status)?;
+            added = n;
+        }
+        if !req.remove.is_empty() {
+            let (n, _) = self
+                .state
+                .audiences
+                .set_managed(&req.audience, &req.remove, false)
+                .await
+                .map_err(to_status)?;
+            removed = n;
+        }
+        Ok(Response::new(ServerAudienceMembersResponse {
+            added: added as i32,
+            removed: removed as i32,
+        }))
     }
 
     async fn healthcheck(&self, _request: Request<()>) -> Result<Response<()>, Status> {
