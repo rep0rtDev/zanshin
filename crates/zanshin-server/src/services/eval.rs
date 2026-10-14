@@ -184,6 +184,7 @@ impl Evaluator {
         let audiences = self.audiences.memberships(identity, &flat).await;
         let mut assignments = Vec::new();
         let mut flag_pins = HashMap::new();
+        let mut pin_rank = HashMap::new();
         if persist_assignments {
             for e in self
                 .experiments
@@ -191,14 +192,24 @@ impl Evaluator {
                 .await?
             {
                 if let Some(fk) = &e.experiment.flag_key {
-                    flag_pins.insert(
-                        fk.clone(),
-                        (
-                            e.experiment.key.clone(),
-                            e.variant.key.clone(),
-                            e.variant.value.clone(),
-                        ),
+                    let rank = (
+                        e.experiment.priority,
+                        std::cmp::Reverse(e.experiment.starts_at),
                     );
+                    let wins = pin_rank
+                        .get(fk)
+                        .is_none_or(|existing: &(i32, std::cmp::Reverse<_>)| rank > *existing);
+                    if wins {
+                        pin_rank.insert(fk.clone(), rank);
+                        flag_pins.insert(
+                            fk.clone(),
+                            (
+                                e.experiment.key.clone(),
+                                e.variant.key.clone(),
+                                e.variant.value.clone(),
+                            ),
+                        );
+                    }
                 }
                 assignments.push(e.to_assignment());
             }
@@ -275,6 +286,43 @@ impl Evaluator {
     pub async fn flags(&self, identity: &Identity, names: &[String]) -> Result<Vec<Evaluation>> {
         let ctx = self.context(identity, &identity.properties, true).await?;
         Ok(self.flags_with(identity, &ctx, names).await)
+    }
+
+    /// Every flag value pinned for this player by something other than rules/defaults:
+    /// identity overrides, experiment variants and active live events. Highest-precedence first.
+    pub async fn overrides(&self, identity: &Identity) -> Result<Vec<FlagOverrideView>> {
+        let ctx = self.context(identity, &identity.properties, true).await?;
+        let mut out: Vec<FlagOverrideView> = ctx
+            .overrides
+            .iter()
+            .map(|(k, v)| FlagOverrideView {
+                flag_key: k.clone(),
+                value: v.clone(),
+                source: "identity".into(),
+                source_key: None,
+                variant: None,
+            })
+            .collect();
+        for (k, (exp, variant, v)) in &ctx.flag_pins {
+            out.push(FlagOverrideView {
+                flag_key: k.clone(),
+                value: v.clone(),
+                source: "experiment".into(),
+                source_key: Some(exp.clone()),
+                variant: Some(variant.clone()),
+            });
+        }
+        for (k, (ev, v)) in &ctx.live_pins {
+            out.push(FlagOverrideView {
+                flag_key: k.clone(),
+                value: v.clone(),
+                source: "live_event".into(),
+                source_key: Some(ev.clone()),
+                variant: None,
+            });
+        }
+        out.sort_by(|a, b| a.flag_key.cmp(&b.flag_key));
+        Ok(out)
     }
 
     pub async fn flag(&self, identity: &Identity, key: &str) -> Result<Evaluation> {
@@ -368,4 +416,15 @@ pub fn flatten_with_identity(identity: &Identity, props: &PropertySet) -> Proper
         Value::String(identity.external_id.clone()),
     );
     flat
+}
+
+/// One pinned flag value as returned by `GET /v1/flags/overrides`.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct FlagOverrideView {
+    pub flag_key: String,
+    pub value: Value,
+    /// `identity`, `experiment` or `live_event`.
+    pub source: String,
+    pub source_key: Option<String>,
+    pub variant: Option<String>,
 }

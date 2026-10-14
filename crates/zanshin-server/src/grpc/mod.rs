@@ -639,6 +639,11 @@ impl Zanshin for ZanshinGrpc {
             .await
             .map_err(to_status)?;
         let msg = crate::services::messages::DirectMessage {
+            inbox: true,
+            template_key: None,
+            template_name: None,
+            channels: Vec::new(),
+            locale: None,
             push: false,
             title: req.title,
             body: req.body,
@@ -676,12 +681,25 @@ impl Zanshin for ZanshinGrpc {
             .into_iter()
             .map(convert::event_from_proto)
             .collect();
+        let checked = self
+            .state
+            .taxonomy
+            .check_events(identity.id, &identity.external_id, inputs)
+            .await
+            .map_err(to_status)?;
         let n = self
             .state
             .events
-            .track(&identity, inputs, false, Some(ctx.claims.sid))
+            .track(&identity, checked.events, false, Some(ctx.claims.sid))
             .await
             .map_err(to_status)?;
+        if !checked.errors.is_empty() {
+            self.state
+                .events
+                .track(&identity, checked.errors, true, Some(ctx.claims.sid))
+                .await
+                .ok();
+        }
         Ok(Response::new(SendEventsResponse { accepted: n as i32 }))
     }
 

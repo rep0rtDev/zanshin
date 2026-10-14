@@ -254,8 +254,14 @@ impl LiveEvent {
     /// participants stay active until their timer runs out even outside a window.
     pub fn view_for(&self, now: DateTime<Utc>, joined_at: Option<DateTime<Utc>>) -> ActiveEvent {
         let current = self.current(now);
-        let timer_end =
-            joined_at.and_then(|j| self.participation_secs.map(|s| j + Duration::seconds(s)));
+        // Participation is counted per run: a join carried over from an earlier occurrence
+        // (sticky / recurring events) restarts its timer when the next run begins.
+        let timer_end = joined_at.and_then(|j| {
+            self.participation_secs.map(|s| {
+                let base = current.as_ref().map_or(j, |c| c.start.max(j));
+                base + Duration::seconds(s)
+            })
+        });
         let joined = joined_at.is_some();
         let (active, participation_ends_at) = match (&current, timer_end) {
             (Some(c), Some(t)) => {

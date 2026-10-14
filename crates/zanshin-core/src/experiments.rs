@@ -94,6 +94,10 @@ pub struct Experiment {
     pub ends_at: Option<chrono::DateTime<chrono::Utc>>,
     #[serde(default)]
     pub tags: Vec<String>,
+    /// When several running experiments pin the same flag, the highest priority wins
+    /// (ties: earliest start). Lower-priority experiments still enrol and track metrics.
+    #[serde(default)]
+    pub priority: i32,
     /// What the bucket hash is keyed on: `identity` or `property:<flat path>` (e.g. `custom.clan_id`).
     #[serde(default = "default_split_key")]
     pub split_key: String,
@@ -283,6 +287,7 @@ mod tests {
 
     fn exp() -> Experiment {
         Experiment {
+            priority: 0,
             id: Uuid::nil(),
             key: "price_test".into(),
             name: String::new(),

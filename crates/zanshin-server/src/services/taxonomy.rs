@@ -62,6 +62,7 @@ struct Cached {
 
 #[derive(Clone)]
 pub struct TaxonomyService {
+    error_sink: Arc<std::sync::OnceLock<ErrorSink>>,
     pub repo: TaxonomyRepo,
     cache: Cache,
     cfg: Arc<TaxonomyConfig>,
@@ -94,6 +95,7 @@ impl TaxonomyService {
             }
         };
         Self {
+            error_sink: Arc::new(std::sync::OnceLock::new()),
             repo,
             cache,
             cfg: Arc::new(cfg),
@@ -175,18 +177,19 @@ impl TaxonomyService {
         identity_id: uuid::Uuid,
         external_id: &str,
         inputs: Vec<EventInput>,
-    ) -> Result<Vec<EventInput>> {
+    ) -> Result<CheckedEvents> {
         let snap = match self.snapshot().await {
             Ok(s) => s,
             Err(e) => {
                 tracing::warn!(error = %e, "taxonomy unavailable, accepting events unchecked");
-                return Ok(inputs);
+                return Ok(CheckedEvents::accepted(inputs));
             }
         };
         if snap.mode == TaxonomyMode::Off {
-            return Ok(inputs);
+            return Ok(CheckedEvents::accepted(inputs));
         }
         let mut keep = Vec::with_capacity(inputs.len());
+        let mut errors = Vec::new();
         let mut first_err: Option<String> = None;
         let mut discovered = Vec::new();
         for input in inputs {
@@ -219,6 +222,7 @@ impl TaxonomyService {
                     .await;
                     metrics::counter!("zanshin_events_taxonomy_violations_total", "dropped" => if rejected { "true" } else { "false" }).increment(1);
                     if rejected {
+                        errors.push(event_error(&input, &reason));
                         first_err.get_or_insert(reason);
                     } else {
                         keep.push(input);
@@ -243,10 +247,30 @@ impl TaxonomyService {
         }
         if keep.is_empty() {
             if let Some(e) = first_err {
+                // The batch is refused, but the rejections still reach data sinks.
+                self.spawn_errors(identity_id, errors);
                 return Err(Error::invalid(e));
             }
         }
-        Ok(keep)
+        Ok(CheckedEvents {
+            events: keep,
+            errors,
+        })
+    }
+
+    fn spawn_errors(&self, identity_id: uuid::Uuid, errors: Vec<EventInput>) {
+        if errors.is_empty() {
+            return;
+        }
+        if let Some(sink) = self.error_sink.get() {
+            sink(identity_id, errors);
+        }
+    }
+
+    /// Install the callback that turns `$event_error` inputs into stored events (set by the
+    /// server once the event service exists; taxonomy is constructed first).
+    pub fn set_error_sink(&self, sink: ErrorSink) {
+        let _ = self.error_sink.set(sink);
     }
 
     async fn record_rejected(&self, r: RejectedEvent) {
@@ -430,5 +454,39 @@ fn validate_with(v: &jsonschema::Validator, value: &Value) -> std::result::Resul
     match v.iter_errors(value).next() {
         None => Ok(()),
         Some(e) => Err(format!("{} at {}", e, e.instance_path)),
+    }
+}
+
+/// Result of taxonomy validation: accepted inputs plus `$event_error` records for every rejected one.
+#[derive(Debug, Default)]
+pub struct CheckedEvents {
+    pub events: Vec<EventInput>,
+    pub errors: Vec<EventInput>,
+}
+
+impl CheckedEvents {
+    fn accepted(events: Vec<EventInput>) -> Self {
+        Self {
+            events,
+            errors: Vec::new(),
+        }
+    }
+}
+
+pub type ErrorSink = Box<dyn Fn(uuid::Uuid, Vec<EventInput>) + Send + Sync>;
+
+fn event_error(input: &EventInput, reason: &str) -> EventInput {
+    let mut meta = serde_json::Map::new();
+    meta.insert("event".into(), Value::String(input.name.clone()));
+    meta.insert("reason".into(), Value::String(reason.to_string()));
+    if let Some(v) = &input.value {
+        meta.insert("value".into(), Value::String(v.chars().take(256).collect()));
+    }
+    EventInput {
+        name: zanshin_core::events::EV_EVENT_ERROR.to_string(),
+        value: None,
+        metadata: Some(meta),
+        timestamp: input.timestamp,
+        id: None,
     }
 }

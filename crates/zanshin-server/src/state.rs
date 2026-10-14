@@ -229,6 +229,18 @@ impl AppState {
             stores.cache.clone(),
             cfg.taxonomy.clone(),
         );
+        {
+            let ev = events.clone();
+            let idr = identity.clone();
+            taxonomy.set_error_sink(Box::new(move |identity_id, errors| {
+                let (ev, idr) = (ev.clone(), idr.clone());
+                tokio::spawn(async move {
+                    if let Ok(i) = idr.get(identity_id).await {
+                        ev.track(&i, errors, true, None).await.ok();
+                    }
+                });
+            }));
+        }
         let analytics = AnalyticsService::new(
             events.clone(),
             PlayerMetricsRepo::new(stores.pg.clone()),

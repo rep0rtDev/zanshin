@@ -111,7 +111,7 @@ impl TemplateService {
 
     pub async fn delete(&self, key: &str) -> Result<()> {
         if let Some(c) = self.repo.used_by(key).await?.first() {
-            return Err(Error::invalid(format!(
+            return Err(Error::conflict(format!(
                 "template {key:?} is used by campaign {c:?}"
             )));
         }

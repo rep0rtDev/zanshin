@@ -447,6 +447,11 @@ impl JourneyService {
                             .send_direct(
                                 identity,
                                 DirectMessage {
+                                    inbox: true,
+                                    template_key: None,
+                                    template_name: None,
+                                    channels: Vec::new(),
+                                    locale: None,
                                     title: zanshin_core::messages::MessageCampaign::render(
                                         title, flat,
                                     ),

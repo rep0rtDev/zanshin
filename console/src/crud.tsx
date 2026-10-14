@@ -37,6 +37,19 @@ type Props<T extends Keyed> = {
 const READONLY = ['id', 'version', 'created_at', 'updated_at', 'salt', 'status'];
 const strip = (d: Record<string, unknown>) => Object.fromEntries(Object.entries(d).filter(([k, v]) => !READONLY.includes(k) && v !== undefined));
 const kindOf = (path: string) => path.replace(/^\//, '').replace(/-/g, '_');
+/** List endpoints answer either a bare array or `{ items: [...] }`. */
+const asList = <T,>(d: unknown): T[] => (Array.isArray(d) ? d : ((d as { items?: T[] } | null)?.items ?? [])) as T[];
+/** Detail endpoints answer either the entity or `{ <kind>: entity, ...extras }`. */
+const asItem = <T extends Keyed>(d: unknown): T => {
+  const o = d as Record<string, unknown>;
+  if (o && typeof o === 'object' && !('key' in o)) {
+    const inner = Object.values(o).find((v) => v && typeof v === 'object' && !Array.isArray(v) && 'key' in (v as object));
+    if (inner) return inner as T;
+  }
+  return d as T;
+};
+
+type ListFilter = { search: string; tag: string | null; status: string | null; sortBy: 'key' | 'updated' };
 
 export function EntityPage<T extends Keyed>(p: Props<T>) {
   return (
@@ -53,12 +66,19 @@ const defaultStatus = <T extends Keyed>(it: T) => it.status ?? (it.enabled === u
 function List<T extends Keyed>({ title, path, blurb, cols, sort, above, copy, statusOf = defaultStatus, searchText }: Props<T>) {
   const nav = useNavigate();
   const canEdit = useCanEdit();
-  const q = useLoad(() => get<T[]>(path));
-  const [search, setSearch] = useState('');
-  const [tag, setTag] = useState<string | null>(null);
-  const [status, setStatus] = useState<string | null>(null);
-  const [sortBy, setSortBy] = useState<'key' | 'updated'>('key');
+  const q = useLoad(() => get<unknown>(path).then(asList<T>));
+  const filterKey = `zanshin.list.${path}`;
+  const saved = useMemo<Partial<ListFilter>>(() => {
+    try { return JSON.parse(localStorage.getItem(filterKey) || '{}'); } catch { return {}; }
+  }, [filterKey]);
+  const [search, setSearch] = useState(saved.search ?? '');
+  const [tag, setTag] = useState<string | null>(saved.tag ?? null);
+  const [status, setStatus] = useState<string | null>(saved.status ?? null);
+  const [sortBy, setSortBy] = useState<'key' | 'updated'>(saved.sortBy ?? 'key');
   const [page, setPage] = useState(0);
+  useEffect(() => {
+    localStorage.setItem(filterKey, JSON.stringify({ search, tag, status, sortBy } satisfies ListFilter));
+  }, [filterKey, search, tag, status, sortBy]);
   const [size, setSize] = useState(() => Number(localStorage.getItem('zanshin.pagesize')) || 25);
   useEffect(() => localStorage.setItem('zanshin.pagesize', String(size)), [size]);
   useEffect(() => setPage(0), [search, tag, status, size]);
@@ -81,7 +101,7 @@ function List<T extends Keyed>({ title, path, blurb, cols, sort, above, copy, st
     if (!key) return;
     try {
       if (copy) await post(`${path}/${encodeURIComponent(r.key)}/copy`, { key });
-      else { const src = await get<T>(`${path}/${encodeURIComponent(r.key)}`); await post(path, { ...strip(src as Record<string, unknown>), key, name: src.name ? `${src.name} (copy)` : undefined }); }
+      else { const src = asItem<T>(await get<unknown>(`${path}/${encodeURIComponent(r.key)}`)); await post(path, { ...strip(src as Record<string, unknown>), key, name: src.name ? `${src.name} (copy)` : undefined }); }
       toast(`Created ${key}`); nav(encodeURIComponent(key));
     } catch (e) { toast((e as Error).message, 'bad'); }
   };
@@ -163,7 +183,7 @@ function Detail<T extends Keyed>({ title, path, blank, form, extra, tabs = [], t
   const reload = () => setTick((t) => t + 1);
   useEffect(() => {
     if (isNew || !key) return;
-    get<T>(`${path}/${encodeURIComponent(key)}`).then((it) => { setItem(it); setDraft(it); setErr(null); setDirty(false); }, setErr);
+    get<unknown>(`${path}/${encodeURIComponent(key)}`).then(asItem<T>).then((it) => { setItem(it); setDraft(it); setErr(null); setDirty(false); }, setErr);
   }, [path, key, isNew, tick]);
   useEffect(() => {
     if (!dirty) return;

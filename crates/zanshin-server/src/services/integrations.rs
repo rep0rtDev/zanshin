@@ -119,6 +119,7 @@ impl IntegrationService {
             kind: p.kind.ok_or_else(|| Error::invalid("kind is required"))?,
             config: p.config.unwrap_or_else(|| json!({})),
             enabled: p.enabled.unwrap_or(true),
+            health: Default::default(),
             version: 1,
             created_at: now,
             updated_at: now,
@@ -151,6 +152,16 @@ impl IntegrationService {
 
     /// Deliver through the named integration. Never fails hard: every problem becomes an outcome.
     pub async fn deliver(&self, key: &str, out: &Outbound<'_>) -> Outcome {
+        let o = self.deliver_inner(key, out).await;
+        if o.status != "skipped" {
+            if let Err(e) = self.repo.record_outcome(key, o.status, &o.detail).await {
+                tracing::warn!(integration = key, error = %e, "integration health not recorded");
+            }
+        }
+        o
+    }
+
+    async fn deliver_inner(&self, key: &str, out: &Outbound<'_>) -> Outcome {
         let i = match self.repo.get(key).await {
             Ok(i) => i,
             Err(e) => return Outcome::failed(key, format!("integration unavailable: {e}")),

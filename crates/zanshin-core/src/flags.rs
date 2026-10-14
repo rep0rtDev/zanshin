@@ -476,3 +476,94 @@ mod tests {
         assert!(validate_key("good.key-1").is_ok());
     }
 }
+
+/// One leaf-level difference between two flag values.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ValueDiff {
+    /// JSON pointer-ish path (`/` separated), empty for scalar roots.
+    pub path: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub from: Option<Value>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub to: Option<Value>,
+}
+
+/// Serialized size of a value as the client receives it.
+pub fn payload_bytes(v: &Value) -> usize {
+    serde_json::to_vec(v).map(|b| b.len()).unwrap_or(0)
+}
+
+/// Leaf-level diff of two JSON values (objects recurse, everything else compares whole).
+pub fn diff_values(a: &Value, b: &Value) -> Vec<ValueDiff> {
+    fn walk(path: &str, a: Option<&Value>, b: Option<&Value>, out: &mut Vec<ValueDiff>) {
+        match (a, b) {
+            (Some(Value::Object(x)), Some(Value::Object(y))) => {
+                let mut keys: Vec<&String> = x.keys().chain(y.keys()).collect();
+                keys.sort();
+                keys.dedup();
+                for k in keys {
+                    let p = if path.is_empty() {
+                        k.clone()
+                    } else {
+                        format!("{path}/{k}")
+                    };
+                    walk(&p, x.get(k), y.get(k), out);
+                }
+            }
+            (x, y) if x == y => {}
+            (x, y) => out.push(ValueDiff {
+                path: path.to_string(),
+                from: x.cloned(),
+                to: y.cloned(),
+            }),
+        }
+    }
+    let mut out = Vec::new();
+    walk("", Some(a), Some(b), &mut out);
+    out
+}
+
+impl Flag {
+    /// Resolve a value selector used by the diff API: `default`, `rule:<id>`, `variant:<key>`
+    /// (first rule carrying that variant) or `rule:<id>:variant:<key>`.
+    pub fn named_value(&self, selector: &str) -> Option<&Value> {
+        if selector == "default" {
+            return Some(&self.default_value);
+        }
+        if let Some(rest) = selector.strip_prefix("variant:") {
+            return self
+                .rules
+                .iter()
+                .flat_map(|r| r.variants.iter())
+                .find(|v| v.key == rest)
+                .map(|v| &v.value);
+        }
+        let rest = selector.strip_prefix("rule:")?;
+        let (rule_id, variant) = match rest.split_once(":variant:") {
+            Some((r, v)) => (r, Some(v)),
+            None => (rest, None),
+        };
+        let rule = self.rules.iter().find(|r| r.id == rule_id)?;
+        match variant {
+            Some(vk) => rule.variants.iter().find(|v| v.key == vk).map(|v| &v.value),
+            None => rule.value.as_ref().or(Some(&self.default_value)),
+        }
+    }
+
+    /// Every selectable value of the flag with its payload size (for the console's size column).
+    pub fn payload_sizes(&self) -> Vec<(String, usize)> {
+        let mut out = vec![("default".to_string(), payload_bytes(&self.default_value))];
+        for r in &self.rules {
+            if let Some(v) = &r.value {
+                out.push((format!("rule:{}", r.id), payload_bytes(v)));
+            }
+            for v in &r.variants {
+                out.push((
+                    format!("rule:{}:variant:{}", r.id, v.key),
+                    payload_bytes(&v.value),
+                ));
+            }
+        }
+        out
+    }
+}

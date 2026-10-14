@@ -31,6 +31,7 @@ struct Row {
     starts_at: Option<DateTime<Utc>>,
     ends_at: Option<DateTime<Utc>>,
     tags: Vec<String>,
+    priority: i32,
     split_key: String,
     max_participants: Option<i64>,
     enrol_until: Option<DateTime<Utc>>,
@@ -69,6 +70,7 @@ impl TryFrom<Row> for Experiment {
             starts_at: r.starts_at,
             ends_at: r.ends_at,
             tags: r.tags,
+            priority: r.priority,
             split_key: r.split_key,
             max_participants: r.max_participants,
             enrol_until: r.enrol_until,
@@ -86,7 +88,7 @@ impl TryFrom<Row> for Experiment {
     }
 }
 
-const COLS: &str = "id, key, name, description, hypothesis, status, condition, audiences, percentage, variants, control, flag_key, salt, starts_at, ends_at, tags, split_key, max_participants, enrol_until, locked, metrics, copied_from, phase_of, interrupted_at, interrupt_reason, winner, version, created_at, updated_at";
+const COLS: &str = "id, key, name, description, hypothesis, status, condition, audiences, percentage, variants, control, flag_key, salt, starts_at, ends_at, tags, priority, split_key, max_participants, enrol_until, locked, metrics, copied_from, phase_of, interrupted_at, interrupt_reason, winner, version, created_at, updated_at";
 
 /// Stored assignment of one identity.
 #[derive(Debug, Clone, Serialize, FromRow)]
@@ -150,8 +152,8 @@ impl ExperimentRepo {
 
     pub async fn create(&self, e: &Experiment) -> Result<Experiment> {
         let row: Row = sqlx::query_as(&format!(
-            "INSERT INTO experiments (id, key, name, description, hypothesis, status, condition, audiences, percentage, variants, control, flag_key, salt, starts_at, ends_at, tags, split_key, max_participants, enrol_until, locked, metrics, copied_from, phase_of, interrupted_at, interrupt_reason, winner)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26) RETURNING {COLS}"
+            "INSERT INTO experiments (id, key, name, description, hypothesis, status, condition, audiences, percentage, variants, control, flag_key, salt, starts_at, ends_at, tags, split_key, max_participants, enrol_until, locked, metrics, copied_from, phase_of, interrupted_at, interrupt_reason, winner, priority)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27) RETURNING {COLS}"
         ))
         .bind(e.id)
         .bind(&e.key)
@@ -179,6 +181,7 @@ impl ExperimentRepo {
         .bind(e.interrupted_at)
         .bind(&e.interrupt_reason)
         .bind(&e.winner)
+        .bind(e.priority)
         .fetch_one(&self.pg)
         .await
         .map_err(|err| match map_sqlx(err) {
@@ -192,7 +195,7 @@ impl ExperimentRepo {
         let row: Option<Row> = sqlx::query_as(&format!(
             "UPDATE experiments SET name = $2, description = $3, hypothesis = $4, status = $5, condition = $6, audiences = $7, percentage = $8,
                                     variants = $9, control = $10, flag_key = $11, salt = $12, starts_at = $13, ends_at = $14, tags = $15, split_key = $16, max_participants = $17, enrol_until = $18, locked = $19,
-                                    metrics = $20, copied_from = $21, phase_of = $22, interrupted_at = $23, interrupt_reason = $24, winner = $25,
+                                    metrics = $20, copied_from = $21, phase_of = $22, interrupted_at = $23, interrupt_reason = $24, winner = $25, priority = $26,
                                     version = version + 1, updated_at = now()
              WHERE key = $1 RETURNING {COLS}"
         ))
@@ -221,6 +224,7 @@ impl ExperimentRepo {
         .bind(e.interrupted_at)
         .bind(&e.interrupt_reason)
         .bind(&e.winner)
+        .bind(e.priority)
         .fetch_optional(&self.pg)
         .await
         .map_err(map_sqlx)?;

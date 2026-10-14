@@ -10,6 +10,21 @@ use crate::state::AppState;
 
 pub async fn gdpr_delete(state: &AppState, id: Uuid) -> Result<Value> {
     let identity = state.identity.get(id).await?;
+    let mut meta = serde_json::Map::new();
+    meta.insert(
+        "external_id".into(),
+        Value::String(identity.external_id.clone()),
+    );
+    state
+        .events
+        .system(
+            &identity,
+            zanshin_core::events::EV_IDENTITY_DELETE,
+            "",
+            Some(meta),
+            None,
+        )
+        .await;
     state.events.delete_identity(id).await?;
     state.identity.delete(id).await?;
     Ok(json!({ "deleted": id, "external_id": identity.external_id }))

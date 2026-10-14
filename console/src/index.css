@@ -190,3 +190,11 @@ ol.chain { margin: 10px 0 0; padding-left: 18px; display: grid; gap: 6px; }
 .map-n{font-size:14px;font-weight:600}
 .map-pct{font-size:11px;opacity:.8}
 .stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px}
+
+.rich-preview {
+  width: 100%;
+  min-height: 240px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: #fff;
+}

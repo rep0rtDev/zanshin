@@ -50,6 +50,40 @@ function Overrides({ flag, reload }: { flag: Flag; reload: () => void }) {
 type ExplainRule = { id: string; name: string; condition_matches: boolean; audiences_match: boolean; in_rollout: boolean; value: unknown };
 type ExplainOut = { enabled: boolean; identity_override: unknown; experiment: { experiment: string; variant: string; value: unknown } | null; live_event: { live_event: string; value: unknown } | null; rules: ExplainRule[]; default_value: unknown; audiences: string[]; now: string; result: { value: unknown; reason: { kind: string } } };
 
+type Size = { selector: string; bytes: number };
+type FlagDiff = { a: { selector: string; bytes: number; value: unknown }; b: { selector: string; bytes: number; value: unknown }; changes: { path: string; from?: unknown; to?: unknown }[] };
+
+function Diff({ flag }: { flag: Flag }) {
+  const sizes = useLoad(() => get<Size[]>(`/flags/${flag.key}/sizes`), [flag.key, flag.version]);
+  const [a, setA] = useState('default');
+  const [b, setB] = useState('default');
+  const [out, setOut] = useState<FlagDiff | null>(null);
+  const [err, setErr] = useState<Error | null>(null);
+  const opts = sizes.data ?? [];
+  const run = () => get<FlagDiff>(`/flags/${flag.key}/diff?a=${encodeURIComponent(a)}&b=${encodeURIComponent(b)}`).then((r) => { setOut(r); setErr(null); }, setErr);
+  return (
+    <div className="card">
+      <strong>Payload sizes</strong>
+      <div className="hint">Bytes the client receives for each value (default, rule values and variants).</div>
+      <Table rows={opts} rowKey={(r) => r.selector} cols={[{ h: 'Value', c: (r) => <code>{r.selector}</code> }, { h: 'Bytes', c: (r) => r.bytes.toLocaleString() }]} />
+      <strong style={{ display: 'block', marginTop: 12 }}>Compare two values</strong>
+      <div className="row">
+        <Field label="A"><select value={a} onChange={(e) => setA(e.target.value)}>{opts.map((o) => <option key={o.selector} value={o.selector}>{o.selector}</option>)}</select></Field>
+        <Field label="B"><select value={b} onChange={(e) => setB(e.target.value)}>{opts.map((o) => <option key={o.selector} value={o.selector}>{o.selector}</option>)}</select></Field>
+        <button className="btn" onClick={run}>Diff</button>
+      </div>
+      <ErrorBox error={err} />
+      {out && (out.changes.length === 0 ? <div className="hint">No differences ({out.a.bytes} vs {out.b.bytes} bytes).</div> : (
+        <Table rows={out.changes} rowKey={(c) => c.path} cols={[
+          { h: 'Path', c: (c) => <code>{c.path || '(root)'}</code> },
+          { h: out.a.selector, c: (c) => <code>{c.from === undefined ? '—' : JSON.stringify(c.from)}</code> },
+          { h: out.b.selector, c: (c) => <code>{c.to === undefined ? '—' : JSON.stringify(c.to)}</code> },
+        ]} />
+      ))}
+    </div>
+  );
+}
+
 function Explain({ flag }: { flag: Flag }) {
   const [ext, setExt] = useState('');
   const [out, setOut] = useState<ExplainOut | null>(null);
@@ -151,6 +185,7 @@ export default function Flags() {
       tabs={[
         { id: 'overrides', label: 'Overrides', render: (f, reload) => <Overrides flag={f} reload={reload} /> },
         { id: 'explain', label: 'Explain', render: (f) => <Explain flag={f} /> },
+        { id: 'diff', label: 'Diff & size', render: (f) => <Diff flag={f} /> },
         { id: 'dryrun', label: 'Dry run', render: (f) => <DryRun flag={f} /> },
       ]}
     />

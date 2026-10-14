@@ -48,6 +48,9 @@ pub struct MessageCampaign {
     /// Also send a push notification to the identity's registered devices on delivery.
     #[serde(default)]
     pub push: bool,
+    /// Store the message in the player's inbox (default). `false` = push / integrations only.
+    #[serde(default = "default_true")]
+    pub inbox: bool,
     /// Render title/body/payload from this template (per player locale) instead of the inline fields.
     #[serde(default)]
     pub template_key: Option<String>,
@@ -286,6 +289,10 @@ pub struct InboxMessage {
     pub delivered_at: DateTime<Utc>,
     pub read_at: Option<DateTime<Utc>>,
     pub expires_at: Option<DateTime<Utc>>,
+}
+
+fn default_true() -> bool {
+    true
 }
 
 #[cfg(test)]

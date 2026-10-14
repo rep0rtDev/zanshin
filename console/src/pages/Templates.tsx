@@ -33,6 +33,10 @@ function TranslationsEditor({ value, defaultLocale, onChange }: { value: Record<
   );
 }
 
+function prettyJson(s: string) {
+  try { return JSON.stringify(JSON.parse(s), null, 2); } catch { return s; }
+}
+
 function Preview({ t }: { t: Template }) {
   const [locale, setLocale] = useState(t.default_locale);
   const [ext, setExt] = useState('');
@@ -55,7 +59,8 @@ function Preview({ t }: { t: Template }) {
         <div className="card" style={{ marginTop: 8 }}>
           <div className="hint">locale {out.rendered.locale}</div>
           <strong>{out.rendered.title}</strong>
-          {t.format === 'html' ? <div dangerouslySetInnerHTML={{ __html: out.rendered.body }} /> : <pre style={{ whiteSpace: 'pre-wrap' }}>{out.rendered.body}</pre>}
+          {t.format === 'html' ? <iframe className="rich-preview" title="HTML preview" sandbox="" srcDoc={out.rendered.body} /> : <pre style={{ whiteSpace: 'pre-wrap' }}>{t.format === 'json' ? prettyJson(out.rendered.body) : out.rendered.body}</pre>}
+          <div className="hint">{new TextEncoder().encode(out.rendered.body).length} bytes</div>
         </div>
       )}
       {sent && <div className="hint" style={{ marginTop: 6 }}>Sent to inbox ({sent})</div>}

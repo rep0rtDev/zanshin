@@ -85,6 +85,8 @@ pub struct MessagePatch {
     #[serde(default)]
     pub push: Option<bool>,
     #[serde(default)]
+    pub inbox: Option<bool>,
+    #[serde(default)]
     pub tags: Option<Vec<String>>,
     #[serde(default, deserialize_with = "double_option")]
     pub template_key: Option<Option<String>>,
@@ -97,10 +99,24 @@ pub struct MessagePatch {
 /// A direct (server-sent) message.
 #[derive(Debug, Clone, Deserialize)]
 pub struct DirectMessage {
+    #[serde(default)]
     pub title: String,
-    /// Also send a push notification.
     #[serde(default)]
     pub push: bool,
+    /// `false` skips the inbox: the message only goes out as push / to integration channels.
+    #[serde(default = "default_true")]
+    pub inbox: bool,
+    /// Render from a stored template (by key, or by display name) instead of the inline fields.
+    #[serde(default)]
+    pub template_key: Option<String>,
+    #[serde(default)]
+    pub template_name: Option<String>,
+    /// Integration channels to deliver through (in addition to inbox/push).
+    #[serde(default)]
+    pub channels: Vec<String>,
+    /// Player locale for template translations; defaults to the identity's `default.locale`.
+    #[serde(default)]
+    pub locale: Option<String>,
     #[serde(default)]
     pub body: String,
     #[serde(default)]
@@ -641,37 +657,77 @@ impl MessageService {
     }
 
     /// Server / admin: drop a one-off message into one identity's inbox.
-    pub async fn send_direct(&self, identity: &Identity, msg: DirectMessage) -> Result<Uuid> {
-        if msg.title.trim().is_empty() || msg.title.len() > 512 {
-            return Err(Error::invalid("title must be 1..512 chars"));
-        }
+    pub async fn send_direct(&self, identity: &Identity, mut msg: DirectMessage) -> Result<Uuid> {
         if msg.ttl_secs.is_some_and(|t| t <= 0) {
             return Err(Error::invalid("ttl_secs must be positive"));
         }
+        if !msg.inbox && !msg.push && msg.channels.is_empty() {
+            return Err(Error::invalid(
+                "message skips the inbox but has no push or channels to deliver through",
+            ));
+        }
         let flat = identity.properties.flatten();
-        let title = MessageCampaign::render(&msg.title, &flat);
-        let body = MessageCampaign::render(&msg.body, &flat);
+        let template = match (&msg.template_key, &msg.template_name) {
+            (Some(k), _) => Some(self.templates.get(k).await?),
+            (None, Some(n)) => Some(
+                self.templates
+                    .list()
+                    .await?
+                    .into_iter()
+                    .find(|t| t.name == *n || t.key == *n)
+                    .ok_or_else(|| Error::not_found(format!("template named {n:?}")))?,
+            ),
+            (None, None) => None,
+        };
+        let (title, body, locale) = match &template {
+            Some(t) => {
+                let pref = msg.locale.clone().or_else(|| {
+                    flat.get("default.locale")
+                        .and_then(|v| v.as_str())
+                        .map(str::to_string)
+                });
+                let r = t.render(pref.as_deref(), &flat);
+                if msg.payload.is_null() {
+                    msg.payload = t.payload.clone();
+                }
+                if msg.image_url.is_empty() {
+                    msg.image_url = t.image_url.clone();
+                }
+                (r.title, r.body, Some(r.locale))
+            }
+            None => (
+                MessageCampaign::render(&msg.title, &flat),
+                MessageCampaign::render(&msg.body, &flat),
+                msg.locale.clone(),
+            ),
+        };
+        if title.trim().is_empty() || title.len() > 512 {
+            return Err(Error::invalid("title must be 1..512 chars"));
+        }
         let expires_at = msg
             .ttl_secs
             .map(|t| chrono::Utc::now() + chrono::Duration::seconds(t));
-        let id = self
-            .repo
-            .deliver(
-                identity.id,
-                Delivery {
-                    message_id: None,
-                    key: None,
-                    title: &title,
-                    body: &body,
-                    image_url: &msg.image_url,
-                    payload: &msg.payload,
-                    priority: msg.priority,
-                    expires_at,
-                    occurrence: None,
-                },
-            )
-            .await?
-            .ok_or_else(|| Error::internal(anyhow::anyhow!("direct message not inserted")))?;
+        let id = if msg.inbox {
+            self.repo
+                .deliver(
+                    identity.id,
+                    Delivery {
+                        message_id: None,
+                        key: None,
+                        title: &title,
+                        body: &body,
+                        image_url: &msg.image_url,
+                        payload: &msg.payload,
+                        priority: msg.priority,
+                        expires_at,
+                        occurrence: None,
+                    },
+                )
+                .await?
+                .ok_or_else(|| Error::internal(anyhow::anyhow!("direct message not inserted")))?
+        } else {
+            Uuid::new_v4()
+        };
         if msg.push {
             self.push_copy(
                 identity.id,
@@ -679,6 +735,24 @@ impl MessageService {
                 &Self::notification(&title, &body, &msg.image_url, id, None),
             )
             .await;
+        }
+        for ch in &msg.channels {
+            let out = super::integrations::Outbound {
+                message_key: "direct",
+                identity_id: identity.id,
+                external_id: &identity.external_id,
+                occurrence: None,
+                locale: locale.as_deref().unwrap_or(""),
+                title: &title,
+                body: &body,
+                image_url: &msg.image_url,
+                payload: &msg.payload,
+                props: &flat,
+            };
+            let o = self.integrations.deliver(ch, &out).await;
+            if o.status == "failed" {
+                tracing::warn!(channel = %ch, detail = %o.detail, "direct message channel failed");
+            }
         }
         let mut c = self.bus.change(ChangeKind::Message, "direct", 0);
         c.identity_id = Some(identity.id);
@@ -713,6 +787,7 @@ impl MessageService {
             ttl_secs: p.ttl_secs.flatten(),
             priority: p.priority.unwrap_or(0),
             push: p.push.unwrap_or(false),
+            inbox: p.inbox.unwrap_or(true),
             template_key: p.template_key.flatten(),
             schedule: p.schedule.unwrap_or_default(),
             channels: p.channels.unwrap_or_else(default_channels),
@@ -777,6 +852,9 @@ impl MessageService {
         if let Some(v) = p.push {
             m.push = v;
         }
+        if let Some(v) = p.inbox {
+            m.inbox = v;
+        }
         if let Some(v) = p.template_key {
             m.template_key = v;
         }
@@ -812,4 +890,8 @@ impl MessageService {
     pub async fn purge_expired(&self) -> Result<u64> {
         self.repo.purge_expired().await
     }
+}
+
+fn default_true() -> bool {
+    true
 }

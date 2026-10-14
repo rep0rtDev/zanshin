@@ -57,9 +57,24 @@ pub struct Integration {
     pub config: Value,
     #[serde(default = "crate::flags::default_true")]
     pub enabled: bool,
+    /// Delivery health, maintained by the server on every attempt.
+    #[serde(default)]
+    pub health: IntegrationHealth,
     pub version: i64,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
+}
+
+/// Rolling delivery health of an integration: last attempt outcome plus lifetime counters.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct IntegrationHealth {
+    /// `sent`, `failed` or `skipped` for the most recent attempt; `None` if never used.
+    pub last_status: Option<String>,
+    /// Detail of the most recent failure (kept until the next failure).
+    pub last_error: Option<String>,
+    pub last_at: Option<DateTime<Utc>>,
+    pub sent_count: i64,
+    pub failed_count: i64,
 }
 
 pub const SECRET_KEYS: &[&str] = &[

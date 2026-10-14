@@ -70,6 +70,8 @@ pub struct ExperimentPatch {
     #[serde(default)]
     pub tags: Option<Vec<String>>,
     #[serde(default)]
+    pub priority: Option<i32>,
+    #[serde(default)]
     pub split_key: Option<String>,
     #[serde(default, deserialize_with = "deserialize_double_option")]
     pub max_participants: Option<Option<i64>>,
@@ -364,6 +366,7 @@ impl ExperimentService {
             ends_at: p.ends_at.flatten(),
             tags: normalize_tags(p.tags.unwrap_or_default())?,
             split_key: p.split_key.unwrap_or_else(default_split_key),
+            priority: p.priority.unwrap_or_default(),
             max_participants: p.max_participants.flatten(),
             enrol_until: p.enrol_until.flatten(),
             locked: p.locked.unwrap_or(false),
@@ -420,6 +423,9 @@ impl ExperimentService {
         }
         if let Some(v) = p.split_key {
             e.split_key = v;
+        }
+        if let Some(v) = p.priority {
+            e.priority = v;
         }
         if let Some(v) = p.max_participants {
             e.max_participants = v;

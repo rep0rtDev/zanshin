@@ -394,6 +394,17 @@ impl EventService {
         self.store.recent_for_identity(identity_id, limit).await
     }
 
+    pub async fn search_for_identity(
+        &self,
+        identity_id: Uuid,
+        search: &zanshin_store::events::EventSearch,
+        limit: i64,
+    ) -> Result<Vec<zanshin_store::events::StoredEvent>> {
+        self.store
+            .search_for_identity(identity_id, search, limit)
+            .await
+    }
+
     pub async fn delete_identity(&self, identity_id: Uuid) -> Result<()> {
         self.store.delete_identity(identity_id).await
     }
@@ -427,20 +438,29 @@ async fn flush(store: &EventStore, identities: &IdentityRepo, batch: &[Event]) {
         }
     }
     // Denormalise the identity's default properties onto each event for analytics filters.
+    // Identity tombstones are the one event that must outlive its identity.
     let rows: Vec<Event> = by_identity
         .values()
-        .filter_map(|(i, evs)| i.as_ref().map(|i| (i, evs)))
-        .flat_map(|(identity, evs)| {
-            let d = &identity.properties.default;
-            let pick = |k: &str| d.get(k).and_then(|v| v.as_str()).unwrap_or("").to_string();
-            let (country, platform, app_version) =
-                (pick("country"), pick("platform"), pick("app_version"));
-            evs.iter().cloned().map(move |mut e| {
-                e.country = country.clone();
-                e.platform = platform.clone();
-                e.app_version = app_version.clone();
-                e
-            })
+        .flat_map(|(i, evs)| {
+            let resolved = i.is_some();
+            let (country, platform, app_version) = i
+                .as_ref()
+                .map(|identity| {
+                    let d = &identity.properties.default;
+                    let pick =
+                        |k: &str| d.get(k).and_then(|v| v.as_str()).unwrap_or("").to_string();
+                    (pick("country"), pick("platform"), pick("app_version"))
+                })
+                .unwrap_or_default();
+            evs.iter()
+                .filter(move |e| resolved || e.name == zanshin_core::events::EV_IDENTITY_DELETE)
+                .cloned()
+                .map(move |mut e| {
+                    e.country = country.clone();
+                    e.platform = platform.clone();
+                    e.app_version = app_version.clone();
+                    e
+                })
         })
         .collect();
     let dropped = batch.len() - rows.len();

@@ -7,6 +7,21 @@ Release automation reads the section whose heading contains the tagged version.
 ## [Unreleased]
 
 ### Added
+- LiveOps polish: flag value diff and payload sizes (`GET /admin/v1/flags/{key}/diff?a=&b=`,
+  `GET /admin/v1/flags/{key}/sizes`, "Diff & size" tab in the console), `GET /v1/flags/overrides`
+  (every identity / experiment / live-event override applied to the caller), deterministic
+  precedence when several running experiments pin one flag (`priority`, then earliest start — all
+  of them still enrol), participation duration counted per live-event run, rich template preview
+  (HTML, pretty-printed JSON, byte size), direct messages that skip the inbox, resolve a template
+  by key or display name, or go out through integration channels without a template, integration
+  health (last status / error / time, sent and failed counters) in the API and the console,
+  rejected events exported to data sinks as `$event_error` (the ingest response now reports
+  `rejected`), `$identity_delete` emitted on GDPR deletion and kept as a tombstone, event body
+  limits, player event search (`name`, `q`, `from`, `to` on
+  `GET /admin/v1/identities/{id}/events`), per-key config export / import (`keys=`), `409 Conflict`
+  when deleting a flag, audience, template, integration, metric, experiment or live event that
+  something still references (the referrers are listed), and list filters that persist per page in
+  the console. gRPC `SendEvents` now runs the same taxonomy validation as `POST /v1/events`.
 - Release engineering: tag-driven release workflow (multi-arch GHCR images for the server and the
   Nakama bundle, binaries for Linux/macOS/Windows, SBOMs, provenance attestations, keyless cosign
   signatures, signed checksums, SDK archives), `security.yml` (cargo-deny, cargo-audit, npm audit,
@@ -47,6 +62,9 @@ Release automation reads the section whose heading contains the tagged version.
 
 ### Security
 - rustls 0.23.46 (RUSTSEC-2026-0346..0349), maxminddb 0.27 (RUSTSEC-2025-0132).
+
+### Fixed
+- Console list pages backed by `{ items: [...] }` endpoints (templates, integrations, metrics, journeys, webhooks, export sinks) rendered a blank page; detail pages wrapped as `{ <kind>: ... }` loaded empty forms.
 
 ## [0.1.0] - Unreleased
 

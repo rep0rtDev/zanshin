@@ -29,6 +29,7 @@ struct Row {
     ttl_secs: Option<i64>,
     priority: i32,
     push: bool,
+    inbox: bool,
     template_key: Option<String>,
     schedule: Value,
     channels: Vec<String>,
@@ -59,6 +60,7 @@ impl TryFrom<Row> for MessageCampaign {
             ttl_secs: r.ttl_secs,
             priority: r.priority,
             push: r.push,
+            inbox: r.inbox,
             template_key: r.template_key,
             schedule: serde_json::from_value(r.schedule).unwrap_or_default(),
             channels: r.channels,
@@ -101,7 +103,7 @@ impl From<InboxRow> for InboxMessage {
     }
 }
 
-const COLS: &str = "id, key, name, enabled, title, body, image_url, payload, condition, audiences, percentage, starts_at, ends_at, ttl_secs, priority, push, template_key, schedule, channels, tags, version, created_at, updated_at";
+const COLS: &str = "id, key, name, enabled, title, body, image_url, payload, condition, audiences, percentage, starts_at, ends_at, ttl_secs, priority, push, inbox, template_key, schedule, channels, tags, version, created_at, updated_at";
 const INBOX_COLS: &str =
     "id, key, title, body, image_url, payload, priority, delivered_at, read_at, expires_at";
 
@@ -163,8 +165,8 @@ impl MessageRepo {
 
     pub async fn create(&self, m: &MessageCampaign) -> Result<MessageCampaign> {
         let row: Row = sqlx::query_as(&format!(
-            "INSERT INTO messages (id, key, name, enabled, title, body, image_url, payload, condition, audiences, percentage, starts_at, ends_at, ttl_secs, priority, tags, push, template_key, schedule, channels)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20) RETURNING {COLS}"
+            "INSERT INTO messages (id, key, name, enabled, title, body, image_url, payload, condition, audiences, percentage, starts_at, ends_at, ttl_secs, priority, tags, push, template_key, schedule, channels, inbox)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21) RETURNING {COLS}"
         ))
         .bind(m.id)
         .bind(&m.key)
@@ -186,6 +188,7 @@ impl MessageRepo {
         .bind(&m.template_key)
         .bind(serde_json::to_value(&m.schedule).unwrap_or(Value::Null))
         .bind(&m.channels)
+        .bind(m.inbox)
         .fetch_one(&self.pg)
         .await
         .map_err(|err| match map_sqlx(err) {
@@ -198,7 +201,7 @@ impl MessageRepo {
     pub async fn update(&self, m: &MessageCampaign) -> Result<MessageCampaign> {
         let row: Option<Row> = sqlx::query_as(&format!(
             "UPDATE messages SET name = $2, enabled = $3, title = $4, body = $5, image_url = $6, payload = $7, condition = $8, audiences = $9,
-                                 percentage = $10, starts_at = $11, ends_at = $12, ttl_secs = $13, priority = $14, tags = $15, push = $16, template_key = $17, schedule = $18, channels = $19,
+                                 percentage = $10, starts_at = $11, ends_at = $12, ttl_secs = $13, priority = $14, tags = $15, push = $16, template_key = $17, schedule = $18, channels = $19, inbox = $20,
                                  version = version + 1, updated_at = now()
              WHERE key = $1 RETURNING {COLS}"
         ))
@@ -221,6 +224,7 @@ impl MessageRepo {
         .bind(&m.template_key)
         .bind(serde_json::to_value(&m.schedule).unwrap_or(Value::Null))
         .bind(&m.channels)
+        .bind(m.inbox)
         .fetch_optional(&self.pg)
         .await
         .map_err(map_sqlx)?;

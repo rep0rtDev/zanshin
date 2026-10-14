@@ -197,7 +197,7 @@ async fn messaging_v2_flow() {
     let test_msg = msgs
         .iter()
         .find(|m| m["key"] == format!("template:{tkey}"))
-        .expect("test send in inbox");
+        .unwrap_or_else(|| panic!("test send in inbox: {msgs:?}"));
     assert_eq!(test_msg["title"], "Hallo Ana");
 
     // Webhook integration with HMAC.
@@ -291,7 +291,7 @@ async fn messaging_v2_flow() {
         None,
     )
     .await;
-    assert_eq!(st, 400, "template in use");
+    assert_eq!(st, 409, "template in use");
 
     // Cron schedule: one delivery per occurrence, not per fetch.
     let ckey = format!("daily_{sfx}");
