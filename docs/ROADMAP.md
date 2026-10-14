@@ -34,11 +34,15 @@ console comes last once the model is stable.
 - [x] **TypeScript SDK** (`sdk/ts`): zero-dependency client for browser/Node, session restore and
       single-flight refresh, all client endpoints, reconnecting WebSocket stream with local flag
       cache, integration test against a live server
+- [x] **Push notifications**: `push_tokens` registry (`PUT/DELETE /v1/push-tokens`), FCM HTTP v1 and
+      APNs providers behind a `Provider` trait (plus `log` provider for dev/test), campaigns and
+      direct messages opt in with `push: true`, proactive sweep delivers live push campaigns to
+      every registered device (every minute, after campaign changes, or `POST /admin/v1/push/sweep`),
+      dead tokens pruned on provider feedback
 
 ## 0.2 — reach
 
 - Unity (C#), Unreal (C++), Godot (GDScript/C#) SDKs
-- Push notifications (FCM / APNs) as a message delivery channel
 - Webhooks and outbound integrations (Slack / Discord / generic)
 - Multi-project (tenant) support with per-project keys
 - Rate limiting, audit log of admin actions

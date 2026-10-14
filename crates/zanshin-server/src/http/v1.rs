@@ -37,6 +37,14 @@ pub fn router() -> Router<AppState> {
             "/messages/{id}",
             axum::routing::put(update_message).delete(delete_message),
         )
+        .route(
+            "/push-tokens",
+            get(list_push_tokens).put(register_push_token),
+        )
+        .route(
+            "/push-tokens/{token}",
+            axum::routing::delete(unregister_push_token),
+        )
         .route("/stream", get(super::ws::stream))
         .route("/healthcheck", get(healthcheck))
 }
@@ -371,6 +379,45 @@ async fn send_events(
         .track(&identity, req.events, false, Some(ctx.claims.sid))
         .await?;
     Ok(Json(serde_json::json!({ "accepted": n })))
+}
+
+#[derive(Debug, Deserialize)]
+pub struct RegisterPushTokenRequest {
+    pub platform: zanshin_core::push::Platform,
+    pub token: String,
+    #[serde(default)]
+    pub device_id: String,
+}
+
+async fn register_push_token(
+    State(state): State<AppState>,
+    SessionAuth(ctx): SessionAuth,
+    Json(req): Json<RegisterPushTokenRequest>,
+) -> ApiResult<Json<zanshin_core::push::PushToken>> {
+    Ok(Json(
+        state
+            .push
+            .register(ctx.identity_id(), req.platform, &req.token, &req.device_id)
+            .await?,
+    ))
+}
+
+async fn list_push_tokens(
+    State(state): State<AppState>,
+    SessionAuth(ctx): SessionAuth,
+) -> ApiResult<Json<serde_json::Value>> {
+    Ok(Json(
+        serde_json::json!({ "tokens": state.push.tokens(ctx.identity_id()).await? }),
+    ))
+}
+
+async fn unregister_push_token(
+    State(state): State<AppState>,
+    SessionAuth(ctx): SessionAuth,
+    Path(token): Path<String>,
+) -> ApiResult<Json<serde_json::Value>> {
+    state.push.unregister(ctx.identity_id(), &token).await?;
+    Ok(Json(serde_json::json!({})))
 }
 
 async fn healthcheck() -> Json<serde_json::Value> {

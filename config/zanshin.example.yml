@@ -36,3 +36,15 @@ admin:
 log:
   level: info,sqlx=warn,hyper=warn,tower_http=info
   json: false
+
+push:
+  provider: none            # none | log (record only, see /admin/v1/push/outbox) | live
+  fcm:
+    project_id: ""
+    service_account_file: ""   # Google service-account JSON (FCM HTTP v1)
+  apns:
+    team_id: ""
+    key_id: ""
+    key_file: ""               # .p8 token-auth key
+    bundle_id: ""
+    sandbox: false

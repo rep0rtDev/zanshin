@@ -19,6 +19,7 @@ async fn start() -> Option<(String, reqwest::Client)> {
     );
     std::env::set_var("ZANSHIN__ADMIN__BOOTSTRAP_KEY", ADMIN_KEY);
     std::env::set_var("ZANSHIN__SERVER__HTTP_ADDR", "127.0.0.1:0");
+    std::env::set_var("ZANSHIN__PUSH__PROVIDER", "log");
     let cfg = Config::load(None).expect("config");
     let state = AppState::build(Arc::new(cfg)).await.expect("state");
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -1280,4 +1281,228 @@ async fn server_identity_sync_and_inbox() {
         .await
         .unwrap();
     assert_eq!(r.status(), 403);
+}
+
+#[tokio::test]
+async fn push_notifications_flow() {
+    let Some((base, http)) = start().await else {
+        return;
+    };
+    let admin = |rb: reqwest::RequestBuilder| rb.header("x-api-key", ADMIN_KEY);
+    let suffix = format!(
+        "{:x}",
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos()
+    );
+    let ext = format!("it-push-{suffix}");
+    let client_key: String = {
+        let k: Value = admin(http.post(format!("{base}/admin/v1/api-keys")))
+            .json(&json!({ "name": format!("push-{suffix}"), "kind": "client" }))
+            .send()
+            .await
+            .unwrap()
+            .json()
+            .await
+            .unwrap();
+        k["secret"].as_str().unwrap().to_string()
+    };
+    let (token, identity_id) = {
+        let s: Value = http
+            .post(format!("{base}/v1/authenticate"))
+            .header("x-api-key", &client_key)
+            .json(&json!({ "id": ext, "default": { "platform": "ios" } }))
+            .send()
+            .await
+            .unwrap()
+            .json()
+            .await
+            .unwrap();
+        (
+            s["token"].as_str().unwrap().to_string(),
+            s["identity"]["id"].as_str().unwrap().to_string(),
+        )
+    };
+
+    // Register two devices; bad tokens are rejected.
+    let bad = http
+        .put(format!("{base}/v1/push-tokens"))
+        .bearer_auth(&token)
+        .json(&json!({ "platform": "apns", "token": "not hex" }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(bad.status(), 400);
+    for (platform, tok) in [
+        ("fcm", format!("fcm-{suffix}")),
+        ("apns", "abcdef0123456789".to_string()),
+    ] {
+        let r = http
+            .put(format!("{base}/v1/push-tokens"))
+            .bearer_auth(&token)
+            .json(&json!({ "platform": platform, "token": tok, "device_id": "dev-1" }))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(r.status(), 200, "{platform}");
+    }
+    let listed: Value = http
+        .get(format!("{base}/v1/push-tokens"))
+        .bearer_auth(&token)
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(listed["tokens"].as_array().unwrap().len(), 2);
+
+    // Direct message with push → outbox gets one entry per device, inbox copy is marked pushed.
+    let sent: Value =
+        admin(http.post(format!("{base}/admin/v1/identities/{identity_id}/messages")))
+            .json(&json!({ "title": "Hi {{default.platform}}", "body": "direct", "push": true }))
+            .send()
+            .await
+            .unwrap()
+            .json()
+            .await
+            .unwrap();
+    let msg_id = sent["id"].as_str().unwrap();
+    let outbox: Value = admin(http.get(format!("{base}/admin/v1/push/outbox")))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(outbox["mode"], "log");
+    let mine: Vec<&Value> = outbox["sent"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|e| e["notification"]["data"]["zanshin_message_id"] == msg_id)
+        .collect();
+    assert_eq!(mine.len(), 2, "one push per device");
+    assert_eq!(mine[0]["notification"]["title"], "Hi ios");
+    let platforms: std::collections::HashSet<&str> = mine
+        .iter()
+        .map(|e| e["platform"].as_str().unwrap())
+        .collect();
+    assert_eq!(platforms.len(), 2);
+
+    // Push campaign targeting this identity: proactive sweep delivers without the client pulling.
+    let key = format!("push_camp_{suffix}");
+    let created = admin(http.post(format!("{base}/admin/v1/messages")))
+        .json(&json!({
+            "key": key, "title": "Event!", "body": "Join now", "push": true, "enabled": true,
+            "condition": { "prop": "identity.external_id", "op": "eq", "value": ext }
+        }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(created.status(), 201);
+    let swept: Value = admin(http.post(format!("{base}/admin/v1/push/sweep")))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert!(swept["delivered"].as_u64().unwrap() <= 1, "{swept}"); // the bus-triggered sweep may already have run
+    let outbox: Value = admin(http.get(format!("{base}/admin/v1/push/outbox")))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    let camp: Vec<&Value> = outbox["sent"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|e| e["notification"]["data"]["zanshin_message_key"] == key.as_str())
+        .collect();
+    assert_eq!(
+        camp.len(),
+        2,
+        "campaign pushed once per device, never twice"
+    );
+    let inbox: Value = http
+        .get(format!("{base}/v1/messages"))
+        .bearer_auth(&token)
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert!(inbox["messages"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|m| m["key"] == key.as_str()));
+    // A second sweep delivers nothing new.
+    let swept: Value = admin(http.post(format!("{base}/admin/v1/push/sweep")))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(swept["delivered"], 0);
+
+    let stats: Value = admin(http.get(format!("{base}/admin/v1/push/stats")))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert!(stats["tokens"].as_i64().unwrap() >= 2);
+    let admin_tokens: Value = admin(http.get(format!(
+        "{base}/admin/v1/identities/{identity_id}/push-tokens"
+    )))
+    .send()
+    .await
+    .unwrap()
+    .json()
+    .await
+    .unwrap();
+    assert_eq!(admin_tokens["tokens"].as_array().unwrap().len(), 2);
+
+    // Unregister one, the other stays; deleting the identity cascades.
+    let r = http
+        .delete(format!("{base}/v1/push-tokens/abcdef0123456789"))
+        .bearer_auth(&token)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(r.status(), 200);
+    let r = http
+        .delete(format!("{base}/v1/push-tokens/abcdef0123456789"))
+        .bearer_auth(&token)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(r.status(), 404);
+    let listed: Value = http
+        .get(format!("{base}/v1/push-tokens"))
+        .bearer_auth(&token)
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(listed["tokens"].as_array().unwrap().len(), 1);
+    admin(http.delete(format!("{base}/admin/v1/messages/{key}")))
+        .send()
+        .await
+        .unwrap();
+    http.delete(format!("{base}/v1/identity"))
+        .bearer_auth(&token)
+        .send()
+        .await
+        .unwrap();
 }

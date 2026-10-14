@@ -129,6 +129,13 @@ pub fn router() -> Router<AppState> {
         .route("/analytics/events", get(analytics_timeseries))
         .route("/analytics/events/names", get(analytics_names))
         .route("/identities/{identity_id}/events", get(identity_events))
+        .route("/push/outbox", get(push_outbox))
+        .route("/push/stats", get(push_stats))
+        .route("/push/sweep", axum::routing::post(push_sweep))
+        .route(
+            "/identities/{identity_id}/push-tokens",
+            get(identity_push_tokens),
+        )
         .route("/stats", get(stats))
 }
 
@@ -980,5 +987,52 @@ async fn identity_events(
         .await?;
     Ok(Json(
         serde_json::json!({ "identity_id": identity_id, "events": events }),
+    ))
+}
+
+// ---- push ----------------------------------------------------------------------------------
+
+async fn push_outbox(
+    State(state): State<AppState>,
+    AdminAuth(_): AdminAuth,
+    Query(q): Query<LimitQuery>,
+) -> ApiResult<Json<serde_json::Value>> {
+    Ok(Json(
+        serde_json::json!({ "mode": state.push.mode(), "sent": state.push.outbox(q.limit.unwrap_or(100).clamp(1, 1000) as usize).await }),
+    ))
+}
+
+async fn push_stats(
+    State(state): State<AppState>,
+    AdminAuth(_): AdminAuth,
+) -> ApiResult<Json<serde_json::Value>> {
+    let (tokens, identities) = state.push.stats().await?;
+    Ok(Json(
+        serde_json::json!({ "mode": state.push.mode(), "tokens": tokens, "identities": identities }),
+    ))
+}
+
+/// Deliver live push campaigns to every identity with a device right now (also runs every minute
+/// and after each campaign change).
+async fn push_sweep(
+    State(state): State<AppState>,
+    AdminAuth(_): AdminAuth,
+) -> ApiResult<Json<serde_json::Value>> {
+    let identities = zanshin_store::identities::IdentityRepo::new(state.stores.pg.clone());
+    let n = state
+        .messages
+        .sweep_push_campaigns(&state.eval, &identities)
+        .await?;
+    Ok(Json(serde_json::json!({ "delivered": n })))
+}
+
+async fn identity_push_tokens(
+    State(state): State<AppState>,
+    AdminAuth(_): AdminAuth,
+    Path(identity_id): Path<Uuid>,
+) -> ApiResult<Json<serde_json::Value>> {
+    state.identity.get(identity_id).await?;
+    Ok(Json(
+        serde_json::json!({ "tokens": state.push.tokens(identity_id).await? }),
     ))
 }

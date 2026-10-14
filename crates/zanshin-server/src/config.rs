@@ -20,6 +20,44 @@ pub struct Config {
     pub admin: AdminConfig,
     #[serde(default)]
     pub log: LogConfig,
+    #[serde(default)]
+    pub push: PushConfig,
+}
+
+/// Push notification delivery. `provider`: `none` (default), `log` (record only; dev/test),
+/// `live` (FCM HTTP v1 and/or APNs, whichever is configured).
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct PushConfig {
+    #[serde(default)]
+    pub provider: String,
+    #[serde(default)]
+    pub fcm: FcmConfig,
+    #[serde(default)]
+    pub apns: ApnsConfig,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct FcmConfig {
+    #[serde(default)]
+    pub project_id: String,
+    /// Path to a Google service-account JSON file (client_email + private_key).
+    #[serde(default)]
+    pub service_account_file: String,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct ApnsConfig {
+    #[serde(default)]
+    pub team_id: String,
+    #[serde(default)]
+    pub key_id: String,
+    /// Path to the .p8 signing key.
+    #[serde(default)]
+    pub key_file: String,
+    #[serde(default)]
+    pub bundle_id: String,
+    #[serde(default)]
+    pub sandbox: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

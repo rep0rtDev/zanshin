@@ -3956,6 +3956,7 @@ dependencies = [
  "http",
  "humantime",
  "humantime-serde",
+ "jsonwebtoken",
  "metrics",
  "metrics-exporter-prometheus",
  "prost",

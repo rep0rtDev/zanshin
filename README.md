@@ -76,6 +76,7 @@ variables. `zanshin --check-config` prints the effective configuration with secr
 | Computed properties maintained from events: `session_count`, `first/last_seen_at`, `event_count`, per-event `count` / `sum` / `last_at` — targetable from rules | ✅ |
 | Go SDK `sdk/go` (server-key client with local cache + change-stream invalidation) | ✅ |
 | TypeScript SDK `sdk/ts` (browser + Node, zero deps): session with auto-refresh, flags, experiments, live events, inbox, events, WebSocket stream | ✅ |
+| Push notifications (FCM HTTP v1 / APNs token auth): device token registry, `push: true` on campaigns and direct messages, proactive campaign sweep | ✅ |
 | Embedded admin console | 🔜 |
 
 ## API at a glance

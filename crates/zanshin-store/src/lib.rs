@@ -11,6 +11,7 @@ pub mod flags;
 pub mod identities;
 pub mod live_events;
 pub mod messages;
+pub mod push;
 pub mod sessions;
 
 use std::time::Duration;
