@@ -31,6 +31,16 @@ struct Row {
     starts_at: Option<DateTime<Utc>>,
     ends_at: Option<DateTime<Utc>>,
     tags: Vec<String>,
+    split_key: String,
+    max_participants: Option<i64>,
+    enrol_until: Option<DateTime<Utc>>,
+    locked: bool,
+    metrics: Vec<String>,
+    copied_from: Option<String>,
+    phase_of: Option<String>,
+    interrupted_at: Option<DateTime<Utc>>,
+    interrupt_reason: String,
+    winner: Option<String>,
     version: i64,
     created_at: DateTime<Utc>,
     updated_at: DateTime<Utc>,
@@ -59,6 +69,16 @@ impl TryFrom<Row> for Experiment {
             starts_at: r.starts_at,
             ends_at: r.ends_at,
             tags: r.tags,
+            split_key: r.split_key,
+            max_participants: r.max_participants,
+            enrol_until: r.enrol_until,
+            locked: r.locked,
+            metrics: r.metrics,
+            copied_from: r.copied_from,
+            phase_of: r.phase_of,
+            interrupted_at: r.interrupted_at,
+            interrupt_reason: r.interrupt_reason,
+            winner: r.winner,
             version: r.version,
             created_at: r.created_at,
             updated_at: r.updated_at,
@@ -66,13 +86,23 @@ impl TryFrom<Row> for Experiment {
     }
 }
 
-const COLS: &str = "id, key, name, description, hypothesis, status, condition, audiences, percentage, variants, control, flag_key, salt, starts_at, ends_at, tags, version, created_at, updated_at";
+const COLS: &str = "id, key, name, description, hypothesis, status, condition, audiences, percentage, variants, control, flag_key, salt, starts_at, ends_at, tags, split_key, max_participants, enrol_until, locked, metrics, copied_from, phase_of, interrupted_at, interrupt_reason, winner, version, created_at, updated_at";
 
 /// Stored assignment of one identity.
 #[derive(Debug, Clone, Serialize, FromRow)]
 pub struct AssignmentRow {
     pub experiment_id: Uuid,
     pub identity_id: Uuid,
+    pub variant: String,
+    pub assigned_at: DateTime<Utc>,
+    pub exposed_at: Option<DateTime<Utc>>,
+    pub exposures: i64,
+}
+
+#[derive(Debug, Clone, Serialize, FromRow)]
+pub struct Participant {
+    pub identity_id: Uuid,
+    pub external_id: String,
     pub variant: String,
     pub assigned_at: DateTime<Utc>,
     pub exposed_at: Option<DateTime<Utc>>,
@@ -120,8 +150,8 @@ impl ExperimentRepo {
 
     pub async fn create(&self, e: &Experiment) -> Result<Experiment> {
         let row: Row = sqlx::query_as(&format!(
-            "INSERT INTO experiments (id, key, name, description, hypothesis, status, condition, audiences, percentage, variants, control, flag_key, salt, starts_at, ends_at, tags)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16) RETURNING {COLS}"
+            "INSERT INTO experiments (id, key, name, description, hypothesis, status, condition, audiences, percentage, variants, control, flag_key, salt, starts_at, ends_at, tags, split_key, max_participants, enrol_until, locked, metrics, copied_from, phase_of, interrupted_at, interrupt_reason, winner)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26) RETURNING {COLS}"
         ))
         .bind(e.id)
         .bind(&e.key)
@@ -139,6 +169,16 @@ impl ExperimentRepo {
         .bind(e.starts_at)
         .bind(e.ends_at)
         .bind(&e.tags)
+        .bind(&e.split_key)
+        .bind(e.max_participants)
+        .bind(e.enrol_until)
+        .bind(e.locked)
+        .bind(&e.metrics)
+        .bind(&e.copied_from)
+        .bind(&e.phase_of)
+        .bind(e.interrupted_at)
+        .bind(&e.interrupt_reason)
+        .bind(&e.winner)
         .fetch_one(&self.pg)
         .await
         .map_err(|err| match map_sqlx(err) {
@@ -151,7 +191,8 @@ impl ExperimentRepo {
     pub async fn update(&self, e: &Experiment) -> Result<Experiment> {
         let row: Option<Row> = sqlx::query_as(&format!(
             "UPDATE experiments SET name = $2, description = $3, hypothesis = $4, status = $5, condition = $6, audiences = $7, percentage = $8,
-                                    variants = $9, control = $10, flag_key = $11, salt = $12, starts_at = $13, ends_at = $14, tags = $15,
+                                    variants = $9, control = $10, flag_key = $11, salt = $12, starts_at = $13, ends_at = $14, tags = $15, split_key = $16, max_participants = $17, enrol_until = $18, locked = $19,
+                                    metrics = $20, copied_from = $21, phase_of = $22, interrupted_at = $23, interrupt_reason = $24, winner = $25,
                                     version = version + 1, updated_at = now()
              WHERE key = $1 RETURNING {COLS}"
         ))
@@ -170,6 +211,16 @@ impl ExperimentRepo {
         .bind(e.starts_at)
         .bind(e.ends_at)
         .bind(&e.tags)
+        .bind(&e.split_key)
+        .bind(e.max_participants)
+        .bind(e.enrol_until)
+        .bind(e.locked)
+        .bind(&e.metrics)
+        .bind(&e.copied_from)
+        .bind(&e.phase_of)
+        .bind(e.interrupted_at)
+        .bind(&e.interrupt_reason)
+        .bind(&e.winner)
         .fetch_optional(&self.pg)
         .await
         .map_err(map_sqlx)?;
@@ -315,6 +366,55 @@ impl ExperimentRepo {
         sqlx::query_as(
             "SELECT variant, count(*) AS assigned, count(exposed_at) AS exposed, COALESCE(sum(exposures), 0)::bigint AS exposures
              FROM experiment_assignments WHERE experiment_id = $1 GROUP BY variant ORDER BY variant",
+        )
+        .bind(experiment_id)
+        .fetch_all(&self.pg)
+        .await
+        .map_err(map_sqlx)
+    }
+
+    pub async fn participant_count(&self, experiment_id: Uuid) -> Result<i64> {
+        let (n,): (i64,) = sqlx::query_as(
+            "SELECT count(*)::bigint FROM experiment_assignments WHERE experiment_id = $1",
+        )
+        .bind(experiment_id)
+        .fetch_one(&self.pg)
+        .await
+        .map_err(map_sqlx)?;
+        Ok(n)
+    }
+
+    /// Assigned players, keyset-paginated by identity id.
+    pub async fn participants(
+        &self,
+        experiment_id: Uuid,
+        variant: Option<&str>,
+        after: Option<Uuid>,
+        limit: i64,
+    ) -> Result<Vec<Participant>> {
+        sqlx::query_as(
+            "SELECT a.identity_id, i.external_id, a.variant, a.assigned_at, a.exposed_at, a.exposures
+             FROM experiment_assignments a JOIN identities i ON i.id = a.identity_id
+             WHERE a.experiment_id = $1 AND ($2::text IS NULL OR a.variant = $2) AND ($3::uuid IS NULL OR a.identity_id > $3)
+             ORDER BY a.identity_id LIMIT $4",
+        )
+        .bind(experiment_id)
+        .bind(variant)
+        .bind(after)
+        .bind(limit)
+        .fetch_all(&self.pg)
+        .await
+        .map_err(map_sqlx)
+    }
+
+    /// Assignments per variant per day (UTC) — the enrolment curve.
+    pub async fn assignment_series(
+        &self,
+        experiment_id: Uuid,
+    ) -> Result<Vec<(String, String, i64)>> {
+        sqlx::query_as(
+            "SELECT variant, to_char(date_trunc('day', assigned_at), 'YYYY-MM-DD') AS day, count(*)::bigint
+             FROM experiment_assignments WHERE experiment_id = $1 GROUP BY 1, 2 ORDER BY 2, 1",
         )
         .bind(experiment_id)
         .fetch_all(&self.pg)

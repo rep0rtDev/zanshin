@@ -290,6 +290,26 @@ gRPC: `ServerGetFlags`, `ServerGetAudiences`, `ServerGetExperiments`, `ServerGet
 | `GET` | `/analytics/events/names?from=&to=&limit=` | — | event names by volume with unique identities |
 | `GET` | `/identities/{identity_id}/events?limit=` | — | most recent events of one identity (with `experiments` tags) |
 
+### Metrics catalog / Experiments v2
+
+Metrics are named measurements over events: `kind` (`goal` | `monitor`), `event_name`, `aggregation`
+(`count` | `unique` | `sum` | `avg` | `conversion`), optional `field` (metadata key for sum/avg).
+Attach them to experiments via `experiment.metrics: ["key", …]`; results then report each metric per variant with lift vs control.
+
+| Route | Purpose |
+|-------|---------|
+| `GET/POST /admin/v1/metrics`, `GET/PUT/DELETE /admin/v1/metrics/{key}` | Catalog CRUD (`GET` one includes `used_by` experiments). |
+| `GET /admin/v1/experiments/{key}/results` | Now includes `metrics[]` (catalog metrics per variant + lift), `winner`, `interrupted_at`, `locked`, caps. |
+| `POST /admin/v1/experiments/{key}/copy` `{ "key": "new", "as_phase": true }` | Duplicate as a draft (new salt, no assignments); `as_phase` records `phase_of` for sequences. |
+| `POST /admin/v1/experiments/{key}/lock` / `unlock` | Locked experiments reject every change except status / lock. |
+| `POST /admin/v1/experiments/{key}/interrupt` `{ "reason", "winner", "apply_to_flag" }` | Stop early, record winner; optionally write the winning value into the linked flag's default. |
+| `GET /admin/v1/experiments/{key}/participants?variant&after&limit`, `…/participants.csv` | Who is in which variant, exposure state; CSV export. |
+| `GET /admin/v1/experiments/{key}/series?metric&from&to` | Enrolment curve per variant per day; with `metric`, that metric's daily values per variant. |
+
+Experiment fields added: `split_key` (`identity` or `property:<flat path>` — bucket by e.g. `custom.clan_id`),
+`max_participants`, `enrol_until` (enrolment deadline; assigned players keep being served), `locked`, `metrics`,
+`copied_from`, `phase_of`, `interrupted_at`, `interrupt_reason`, `winner`.
+
 ### Flags v2 / Live events v2
 
 Override chain for a flag value: **identity override → experiment variant → live-event flag override →

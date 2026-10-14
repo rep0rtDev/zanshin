@@ -6,6 +6,7 @@ pub mod audit;
 pub mod auth;
 pub mod console;
 pub mod error;
+pub mod experiments_v2;
 pub mod limits;
 pub mod liveops;
 pub mod server_api;
@@ -107,7 +108,8 @@ pub fn router(state: AppState) -> Router {
             admin::router()
                 .merge(taxonomy::router())
                 .merge(audiences::router())
-                .merge(liveops::router()),
+                .merge(liveops::router())
+                .merge(experiments_v2::router()),
         )
         .merge(console::router())
         .layer(axum::middleware::from_fn_with_state(

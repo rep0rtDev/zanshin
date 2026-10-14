@@ -11,6 +11,7 @@ pub mod hash;
 pub mod identity;
 pub mod live_events;
 pub mod messages;
+pub mod metrics;
 pub mod properties;
 pub mod push;
 pub mod rules;

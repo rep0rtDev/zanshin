@@ -1,17 +1,20 @@
 import { useState } from 'react';
-import { get, post, useLoad } from '../api';
-import { EntityPage, Text, Num, Tags, DateTime } from '../crud';
+import { download, get, post, useLoad } from '../api';
+import { DateTime, EntityPage, Num, Tags, Text } from '../crud';
 import { AudiencePicker, ConditionEditor, VariantsEditor } from '../RuleBuilder';
 import type { Cond } from '../RuleBuilder';
-import { Badge, ErrorBox, Field, fmtDate, fmtNum } from '../ui';
+import { Badge, Confirm, ErrorBox, Field, Table, fmtDate, fmtNum } from '../ui';
 
 type Variant = { key: string; name: string; value: unknown; weight: number };
 type Experiment = {
+  split_key?: string; max_participants?: number | null; enrol_until?: string | null; locked?: boolean; metrics?: string[]; copied_from?: string | null; phase_of?: string | null; winner?: string | null; interrupt_reason?: string;
   key: string; name: string; description: string; hypothesis: string; status: 'draft' | 'running' | 'paused' | 'stopped';
   condition: Cond | null; audiences: string[]; percentage: number; variants: Variant[]; control: string | null; flag_key: string | null;
   starts_at: string | null; ends_at: string | null; tags: string[]; version: number; updated_at: string;
 };
+type CatalogMetric = { metric: string; name?: string; kind?: string; aggregation?: string; error?: string; variants?: { variant: string; value: number; lift: number | null }[] };
 type Results = {
+  metrics?: CatalogMetric[]; winner?: string | null; interrupted_at?: string | null; interrupt_reason?: string; locked?: boolean;
   total_assigned: number; metric: string | null; control: string | null;
   variants: { variant: string; weight: number; assigned: number; exposed: number; exposures: number; metric?: { identities: number; count: number; sum: number; conversion: number } }[];
 };
@@ -39,6 +42,91 @@ function Lifecycle({ exp, reload }: { exp: Experiment; reload: () => void }) {
   );
 }
 
+function MetricsPicker({ value, onChange }: { value: string[]; onChange: (v: string[]) => void }) {
+  const q = useLoad(() => get<{ items: { key: string; kind: string; name: string }[] }>('/metrics'), []);
+  const items = q.data?.items ?? [];
+  return (
+    <div className="chips">
+      {items.length === 0 && <span className="hint">No metrics in the catalog yet — create them under Metrics.</span>}
+      {items.map((m) => {
+        const on = value.includes(m.key);
+        return <button key={m.key} type="button" className={'chip' + (on ? ' on' : '')} onClick={() => onChange(on ? value.filter((k) => k !== m.key) : [...value, m.key])} title={m.name}>{m.key} <span className="hint">{m.kind}</span></button>;
+      })}
+    </div>
+  );
+}
+
+function Ops({ exp, reload }: { exp: Experiment; reload: () => void }) {
+  const [err, setErr] = useState<Error | null>(null);
+  const [copyKey, setCopyKey] = useState(exp.key + '_v2');
+  const [winner, setWinner] = useState(exp.control ?? exp.variants[0]?.key ?? '');
+  const [reason, setReason] = useState('');
+  const k = encodeURIComponent(exp.key);
+  const run = (p: Promise<unknown>) => p.then(() => { setErr(null); reload(); }, setErr);
+  return (
+    <div className="card">
+      <div className="row" style={{ alignItems: 'center' }}>
+        <strong>Operations</strong>
+        {exp.locked && <Badge tone="warn">locked</Badge>}
+        {exp.winner && <Badge tone="ok">winner: {exp.winner}</Badge>}
+        {exp.phase_of && <span className="hint">phase after <code>{exp.phase_of}</code></span>}
+        {exp.copied_from && !exp.phase_of && <span className="hint">copied from <code>{exp.copied_from}</code></span>}
+      </div>
+      <ErrorBox error={err} />
+      <div className="row" style={{ marginTop: 10, alignItems: 'end' }}>
+        <button className="btn ghost" onClick={() => run(post(`/experiments/${k}/${exp.locked ? 'unlock' : 'lock'}`))}>{exp.locked ? 'Unlock' : 'Lock'}</button>
+        <Field label="Copy as"><input value={copyKey} onChange={(e) => setCopyKey(e.target.value)} className="mono" /></Field>
+        <button className="btn ghost" disabled={!copyKey} onClick={() => run(post(`/experiments/${k}/copy`, { key: copyKey, as_phase: false }))}>Copy</button>
+        <button className="btn ghost" disabled={!copyKey} onClick={() => run(post(`/experiments/${k}/copy`, { key: copyKey, as_phase: true }))}>Next phase</button>
+      </div>
+      {exp.status !== 'draft' && exp.status !== 'stopped' && (
+        <div className="row" style={{ marginTop: 10, alignItems: 'end' }}>
+          <Field label="Winner"><select value={winner} onChange={(e) => setWinner(e.target.value)}><option value="">— none —</option>{exp.variants.map((v) => <option key={v.key} value={v.key}>{v.key}</option>)}</select></Field>
+          <Field label="Reason"><input value={reason} onChange={(e) => setReason(e.target.value)} placeholder="b wins on D7 retention" /></Field>
+          <Confirm danger onConfirm={() => run(post(`/experiments/${k}/interrupt`, { reason, winner: winner || null, apply_to_flag: !!exp.flag_key && !!winner }))}>{exp.flag_key && winner ? 'Interrupt & roll winner to flag' : 'Interrupt'}</Confirm>
+        </div>
+      )}
+      {exp.interrupt_reason && <div className="hint" style={{ marginTop: 8 }}>Interrupted: {exp.interrupt_reason}</div>}
+    </div>
+  );
+}
+
+type Participant = { identity_id: string; external_id: string; variant: string; assigned_at: string; exposed_at: string | null; exposures: number };
+
+function Participants({ exp }: { exp: Experiment }) {
+  const k = encodeURIComponent(exp.key);
+  const q = useLoad(() => get<{ items: Participant[]; total: number }>(`/experiments/${k}/participants?limit=200`), [exp.key, exp.version]);
+  const s = useLoad(() => get<{ assignments: { variant: string; day: string; count: number }[] }>(`/experiments/${k}/series`), [exp.key, exp.version]);
+  const days = Array.from(new Set((s.data?.assignments ?? []).map((a) => a.day))).sort();
+  return (
+    <div className="card">
+      <div className="row" style={{ alignItems: 'center' }}>
+        <strong>Participants</strong>
+        {q.data && <span className="hint">{fmtNum(q.data.total)} assigned{exp.max_participants ? ` of ${fmtNum(exp.max_participants)} max` : ''}</span>}
+        <button className="btn ghost" onClick={() => download(`/experiments/${k}/participants.csv`, `${exp.key}-participants.csv`).catch(() => undefined)}>CSV</button>
+      </div>
+      <ErrorBox error={q.error ?? s.error} />
+      {days.length > 0 && (
+        <table className="table" style={{ marginTop: 8 }}>
+          <thead><tr><th>Day</th>{exp.variants.map((v) => <th key={v.key}>{v.key}</th>)}</tr></thead>
+          <tbody>{days.map((d) => <tr key={d}><td>{d}</td>{exp.variants.map((v) => <td key={v.key}>{s.data?.assignments.find((a) => a.day === d && a.variant === v.key)?.count ?? 0}</td>)}</tr>)}</tbody>
+        </table>
+      )}
+      <Table<Participant>
+        rows={q.data?.items}
+        rowKey={(p) => p.identity_id}
+        empty="Nobody assigned yet"
+        cols={[
+          { h: 'Player', c: (p) => <span className="mono">{p.external_id}</span> },
+          { h: 'Variant', c: (p) => <code>{p.variant}</code> },
+          { h: 'Assigned', c: (p) => fmtDate(p.assigned_at) },
+          { h: 'Exposed', c: (p) => p.exposed_at ? `${fmtDate(p.exposed_at)} (${p.exposures}×)` : <span className="muted">not yet</span> },
+        ]}
+      />
+    </div>
+  );
+}
+
 function ResultsPanel({ exp }: { exp: Experiment }) {
   const [metric, setMetric] = useState('');
   const [applied, setApplied] = useState('');
@@ -56,6 +144,18 @@ function ResultsPanel({ exp }: { exp: Experiment }) {
       {r && (
         <>
           <div className="hint" style={{ marginBottom: 8 }}>{fmtNum(r.total_assigned)} identities assigned{r.metric ? ` · metric "${r.metric}"` : ''}</div>
+
+          {r.metrics && r.metrics.length > 0 && (
+
+            <table className="table" style={{ marginBottom: 10 }}>
+
+              <thead><tr><th>Metric</th><th>Kind</th>{r.variants.map((v) => <th key={v.variant}>{v.variant}{r.control === v.variant ? ' (control)' : ''}</th>)}</tr></thead>
+
+              <tbody>{r.metrics.map((m) => <tr key={m.metric}><td><strong>{m.metric}</strong><div className="hint">{m.error ?? `${m.aggregation}`}</div></td><td>{m.kind && <Badge tone={m.kind === 'goal' ? 'ok' : 'info'}>{m.kind}</Badge>}</td>{r.variants.map((v) => { const x = m.variants?.find((y) => y.variant === v.variant); return <td key={v.variant}>{x ? <>{fmtNum(x.value)}{x.lift != null && <span className={'hint ' + (x.lift >= 0 ? 'up' : 'down')}> {x.lift >= 0 ? '+' : ''}{(x.lift * 100).toFixed(1)}%</span>}</> : '—'}</td>; })}</tr>)}</tbody>
+
+            </table>
+
+          )}
           <table className="table">
             <thead><tr><th>Variant</th><th>Weight</th><th>Assigned</th><th>Exposed</th>{r.metric && <><th>Converted</th><th>Conv. rate</th><th>Lift vs control</th></>}</tr></thead>
             <tbody>
@@ -99,7 +199,7 @@ export default function Experiments() {
         { h: 'Updated', c: (e) => fmtDate(e.updated_at) },
       ]}
       sort={(a, b) => (a.status === 'running' ? -1 : 1) - (b.status === 'running' ? -1 : 1) || a.key.localeCompare(b.key)}
-      blank={() => ({ key: '', name: '', description: '', hypothesis: '', condition: null, audiences: [], percentage: 100, control: 'control', flag_key: null, starts_at: null, ends_at: null, tags: [],
+      blank={() => ({ key: '', name: '', description: '', hypothesis: '', condition: null, audiences: [], percentage: 100, control: 'control', flag_key: null, starts_at: null, ends_at: null, tags: [], split_key: 'identity', max_participants: null, enrol_until: null, metrics: [],
         variants: [{ key: 'control', name: 'Control', value: false, weight: 50 }, { key: 'treatment', name: 'Treatment', value: true, weight: 50 }] })}
       form={(d, set, isNew) => (
         <>
@@ -122,11 +222,17 @@ export default function Experiments() {
           <div className="row">
             <DateTime label="Starts" value={d.starts_at} onChange={(starts_at) => set({ starts_at })} />
             <DateTime label="Ends" value={d.ends_at} onChange={(ends_at) => set({ ends_at })} />
+            <DateTime label="Enrolment deadline" value={d.enrol_until ?? null} onChange={(enrol_until) => set({ enrol_until })} />
           </div>
+          <div className="row">
+            <Num label="Max participants" value={d.max_participants ?? null} onChange={(max_participants) => set({ max_participants: max_participants ?? null })} min={1} hint="blank = unlimited" />
+            <Text label="Split key" value={d.split_key ?? 'identity'} onChange={(split_key) => set({ split_key })} mono hint="identity, or property:<path> e.g. property:custom.clan_id" />
+          </div>
+          <Field label="Metrics" hint="goal / monitor metrics from the catalog, evaluated per variant in results"><MetricsPicker value={d.metrics ?? []} onChange={(metrics) => set({ metrics })} /></Field>
           <Tags value={d.tags} onChange={(tags) => set({ tags })} />
         </>
       )}
-      extra={(e, reload) => (<><Lifecycle exp={e} reload={reload} /><ResultsPanel exp={e} /></>)}
+      extra={(e, reload) => (<><Lifecycle exp={e} reload={reload} /><Ops exp={e} reload={reload} /><ResultsPanel exp={e} /><Participants exp={e} /></>)}
     />
   );
 }
