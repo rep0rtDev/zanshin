@@ -350,4 +350,13 @@ async fn webhooks_flow() {
     )
     .await;
     assert_eq!(st, 404);
+    for key in [&wkey, &bkey] {
+        let (st, _) = adm(
+            reqwest::Method::DELETE,
+            format!("/admin/v1/webhooks/{key}"),
+            None,
+        )
+        .await;
+        assert_eq!(st, 200);
+    }
 }

@@ -78,8 +78,9 @@ console comes last once the model is stable.
   (cron and live-event relative), per-channel delivery status, inbox deletion.
 - [x] **Webhooks**: subscriptions with event-type patterns, HMAC-signed requests, batching, retries with backoff,
   persisted delivery log with manual retry, test send, console page.
-- [ ] **Journeys**: entry triggers, delays, branches, actions (message / live event / experiment / flag /
-  webhook), cooldowns, worker, flow editor.
+- [x] **Journeys**: event / identity-created / audience-enter / live-event-start / manual triggers, steps (message,
+  track, flag override, experiment assign, integration, wait, wait-until-local-time, branch, goto, exit), cooldown and
+  entry caps, persisted runs with step log, operator exit, console step editor.
 - [ ] **Analytics v2**: status / game-metrics dashboards (DAU / MAU / retention / ARPDAU / revenue),
   custom dashboards, retention report, RoAS, funnels, annotations.
 - [ ] **Data management**: export sinks (S3 / Parquet, BigQuery, HTTP), config export / import with diff,

@@ -290,6 +290,41 @@ gRPC: `ServerGetFlags`, `ServerGetAudiences`, `ServerGetExperiments`, `ServerGet
 | `GET` | `/analytics/events/names?from=&to=&limit=` | — | event names by volume with unique identities |
 | `GET` | `/identities/{identity_id}/events?limit=` | — | most recent events of one identity (with `experiments` tags) |
 
+### Journeys
+
+Per-player automations under `/admin/v1/journeys` and the **Journeys** console page.
+
+| Route | Purpose |
+|-------|---------|
+| `GET/POST /admin/v1/journeys`, `GET/PUT/DELETE /admin/v1/journeys/{key}` | Journey definition: `trigger`, entry `condition` / `audiences`, `steps`, `cooldown_secs`, `max_entries`, `starts_at` / `ends_at`. |
+| `POST /admin/v1/journeys/{key}/enter` `{ identity_id \| external_id }` | Enter a player now (honours targeting, cooldown and caps; ignores the live window). |
+| `GET /admin/v1/journeys/{key}/runs?status&after&limit` | Runs with per-status stats and a per-step count of players currently waiting. |
+| `GET /admin/v1/journeys/{key}/runs/{id}` | One run with its step log. |
+| `POST /admin/v1/journeys/{key}/runs/{id}/exit` | Stop an active run. |
+| `GET /admin/v1/identities/{id}/journeys` | A player's runs across journeys. |
+
+Triggers: `{ "kind": "manual" }`, `{ "kind": "event", "name": "purchase" }`, `{ "kind": "identity_created" }`,
+`{ "kind": "audience_enter", "audience": "whales" }` (checked whenever the player produces an event, once per membership),
+`{ "kind": "live_event_start", "live_event": "weekend_rush" }` (every targeted player, once per occurrence).
+
+Steps are an ordered list of `{ "id", "kind", … }`:
+
+| kind | fields |
+|------|--------|
+| `message` | `title`, `body`, `image_url`, `payload`, `template_key`, `push` — inbox message, `{{prop}}` rendered |
+| `track` | `name`, `value`, `metadata` — analytics event tagged with `journey` / `journey_run` |
+| `flag_override` | `flag`, `value` |
+| `experiment_assign` | `experiment`, `variant` |
+| `integration` | `integration`, `title`, `body`, `payload` — send through a delivery integration |
+| `wait` | `secs` |
+| `wait_until` | `hour`, `minute`, `timezone_prop` (default `default.timezone`) — next local occurrence |
+| `branch` | `condition`, `then`, `else` (step ids; `else` omitted = next step) |
+| `goto` | `step` |
+| `exit` | — |
+
+Runs are persisted (`journey_runs`), waits wake through the worker every 5s (claimed with `FOR UPDATE SKIP LOCKED`, so
+multiple replicas are safe), each step is logged, and `journey.entered` / `journey.finished` are emitted to webhooks.
+
 ### Webhooks
 
 Outbound HTTP callbacks for system events, managed under `/admin/v1/webhooks` and the **Webhooks** console page.

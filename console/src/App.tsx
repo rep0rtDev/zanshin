@@ -14,6 +14,7 @@ import Metrics from './pages/Metrics';
 import Templates from './pages/Templates';
 import Integrations from './pages/Integrations';
 import Webhooks from './pages/Webhooks';
+import Journeys from './pages/Journeys';
 import ApiKeys from './pages/ApiKeys';
 import Audit from './pages/Audit';
 
@@ -71,6 +72,7 @@ const NAV: [string, string][] = [
   ['/templates', 'Templates'],
   ['/integrations', 'Integrations'],
   ['/webhooks', 'Webhooks'],
+  ['/journeys', 'Journeys'],
   ['/api-keys', 'API keys'],
   ['/audit', 'Audit log'],
 ];
@@ -144,6 +146,7 @@ export default function App() {
           <Route path="/templates/*" element={<Templates />} />
           <Route path="/integrations/*" element={<Integrations />} />
           <Route path="/webhooks/*" element={<Webhooks />} />
+          <Route path="/journeys/*" element={<Journeys />} />
           {me.role === 'admin' && <Route path="/api-keys" element={<ApiKeys />} />}
           <Route path="/audit" element={<Audit />} />
           <Route path="*" element={<Navigate to="/" replace />} />
