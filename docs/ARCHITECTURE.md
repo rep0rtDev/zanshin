@@ -2,7 +2,7 @@
 
 ## Goals
 
-1. **Single binary, boring operations.** `zanshin` embeds migrations and (later) the admin console. The
+1. **Single binary, boring operations.** `zanshin` embeds migrations and the admin console. The
    only hard dependencies are PostgreSQL and Redis; ClickHouse is optional and only used for analytics.
 2. **Hot path is local.** Flag / audience / experiment evaluation happens from an in-memory model that is
    replicated through Redis pub/sub to every server replica and to the Nakama module. Client reads do not
@@ -76,8 +76,9 @@ admin searches cheap.
 
 ## Storage
 
-**PostgreSQL** holds everything that is a source of truth: identities, sessions, API keys, and (next)
-flag/audience/experiment/event/message definitions plus per-identity assignments. Migrations live in
+**PostgreSQL** holds everything that is a source of truth: identities, sessions, API keys, console users,
+flag / audience / experiment / live-event / message / journey / webhook / export definitions, per-identity
+assignments and memberships, audit and change history. Migrations live in
 `migrations/` and are applied on start when `database.migrate = true`.
 
 **Redis** is a cache and a bus, never a source of truth: API-key principals, session revocation flags,
@@ -107,11 +108,15 @@ not need a third database.
 * `/healthz` is liveness, `/readyz` pings every configured backend; gRPC exposes
   `grpc.health.v1.Health` and server reflection.
 
-## Nakama bridge (planned)
+## Nakama bridge
 
-`bridges/nakama` is a Go runtime module built on `sdk/go`. On `InitModule` it opens a gRPC connection
-to Zanshin with a server key, loads the flag / audience / experiment / live-event model, and subscribes
-to the change stream. It registers RPCs mirroring the client API (`zanshin.authenticate`,
-`zanshin.flags`, `zanshin.experiments`, `zanshin.events`, …) and hooks `AfterAuthenticate*` /
-`SessionStart` to keep identities and default properties in sync. Evaluation is local; only writes
-(events, property updates) go over the wire.
+`nakama/` is a Go runtime module built on `sdk/go`. On `InitModule` it connects to Zanshin with a server
+key, loads the flag / audience / experiment / live-event model and subscribes to the `/server/v1/stream`
+change feed, so evaluation is local and only writes (events, property updates, identity sync) go over
+the wire. It registers RPCs mirroring the client API (`zanshin.flags`, `zanshin.flag`, `zanshin.flag_explain`,
+`zanshin.audiences`, `zanshin.experiments`, `zanshin.expose`, `zanshin.live_events`,
+`zanshin.live_event_join` / `_leave`, `zanshin.inbox`, `zanshin.inbox_read` / `_delete`, `zanshin.track`,
+`zanshin.properties`, server-only `zanshin.audience_members`) and hooks `AfterAuthenticate*` to keep
+identities and default properties in sync. The same RPC names and payloads are implemented for the
+JavaScript runtime (`nakama/ts`, single ES5 file) and the Lua runtime (`nakama/lua`); those two call
+`/server/v1` over HTTP from the Nakama process.

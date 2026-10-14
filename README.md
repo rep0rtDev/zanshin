@@ -7,8 +7,9 @@ Zanshin is an Apache-2.0 alternative to hosted LiveOps/personalisation services 
 plugs into **Nakama** first-class, but is a standalone server with gRPC + REST APIs that any game
 backend or client can talk to.
 
-**Status:** early core. The identity / session layer and the operational skeleton are in place; the
-LiveOps features are landing module by module (see [docs/ROADMAP.md](docs/ROADMAP.md)).
+**Status:** feature-complete against the Satori surface and production-ready (two gap rounds,
+release pipeline, deploy kit); see [docs/ROADMAP.md](docs/ROADMAP.md) for the full checklist and
+the known gaps.
 
 ## Why
 
@@ -75,7 +76,12 @@ variables. `zanshin --check-config` prints the effective configuration with secr
 | Webhooks: event-type subscriptions, HMAC-signed, batched, retried with backoff, delivery log with retry, test send | ✅ |
 | Journeys: triggered per-player automations (messages, events, flag overrides, experiment assignment, integrations, waits incl. local time, branches) with persisted runs and step log | ✅ |
 | Analytics v2: game-metrics overview (DAU/WAU/MAU, revenue, ARPDAU/ARPPU, sessions), retention cohorts, funnels, annotations, custom dashboards | ✅ |
-| Data: export sinks to S3-compatible storage / HTTP / BigQuery (JSONL or CSV, gzip, cursor + run log), configuration bundles (export, diff, merge/replace import, import from another server), change history with revert and audit undo, GDPR takeout/delete, event purge, sample data generator | `services/export.rs`, `services/config.rs`, `services/data.rs` |
+| Analytics v3: status board, LiveOps calendar, country / platform / app-version / variant filters on every report, event explorer, player map, playtime, funnel models (unlimited / window / step / session), cumulative retention + installs, LTV / CPI / RoAS with ad-spend import, errors widget | ✅ |
+| LiveOps polish: flag diff + payload sizes, `GET /v1/flags/overrides`, deterministic experiment precedence on a shared flag, rich template previews, skip-inbox / template-less direct messages, integration health, `$event_error` / `$identity_delete`, event size limits, player event search, per-key export / import, `409` on referenced delete, LiveOps recipes | ✅ |
+| Console users: email + password (Argon2id), TOTP MFA with recovery codes, server-side sessions, `resource:action` permissions with presets (Admin / Developer / Game Designer / Debugger / Support / Analyst / Viewer), permission sets + rotation for admin keys | ✅ |
+| Production: cluster-wide job locks, OpenTelemetry traces, per-route / gRPC / pool metrics, gRPC rate limits + timeouts, file secrets, `server.production` guard rails, event idempotency, retention config, deep `/readyz`, two-phase drain, load shedding | ✅ |
+| Release + deploy: signed multi-arch images with SBOM / provenance, binaries, security scans, production Compose + Helm chart, Grafana dashboard + alerts, k6 load tests | ✅ |
+| Data: export sinks to S3-compatible storage / HTTP / BigQuery (JSONL or CSV, gzip, cursor + run log), configuration bundles (export, diff, merge/replace import, import from another server), change history with revert and audit undo, GDPR takeout/delete, event purge, sample data generator | ✅ |
 | Taxonomy: labels across every resource, event definitions with value types + metadata JSON Schema (off / warn / strict enforcement, auto-discovery, rejected-event debugger), read-only custom properties, JSON Schemas for structured flag values | ✅ |
 | Player model: default properties enriched from request headers / geo-IP (platform, OS, device, app version, locale, language, timezone, country / region / city), `POST /v1/identify` to rename or merge an anonymous identity into an account (properties, events, assignments, inbox, devices move; merge history kept), play sessions with inactivity timeout, synthetic `$identity_create` / `$session_start` / `$session_end` / `$identify` / `$experiment_join` events | ✅ |
 | Analytics events: client/server ingest, batching writer, ClickHouse sink (PostgreSQL fallback), events tagged with live experiment assignments, timeseries / top names / per-identity log, per-variant experiment metrics with conversion | ✅ |
@@ -86,6 +92,8 @@ variables. `zanshin --check-config` prints the effective configuration with secr
 | Unreal C++ SDK `sdk/unreal` (plugin on engine HTTP/WebSockets/Json modules, Blueprint subsystem) | ✅ |
 | Godot GDScript SDK `sdk/godot` (addon, HTTPRequest + WebSocketPeer, zero deps) | ✅ |
 | Unity C# SDK `sdk/unity` (UPM, zero deps, netstandard2.1): same surface as the TS SDK incl. push-token registration and WebSocket stream | ✅ |
+| Swift `sdk/swift`, Kotlin / JVM `sdk/kotlin`, Dart / Flutter `sdk/dart` SDKs (zero deps, full client surface, live stream) | ✅ |
+| Nakama runtime modules for Go (`nakama/`), JavaScript (`nakama/ts`) and Lua (`nakama/lua`) with identical RPCs; gRPC at full parity with REST | ✅ |
 | Push notifications (FCM HTTP v1 / APNs token auth): device token registry, `push: true` on campaigns and direct messages, proactive campaign sweep | ✅ |
 
 ## API at a glance
@@ -123,9 +131,14 @@ Full reference: [docs/api.md](docs/api.md). Design: [docs/ARCHITECTURE.md](docs/
   `admin`), configured under `limits:`; every API response carries `X-RateLimit-Limit`,
   `X-RateLimit-Remaining` and `X-RateLimit-Scope`, throttled calls get `429` + `Retry-After`.
   Any API key can carry its own budget (`rate_limit_per_minute` when minting it). Redis outages fail open.
-- **Roles** — admin keys and console users carry a role: `viewer` (GET only), `editor` (manages
-  flags / experiments / audiences / live events / messages / identities, cannot touch API keys) or
-  `admin` (everything). `read_only: true` is kept as an alias for `viewer`.
+- **Permissions** — every `/admin/v1` route requires a `resource:action` permission (`read` /
+  `write` / `delete` over 18 resources, `*` with overrides); `403` answers carry
+  `permission required: flags:write` and the console hides what the caller cannot reach. Presets
+  Admin / Developer / Game Designer / Debugger / Support / Analyst / Viewer; the legacy roles
+  `viewer` / `editor` / `admin` and `read_only: true` still map onto them.
+- **Console users** — email + password (Argon2id, 12+ characters, forced change of issued
+  passwords), TOTP MFA with recovery codes, server-side sessions with revoke / sign-out-everywhere,
+  admin-issued reset links, first-admin bootstrap with the bootstrap key.
 - **Console SSO** — `admin.oidc` enables login through any OpenID Connect provider (authorization
   code + PKCE, ID token verified against the provider JWKS, nonce/state bound to a signed cookie).
   A claim (`role_claim`, default `groups`) is mapped to a role via `role_map`, optionally restricted
@@ -187,8 +200,8 @@ API key), or with SSO when `admin.oidc` is configured — see `config/zanshin.ex
 `npm ci && npm run build` there before `cargo build` (the Dockerfile does this for you).
 
 The console is organised into Targeting (flags, audiences, experiments, live events), Engage
-(messages, templates, journeys, integrations), Players, Analytics and Platform (webhooks, data,
-API keys, audit log, settings). `⌘K` / `Ctrl+K` opens a command palette that jumps to any page or
+(messages, templates, journeys, integrations, recipes), Players, Analytics (insights, status board,
+calendar, explorer) and Platform (webhooks, data, users, API keys, audit log, settings). `⌘K` / `Ctrl+K` opens a command palette that jumps to any page or
 entity; lists have search, status / label filters, sorting, pagination and a per-row menu
 (open / duplicate / delete); detail pages have tabs — Settings, entity-specific panels, History
 (every recorded change, with one-click revert) and Activity (audit entries for that entity) —
