@@ -143,7 +143,16 @@ export default function Flags() {
           <Tags value={d.tags} onChange={(tags) => set({ tags })} />
         </>
       )}
-      extra={(f, reload) => (<><Overrides flag={f} reload={reload} /><Explain flag={f} /><DryRun flag={f} /></>)}
+      wizard={[
+        { label: 'Basics', render: (d, set) => (<><div className="row"><Text label="Key" value={d.key} onChange={(key) => set({ key })} mono hint="immutable, used by SDKs" /><Text label="Name" value={d.name} onChange={(name) => set({ name })} /></div><Text label="Description" value={d.description} onChange={(description) => set({ description })} /><Tags value={d.tags} onChange={(tags) => set({ tags })} /></>) },
+        { label: 'Value', render: (d, set) => (<div className="row"><label className="field"><span className="label">Value type</span><select value={d.value_type} onChange={(e) => { const t = e.target.value as Flag['value_type']; set({ value_type: t, default_value: t === 'bool' ? false : t === 'number' ? 0 : t === 'string' ? '' : {}, rules: [] }); }}><option value="bool">bool</option><option value="string">string</option><option value="number">number</option><option value="json">json</option></select></label><Field label="Default value"><TypedValue type={d.value_type ?? 'bool'} value={d.default_value} onChange={(v) => set({ default_value: v })} compact /></Field><div className="field fixed"><span className="label">Enabled</span><Toggle value={!!d.enabled} onChange={(enabled) => set({ enabled })} label={d.enabled ? 'on' : 'off'} /></div></div>) },
+        { label: 'Targeting', render: (d, set) => (<><div className="label" style={{ margin: '4px 0 6px' }}>Rules <span className="hint">— evaluated top to bottom, first match wins; leave empty to serve the default to everyone</span></div><RulesEditor type={d.value_type ?? 'bool'} value={d.rules ?? []} onChange={(rules) => set({ rules })} /></>) },
+      ]}
+      tabs={[
+        { id: 'overrides', label: 'Overrides', render: (f, reload) => <Overrides flag={f} reload={reload} /> },
+        { id: 'explain', label: 'Explain', render: (f) => <Explain flag={f} /> },
+        { id: 'dryrun', label: 'Dry run', render: (f) => <DryRun flag={f} /> },
+      ]}
     />
   );
 }

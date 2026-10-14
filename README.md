@@ -147,6 +147,16 @@ Open `http://localhost:7550/console/` and sign in with the bootstrap admin key (
 API key), or with SSO when `admin.oidc` is configured — see `config/zanshin.example.yml`. The UI is a React app in [`console/`](console) compiled into the server binary — run
 `npm ci && npm run build` there before `cargo build` (the Dockerfile does this for you).
 
+The console is organised into Targeting (flags, audiences, experiments, live events), Engage
+(messages, templates, journeys, integrations), Players, Analytics and Platform (webhooks, data,
+API keys, audit log, settings). `⌘K` / `Ctrl+K` opens a command palette that jumps to any page or
+entity; lists have search, status / label filters, sorting, pagination and a per-row menu
+(open / duplicate / delete); detail pages have tabs — Settings, entity-specific panels, History
+(every recorded change, with one-click revert) and Activity (audit entries for that entity) —
+with `⌘S` to save and an unsaved-changes guard. Creating a flag walks through a short wizard
+(basics → value → targeting → review). Viewers see everything read-only; `Settings` shows server
+version, stores, auth, rate limits and an inventory (`GET /admin/v1/system`).
+
 ## SDKs
 
 - [`sdk/ts`](sdk/ts) — TypeScript for browsers and Node: `authenticate` / `restore`, automatic
