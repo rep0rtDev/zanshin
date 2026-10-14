@@ -52,7 +52,8 @@ console comes last once the model is stable.
 - Unreal (C++), Godot (GDScript/C#) SDKs
 - Webhooks and outbound integrations (Slack / Discord / generic)
 - Multi-project (tenant) support with per-project keys
-- Rate limiting, audit log of admin actions
+- [x] Rate limiting (Redis token bucket per scope/caller, per-key quotas), audit log of admin actions
+      (`/admin/v1/audit`), read-only + expiring API keys, security headers / CSP / HSTS / trust_proxy
 
 ## 0.3 — console (done, see above)
 

@@ -9,7 +9,7 @@ use zanshin_core::{
     Error, Result,
 };
 use zanshin_store::{
-    api_keys::{ApiKeyRepo, ApiKeyRow},
+    api_keys::{ApiKeyRepo, ApiKeyRow, KeyOptions},
     cache::Cache,
 };
 
@@ -21,6 +21,12 @@ pub struct Principal {
     pub key_id: Option<Uuid>,
     pub name: String,
     pub kind: ApiKeyKind,
+    /// Admin keys only: may read but not mutate.
+    #[serde(default)]
+    pub read_only: bool,
+    /// Per-key request budget overriding the scope default.
+    #[serde(default)]
+    pub rate_limit_per_minute: Option<u32>,
 }
 
 impl Principal {
@@ -57,6 +63,8 @@ impl ApiKeyService {
                     key_id: None,
                     name: "bootstrap".into(),
                     kind: ApiKeyKind::Admin,
+                    read_only: false,
+                    rate_limit_per_minute: None,
                 });
             }
         }
@@ -76,6 +84,8 @@ impl ApiKeyService {
             key_id: Some(row.id),
             name: row.name.clone(),
             kind: row.kind(),
+            read_only: row.read_only,
+            rate_limit_per_minute: row.rate_limit_per_minute.map(|n| n as u32),
         };
         let _ = self.cache.set_json(&cache_key, &principal, CACHE_TTL).await;
         let repo = self.repo.clone();
@@ -85,14 +95,30 @@ impl ApiKeyService {
         Ok(principal)
     }
 
-    pub async fn create(&self, name: &str, kind: ApiKeyKind) -> Result<(ApiKeyRow, String)> {
+    pub async fn create(
+        &self,
+        name: &str,
+        kind: ApiKeyKind,
+        opts: KeyOptions,
+    ) -> Result<(ApiKeyRow, String)> {
         if name.trim().is_empty() || name.len() > 64 {
             return Err(Error::invalid("name must be 1..64 characters"));
+        }
+        if opts.read_only && kind != ApiKeyKind::Admin {
+            return Err(Error::invalid("read_only applies to admin keys only"));
+        }
+        if let Some(exp) = opts.expires_at {
+            if exp <= chrono::Utc::now() {
+                return Err(Error::invalid("expires_at must be in the future"));
+            }
+        }
+        if matches!(opts.rate_limit_per_minute, Some(n) if n <= 0) {
+            return Err(Error::invalid("rate_limit_per_minute must be positive"));
         }
         let g = apikey::generate(kind);
         let row = self
             .repo
-            .create(name.trim(), kind, &g.prefix, &g.hash)
+            .create(name.trim(), kind, &g.prefix, &g.hash, &opts)
             .await?;
         Ok((row, g.plaintext))
     }

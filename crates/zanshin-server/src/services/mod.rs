@@ -1,5 +1,6 @@
 pub mod apikeys;
 pub mod audiences;
+pub mod audit;
 pub mod bus;
 pub mod catalog;
 pub mod eval;
@@ -7,6 +8,7 @@ pub mod events;
 pub mod experiments;
 pub mod flags;
 pub mod identity;
+pub mod limits;
 pub mod live_events;
 pub mod messages;
 pub mod push;

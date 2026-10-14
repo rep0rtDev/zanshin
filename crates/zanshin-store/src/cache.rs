@@ -9,6 +9,33 @@ use zanshin_core::{Error, Result};
 
 use crate::RedisConfig;
 
+const TOKEN_BUCKET: &str = r#"
+local tokens = tonumber(redis.call('HGET', KEYS[1], 't'))
+local ts = tonumber(redis.call('HGET', KEYS[1], 'ts'))
+local cap = tonumber(ARGV[1])
+local rate = tonumber(ARGV[2])
+local now = tonumber(ARGV[3])
+local cost = tonumber(ARGV[4])
+if tokens == nil or ts == nil then
+  tokens = cap
+  ts = now
+end
+local delta = now - ts
+if delta < 0 then delta = 0 end
+tokens = math.min(cap, tokens + delta * rate)
+local allowed = 0
+local retry = 0
+if tokens >= cost then
+  tokens = tokens - cost
+  allowed = 1
+else
+  retry = (cost - tokens) / rate
+end
+redis.call('HSET', KEYS[1], 't', tokens, 'ts', now)
+redis.call('PEXPIRE', KEYS[1], math.ceil(cap / rate * 1000) + 1000)
+return {allowed, math.floor(tokens), tostring(retry)}
+"#;
+
 #[derive(Clone)]
 pub struct Cache {
     conn: ConnectionManager,
@@ -34,6 +61,38 @@ impl Cache {
             k.push_str(p);
         }
         k
+    }
+
+    /// Token-bucket admission check executed atomically in Redis.
+    ///
+    /// Returns `(allowed, remaining_tokens, retry_after_secs)`. The bucket holds `capacity`
+    /// tokens and refills at `refill_per_sec`; each call takes `cost` tokens when available.
+    pub async fn take_tokens(
+        &self,
+        key: &str,
+        capacity: u32,
+        refill_per_sec: f64,
+        cost: u32,
+    ) -> Result<(bool, u32, f64)> {
+        let mut c = self.conn.clone();
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs_f64())
+            .unwrap_or(0.0);
+        let (allowed, remaining, retry): (i64, i64, String) = redis::Script::new(TOKEN_BUCKET)
+            .key(key)
+            .arg(capacity)
+            .arg(refill_per_sec)
+            .arg(now)
+            .arg(cost)
+            .invoke_async(&mut c)
+            .await
+            .map_err(map_redis)?;
+        Ok((
+            allowed == 1,
+            remaining.max(0) as u32,
+            retry.parse().unwrap_or(0.0),
+        ))
     }
 
     pub async fn ping(&self) -> Result<()> {

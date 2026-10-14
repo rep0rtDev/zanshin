@@ -1,9 +1,11 @@
 //! REST/JSON surface (axum).
 
 pub mod admin;
+pub mod audit;
 pub mod auth;
 pub mod console;
 pub mod error;
+pub mod limits;
 pub mod server_api;
 pub mod v1;
 pub mod ws;
@@ -22,6 +24,7 @@ use tower_http::{
     compression::CompressionLayer,
     cors::{AllowOrigin, CorsLayer},
     request_id::{MakeRequestUuid, PropagateRequestIdLayer, SetRequestIdLayer},
+    set_header::SetResponseHeaderLayer,
     timeout::TimeoutLayer,
     trace::TraceLayer,
 };
@@ -55,6 +58,40 @@ pub fn router(state: AppState) -> Router {
         header::HeaderName::from_static("x-api-key"),
     ]);
 
+    let mut security = tower::ServiceBuilder::new()
+        .layer(SetResponseHeaderLayer::if_not_present(
+            header::X_CONTENT_TYPE_OPTIONS,
+            HeaderValue::from_static("nosniff"),
+        ))
+        .layer(SetResponseHeaderLayer::if_not_present(
+            header::X_FRAME_OPTIONS,
+            HeaderValue::from_static("DENY"),
+        ))
+        .layer(SetResponseHeaderLayer::if_not_present(
+            header::REFERRER_POLICY,
+            HeaderValue::from_static("no-referrer"),
+        ))
+        .option_layer(None);
+    if state.cfg.server.hsts {
+        security = tower::ServiceBuilder::new()
+            .layer(SetResponseHeaderLayer::if_not_present(
+                header::X_CONTENT_TYPE_OPTIONS,
+                HeaderValue::from_static("nosniff"),
+            ))
+            .layer(SetResponseHeaderLayer::if_not_present(
+                header::X_FRAME_OPTIONS,
+                HeaderValue::from_static("DENY"),
+            ))
+            .layer(SetResponseHeaderLayer::if_not_present(
+                header::REFERRER_POLICY,
+                HeaderValue::from_static("no-referrer"),
+            ))
+            .option_layer(Some(SetResponseHeaderLayer::if_not_present(
+                header::STRICT_TRANSPORT_SECURITY,
+                HeaderValue::from_static("max-age=63072000; includeSubDomains"),
+            )));
+    }
+
     Router::new()
         .route("/", get(root))
         .route("/healthz", get(healthz))
@@ -64,6 +101,15 @@ pub fn router(state: AppState) -> Router {
         .nest("/server/v1", server_api::router())
         .nest("/admin/v1", admin::router())
         .merge(console::router())
+        .layer(axum::middleware::from_fn_with_state(
+            state.clone(),
+            audit::audit,
+        ))
+        .layer(axum::middleware::from_fn_with_state(
+            state.clone(),
+            limits::limit,
+        ))
+        .layer(security)
         .layer(DefaultBodyLimit::max(state.cfg.server.body_limit))
         .layer(TimeoutLayer::with_status_code(
             axum::http::StatusCode::REQUEST_TIMEOUT,

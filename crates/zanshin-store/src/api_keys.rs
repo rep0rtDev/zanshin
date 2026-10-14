@@ -15,6 +15,9 @@ pub struct ApiKeyRow {
     pub created_at: DateTime<Utc>,
     pub last_used_at: Option<DateTime<Utc>>,
     pub revoked_at: Option<DateTime<Utc>>,
+    pub read_only: bool,
+    pub expires_at: Option<DateTime<Utc>>,
+    pub rate_limit_per_minute: Option<i32>,
 }
 
 impl ApiKeyRow {
@@ -23,7 +26,18 @@ impl ApiKeyRow {
     }
 }
 
-const COLS: &str = "id, name, kind, prefix, created_at, last_used_at, revoked_at";
+const COLS: &str =
+    "id, name, kind, prefix, created_at, last_used_at, revoked_at, read_only, expires_at, rate_limit_per_minute";
+
+/// Optional restrictions applied to a new key.
+#[derive(Debug, Clone, Default)]
+pub struct KeyOptions {
+    /// Admin keys only: may read everything under `/admin/v1` but not mutate.
+    pub read_only: bool,
+    pub expires_at: Option<DateTime<Utc>>,
+    /// Per-key request budget overriding the global scope limit.
+    pub rate_limit_per_minute: Option<i32>,
+}
 
 #[derive(Clone)]
 pub struct ApiKeyRepo {
@@ -41,15 +55,20 @@ impl ApiKeyRepo {
         kind: ApiKeyKind,
         prefix: &str,
         hash: &[u8],
+        opts: &KeyOptions,
     ) -> Result<ApiKeyRow> {
         sqlx::query_as(&format!(
-            "INSERT INTO api_keys (id, name, kind, prefix, key_hash) VALUES ($1, $2, $3, $4, $5) RETURNING {COLS}"
+            "INSERT INTO api_keys (id, name, kind, prefix, key_hash, read_only, expires_at, rate_limit_per_minute) \
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING {COLS}"
         ))
         .bind(Uuid::now_v7())
         .bind(name)
         .bind(kind.as_str())
         .bind(prefix)
         .bind(hash)
+        .bind(opts.read_only)
+        .bind(opts.expires_at)
+        .bind(opts.rate_limit_per_minute)
         .fetch_one(&self.pg)
         .await
         .map_err(map_sqlx)
@@ -57,7 +76,7 @@ impl ApiKeyRepo {
 
     pub async fn find_active_by_hash(&self, hash: &[u8]) -> Result<Option<ApiKeyRow>> {
         sqlx::query_as(&format!(
-            "SELECT {COLS} FROM api_keys WHERE key_hash = $1 AND revoked_at IS NULL"
+            "SELECT {COLS} FROM api_keys WHERE key_hash = $1 AND revoked_at IS NULL AND (expires_at IS NULL OR expires_at > now())"
         ))
         .bind(hash)
         .fetch_optional(&self.pg)

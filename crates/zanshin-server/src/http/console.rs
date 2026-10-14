@@ -53,6 +53,12 @@ fn serve(path: &str) -> Option<Response> {
             [
                 (header::CONTENT_TYPE, mime.as_ref().to_string()),
                 (header::CACHE_CONTROL, cache.to_string()),
+                (
+                    header::CONTENT_SECURITY_POLICY,
+                    "default-src 'self'; img-src 'self' data: https:; style-src 'self' 'unsafe-inline'; \
+                     connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'"
+                        .to_string(),
+                ),
             ],
             Body::from(file.data.into_owned()),
         )

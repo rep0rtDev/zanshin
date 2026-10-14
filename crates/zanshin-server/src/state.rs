@@ -1,6 +1,8 @@
+use crate::services::{audit::AuditService, limits::RateLimiter};
 use std::sync::Arc;
 
 use zanshin_core::token::TokenIssuer;
+use zanshin_store::audit::AuditRepo;
 use zanshin_store::{
     api_keys::ApiKeyRepo, audiences::AudienceRepo, experiments::ExperimentRepo, flags::FlagRepo,
     identities::IdentityRepo, live_events::LiveEventRepo, messages::MessageRepo,
@@ -30,6 +32,8 @@ pub struct AppState {
     pub stores: Stores,
     pub identity: IdentityService,
     pub api_keys: ApiKeyService,
+    pub limits: RateLimiter,
+    pub audit: AuditService,
     pub bus: ChangeBus,
     pub flags: FlagService,
     pub audiences: AudienceService,
@@ -106,6 +110,8 @@ impl AppState {
             stores.cache.clone(),
             cfg.admin.bootstrap_key.clone(),
         );
+        let limits = RateLimiter::new(stores.cache.clone(), cfg.limits.clone());
+        let audit = AuditService::new(AuditRepo::new(stores.pg.clone()), cfg.audit.clone());
         let bus = ChangeBus::new(stores.cache.clone(), cfg.redis.url.clone());
         let flags = FlagService::new(
             FlagRepo::new(stores.pg.clone()),
@@ -147,6 +153,8 @@ impl AppState {
             stores,
             identity,
             api_keys,
+            limits,
+            audit,
             bus,
             flags,
             audiences,

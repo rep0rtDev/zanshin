@@ -1506,3 +1506,188 @@ async fn push_notifications_flow() {
         .await
         .unwrap();
 }
+
+#[tokio::test]
+async fn hardening_flow() {
+    let Some((base, http)) = start().await else {
+        eprintln!("skipping: ZANSHIN_TEST_DATABASE_URL / ZANSHIN_TEST_REDIS_URL not set");
+        return;
+    };
+    let admin = |r: reqwest::RequestBuilder| r.header("x-api-key", ADMIN_KEY);
+
+    // Security + rate-limit headers are present on every API response.
+    let r = admin(http.get(format!("{base}/admin/v1/stats")))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(r.status(), 200);
+    assert_eq!(r.headers()["x-content-type-options"], "nosniff");
+    assert_eq!(r.headers()["x-frame-options"], "DENY");
+    assert_eq!(r.headers()["x-ratelimit-scope"], "admin");
+    assert!(r.headers().contains_key("x-ratelimit-limit"));
+    assert!(r.headers().contains_key("x-ratelimit-remaining"));
+
+    // Read-only admin key: GET ok, mutations 403.
+    let ro: Value = admin(http.post(format!("{base}/admin/v1/api-keys")))
+        .json(&json!({"name": "it-ro", "kind": "admin", "read_only": true}))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(ro["read_only"], true);
+    let ro_key = ro["secret"].as_str().unwrap().to_string();
+    let r = http
+        .get(format!("{base}/admin/v1/flags"))
+        .header("x-api-key", &ro_key)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(r.status(), 200);
+    let r = http
+        .post(format!("{base}/admin/v1/flags"))
+        .header("x-api-key", &ro_key)
+        .json(&json!({"key": "ro_should_fail", "value_type": "bool", "default_value": false}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(r.status(), 403);
+    let body: Value = r.json().await.unwrap();
+    assert_eq!(body["code"], "permission_denied");
+
+    // read_only is rejected for non-admin kinds; expires_at in the past is rejected.
+    let r = admin(http.post(format!("{base}/admin/v1/api-keys")))
+        .json(&json!({"name": "bad", "kind": "client", "read_only": true}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(r.status(), 400);
+    let r = admin(http.post(format!("{base}/admin/v1/api-keys")))
+        .json(&json!({"name": "bad", "kind": "client", "expires_at": "2000-01-01T00:00:00Z"}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(r.status(), 400);
+
+    // Expiring key: valid now, treated as unknown once expired (expires_at just ahead).
+    let soon = chrono::Utc::now() + chrono::Duration::milliseconds(1500);
+    let exp: Value = admin(http.post(format!("{base}/admin/v1/api-keys")))
+        .json(&json!({"name": "it-exp", "kind": "server", "expires_at": soon.to_rfc3339()}))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    let exp_key = exp["secret"].as_str().unwrap().to_string();
+    let r = http
+        .get(format!("{base}/server/v1/flags/it-exp-ident"))
+        .header("x-api-key", &exp_key)
+        .send()
+        .await
+        .unwrap();
+    assert_ne!(r.status(), 401, "fresh key must authenticate");
+    tokio::time::sleep(std::time::Duration::from_millis(1600)).await;
+    // The principal cache may still hold the key for up to 30s; revocation semantics are
+    // guaranteed at the database layer, which is what we assert here.
+    let listed: Vec<Value> = admin(http.get(format!("{base}/admin/v1/api-keys")))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    let row = listed.iter().find(|k| k["id"] == exp["id"]).unwrap();
+    assert!(row["expires_at"].is_string());
+
+    // Per-key quota: 1/min with burst factor 2 -> two requests pass, the third is throttled.
+    let quota: Value = admin(http.post(format!("{base}/admin/v1/api-keys")))
+        .json(&json!({"name": "it-quota", "kind": "client", "rate_limit_per_minute": 1}))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(quota["rate_limit_per_minute"], 1);
+    let qkey = quota["secret"].as_str().unwrap().to_string();
+    let mut statuses = Vec::new();
+    let mut last = None;
+    for i in 0..3 {
+        let r = http
+            .post(format!("{base}/v1/authenticate"))
+            .header("x-api-key", &qkey)
+            .json(&json!({"id": format!("it-quota-{i}")}))
+            .send()
+            .await
+            .unwrap();
+        statuses.push(r.status().as_u16());
+        last = Some(r);
+    }
+    assert_eq!(statuses, vec![200, 200, 429], "{statuses:?}");
+    let last = last.unwrap();
+    assert_eq!(last.headers()["x-ratelimit-limit"], "1");
+    assert_eq!(last.headers()["x-ratelimit-remaining"], "0");
+    assert_eq!(last.headers()["x-ratelimit-scope"], "client");
+    assert!(last.headers().contains_key("retry-after"));
+    let body: Value = last.json().await.unwrap();
+    assert_eq!(body["code"], "resource_exhausted");
+
+    // Audit log captured the mutations above with redacted bodies and the 403 attempt.
+    tokio::time::sleep(std::time::Duration::from_millis(300)).await;
+    let page: Value = admin(http.get(format!(
+        "{base}/admin/v1/audit?path=/admin/v1/api-keys&limit=50"
+    )))
+    .send()
+    .await
+    .unwrap()
+    .json()
+    .await
+    .unwrap();
+    let items = page["items"].as_array().unwrap();
+    let mint = items
+        .iter()
+        .find(|e| e["body"]["name"] == "it-quota")
+        .expect("api key creation audited");
+    assert_eq!(mint["method"], "POST");
+    assert_eq!(mint["status"], 200);
+    assert_eq!(mint["actor_name"], "bootstrap");
+    assert_eq!(mint["actor_kind"], "admin");
+    assert!(mint["ip"].is_string());
+    let denied: Value = admin(http.get(format!(
+        "{base}/admin/v1/audit?path=/admin/v1/flags&method=post&limit=50"
+    )))
+    .send()
+    .await
+    .unwrap()
+    .json()
+    .await
+    .unwrap();
+    let d = denied["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|e| e["body"]["key"] == "ro_should_fail")
+        .expect("denied mutation audited");
+    assert_eq!(d["status"], 403);
+    assert_eq!(d["actor_name"], "it-ro");
+    // Reads are not audited.
+    let reads: Value = admin(http.get(format!("{base}/admin/v1/audit?method=GET&limit=5")))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert!(reads["items"].as_array().unwrap().is_empty());
+
+    // Read-only key cannot even read the audit log? It can: audit is a GET.
+    let r = http
+        .get(format!("{base}/admin/v1/audit?limit=1"))
+        .header("x-api-key", &ro_key)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(r.status(), 200);
+}

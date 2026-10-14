@@ -63,6 +63,31 @@ pub fn bearer_from_parts(parts: &Parts) -> Option<String> {
         .map(|t| t.trim().to_string())
 }
 
+/// Resolve the API key principal, reusing the one the rate limiter already verified for this request.
+pub async fn principal(parts: &mut Parts, state: &AppState) -> Result<Option<Principal>, Error> {
+    if let Some(p) = parts.extensions.get::<Principal>() {
+        return Ok(Some(p.clone()));
+    }
+    let Some(key) = api_key_from_parts(parts) else {
+        return Ok(None);
+    };
+    let p = state.api_keys.authenticate(&key).await?;
+    parts.extensions.insert(p.clone());
+    Ok(Some(p))
+}
+
+pub async fn session(parts: &mut Parts, state: &AppState) -> Result<Option<SessionContext>, Error> {
+    if let Some(s) = parts.extensions.get::<SessionContext>() {
+        return Ok(Some(s.clone()));
+    }
+    let Some(token) = bearer_from_parts(parts) else {
+        return Ok(None);
+    };
+    let s = state.identity.verify_access(&token).await?;
+    parts.extensions.insert(s.clone());
+    Ok(Some(s))
+}
+
 pub struct ApiKeyAuth(pub Principal);
 
 impl FromRequestParts<AppState> for ApiKeyAuth {
@@ -72,10 +97,10 @@ impl FromRequestParts<AppState> for ApiKeyAuth {
         parts: &mut Parts,
         state: &AppState,
     ) -> Result<Self, Self::Rejection> {
-        let Some(key) = api_key_from_parts(parts) else {
-            return Err(Error::unauthenticated("api key required").into());
-        };
-        Ok(ApiKeyAuth(state.api_keys.authenticate(&key).await?))
+        match principal(parts, state).await? {
+            Some(p) => Ok(ApiKeyAuth(p)),
+            None => Err(Error::unauthenticated("api key required").into()),
+        }
     }
 }
 
@@ -89,8 +114,8 @@ impl FromRequestParts<AppState> for ClientAuth {
         parts: &mut Parts,
         state: &AppState,
     ) -> Result<Self, Self::Rejection> {
-        match api_key_from_parts(parts) {
-            Some(key) => Ok(ClientAuth(Some(state.api_keys.authenticate(&key).await?))),
+        match principal(parts, state).await? {
+            Some(p) => Ok(ClientAuth(Some(p))),
             None if state.cfg.auth.allow_anonymous_authenticate => Ok(ClientAuth(None)),
             None => Err(Error::unauthenticated("api key required").into()),
         }
@@ -106,10 +131,10 @@ impl FromRequestParts<AppState> for SessionAuth {
         parts: &mut Parts,
         state: &AppState,
     ) -> Result<Self, Self::Rejection> {
-        let Some(token) = bearer_from_parts(parts) else {
-            return Err(Error::unauthenticated("session token required").into());
-        };
-        Ok(SessionAuth(state.identity.verify_access(&token).await?))
+        match session(parts, state).await? {
+            Some(s) => Ok(SessionAuth(s)),
+            None => Err(Error::unauthenticated("session token required").into()),
+        }
     }
 }
 
@@ -122,12 +147,18 @@ impl FromRequestParts<AppState> for AdminAuth {
         parts: &mut Parts,
         state: &AppState,
     ) -> Result<Self, Self::Rejection> {
-        let Some(key) = api_key_from_parts(parts) else {
+        let Some(p) = principal(parts, state).await? else {
             return Err(Error::unauthenticated("admin api key required").into());
         };
-        let p = state.api_keys.authenticate(&key).await?;
         if !p.is_admin() {
             return Err(Error::denied("admin api key required").into());
+        }
+        let reads_only = matches!(
+            parts.method,
+            axum::http::Method::GET | axum::http::Method::HEAD | axum::http::Method::OPTIONS
+        );
+        if p.read_only && !reads_only {
+            return Err(Error::denied("this admin key is read-only").into());
         }
         Ok(AdminAuth(p))
     }
@@ -143,10 +174,9 @@ impl FromRequestParts<AppState> for ServerAuth {
         parts: &mut Parts,
         state: &AppState,
     ) -> Result<Self, Self::Rejection> {
-        let Some(key) = api_key_from_parts(parts) else {
+        let Some(p) = principal(parts, state).await? else {
             return Err(Error::unauthenticated("server api key required").into());
         };
-        let p = state.api_keys.authenticate(&key).await?;
         if !p.is_server() {
             return Err(Error::denied("server api key required").into());
         }

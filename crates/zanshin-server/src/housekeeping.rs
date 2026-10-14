@@ -26,6 +26,11 @@ pub async fn run(state: AppState, mut shutdown: watch::Receiver<bool>) {
                     Ok(_) => {}
                     Err(e) => tracing::warn!(error = %e, "session purge failed"),
                 }
+                match state.audit.prune().await {
+                    Ok(n) if n > 0 => tracing::info!(purged = n, "old audit entries purged"),
+                    Ok(_) => {}
+                    Err(e) => tracing::warn!(error = %e, "audit prune failed"),
+                }
                 match state.messages.purge_expired().await {
                     Ok(n) if n > 0 => tracing::info!(purged = n, "expired inbox messages purged"),
                     Ok(_) => {}
