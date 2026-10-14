@@ -6,8 +6,25 @@ use std::{net::SocketAddr, sync::Arc};
 use serde_json::{json, Value};
 use zanshin_server::{config::Config, services::projects::Projects};
 
-#[tokio::test]
-async fn projects_isolation_and_routing() {
+#[test]
+fn projects_isolation_and_routing() {
+    // Two full AppStates + routers make a deep future tree in debug builds; give it a big stack.
+    std::thread::Builder::new()
+        .stack_size(256 << 20)
+        .spawn(|| {
+            tokio::runtime::Builder::new_multi_thread()
+                .enable_all()
+                .thread_stack_size(64 << 20)
+                .build()
+                .unwrap()
+                .block_on(run())
+        })
+        .unwrap()
+        .join()
+        .unwrap();
+}
+
+async fn run() {
     let (Ok(db), Ok(redis)) = (
         std::env::var("ZANSHIN_TEST_DATABASE_URL"),
         std::env::var("ZANSHIN_TEST_REDIS_URL"),
@@ -85,7 +102,7 @@ async fn projects_isolation_and_routing() {
         .post(format!("{base}/admin/v1/flags"))
         .bearer_auth(admin)
         .header("x-zanshin-project", &slug)
-        .json(&json!({"key": fkey, "value_type": "bool", "default_value": "true"}))
+        .json(&json!({"key": fkey, "value_type": "bool", "default_value": true}))
         .send()
         .await
         .unwrap();
@@ -117,7 +134,7 @@ async fn projects_isolation_and_routing() {
         .json()
         .await
         .unwrap();
-    let ck = k["key"].as_str().expect("client key").to_string();
+    let ck = k["secret"].as_str().expect("client key").to_string();
     let s: Value = c
         .post(format!("{base}/v1/authenticate"))
         .header("x-api-key", &ck)

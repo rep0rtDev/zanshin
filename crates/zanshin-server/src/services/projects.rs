@@ -237,7 +237,7 @@ impl Projects {
     pub fn router(self) -> Router {
         Router::new().fallback_service(tower::service_fn(move |req: Request<Body>| {
             let me = self.clone();
-            async move { Ok::<_, std::convert::Infallible>(me.dispatch(req).await) }
+            Box::pin(async move { Ok::<_, std::convert::Infallible>(me.dispatch(req).await) })
         }))
     }
 }
