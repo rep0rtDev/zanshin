@@ -101,6 +101,12 @@ async fn delete_template(
     AdminAuth(_): AdminAuth,
     Path(key): Path<String>,
 ) -> ApiResult<Json<Value>> {
+    crate::services::refs::ensure_unreferenced(
+        &state,
+        crate::services::refs::RefKind::Template,
+        &key,
+    )
+    .await?;
     state.templates.delete(&key).await?;
     Ok(Json(json!({ "deleted": key })))
 }
@@ -213,6 +219,12 @@ async fn delete_integration(
     AdminAuth(_): AdminAuth,
     Path(key): Path<String>,
 ) -> ApiResult<Json<Value>> {
+    crate::services::refs::ensure_unreferenced(
+        &state,
+        crate::services::refs::RefKind::Integration,
+        &key,
+    )
+    .await?;
     state.integrations.delete(&key).await?;
     Ok(Json(json!({ "deleted": key })))
 }

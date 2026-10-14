@@ -860,13 +860,49 @@ impl EventStore {
         identity_id: Uuid,
         limit: i64,
     ) -> Result<Vec<StoredEvent>> {
+        self.search_for_identity(identity_id, &EventSearch::default(), limit)
+            .await
+    }
+
+    /// Player event history filtered by exact name, free-text match on value/metadata and time window.
+    pub async fn search_for_identity(
+        &self,
+        identity_id: Uuid,
+        search: &EventSearch,
+        limit: i64,
+    ) -> Result<Vec<StoredEvent>> {
         let limit = limit.clamp(1, 500);
+        let name = search.name.clone().unwrap_or_default();
+        let q: String = search
+            .q
+            .clone()
+            .unwrap_or_default()
+            .chars()
+            .take(128)
+            .collect();
+        let from_ts = search.from.map(|t| t.timestamp()).unwrap_or(0);
+        let to_ts = search.to.map(|t| t.timestamp()).unwrap_or(0);
         match self {
             EventStore::ClickHouse(ch) => {
                 let rows: Vec<ChEvent> = ch
                     .client
-                    .query("SELECT id, event_time, name, value, metadata, experiments FROM events WHERE identity_id = ? ORDER BY event_time DESC LIMIT ?")
+                    .query(
+                        "SELECT id, event_time, name, value, metadata, experiments FROM events \
+                         WHERE identity_id = ? AND (? = '' OR name = ?) \
+                         AND (? = '' OR positionCaseInsensitive(concat(value, ' ', metadata), ?) > 0) \
+                         AND (? = 0 OR event_time >= toDateTime64(?, 3)) \
+                         AND (? = 0 OR event_time <= toDateTime64(?, 3)) \
+                         ORDER BY event_time DESC LIMIT ?",
+                    )
                     .bind(identity_id)
+                    .bind(name.as_str())
+                    .bind(name.as_str())
+                    .bind(q.as_str())
+                    .bind(q.as_str())
+                    .bind(from_ts)
+                    .bind(from_ts)
+                    .bind(to_ts)
+                    .bind(to_ts)
                     .bind(limit as u64)
                     .fetch_all()
                     .await
@@ -890,13 +926,30 @@ impl EventStore {
                     .collect())
             }
             EventStore::Postgres(pg) => {
-                let rows: Vec<(Uuid, DateTime<Utc>, String, String, serde_json::Value, serde_json::Value)> =
-                    sqlx::query_as("SELECT id, event_time, name, value, metadata, experiments FROM events WHERE identity_id = $1 ORDER BY event_time DESC LIMIT $2")
-                        .bind(identity_id)
-                        .bind(limit)
-                        .fetch_all(pg)
-                        .await
-                        .map_err(map_sqlx)?;
+                let rows: Vec<(
+                    Uuid,
+                    DateTime<Utc>,
+                    String,
+                    String,
+                    serde_json::Value,
+                    serde_json::Value,
+                )> = sqlx::query_as(
+                    "SELECT id, event_time, name, value, metadata, experiments FROM events \
+                         WHERE identity_id = $1 AND ($3::text = '' OR name = $3::text) \
+                         AND ($4::text = '' OR (value || ' ' || metadata::text) ILIKE '%' || $4::text || '%') \
+                         AND ($5::timestamptz IS NULL OR event_time >= $5) \
+                         AND ($6::timestamptz IS NULL OR event_time <= $6) \
+                         ORDER BY event_time DESC LIMIT $2",
+                )
+                .bind(identity_id)
+                .bind(limit)
+                .bind(&name)
+                .bind(&q)
+                .bind(search.from)
+                .bind(search.to)
+                .fetch_all(pg)
+                .await
+                .map_err(map_sqlx)?;
                 Ok(rows
                     .into_iter()
                     .map(
@@ -1181,17 +1234,19 @@ impl EventStore {
         match self {
             EventStore::ClickHouse(ch) => ch
                 .client
-                .query("DELETE FROM events WHERE identity_id = ?")
+                .query("DELETE FROM events WHERE identity_id = ? AND name != '$identity_delete'")
                 .bind(identity_id)
                 .execute()
                 .await
                 .map_err(ch_err),
             EventStore::Postgres(pg) => {
-                sqlx::query("DELETE FROM events WHERE identity_id = $1")
-                    .bind(identity_id)
-                    .execute(pg)
-                    .await
-                    .map_err(map_sqlx)?;
+                sqlx::query(
+                    "DELETE FROM events WHERE identity_id = $1 AND name <> '$identity_delete'",
+                )
+                .bind(identity_id)
+                .execute(pg)
+                .await
+                .map_err(map_sqlx)?;
                 Ok(())
             }
         }
@@ -1266,4 +1321,13 @@ struct ChIdentityRevenue {
     identity_id: Uuid,
     day: String,
     amount: f64,
+}
+
+/// Filters for [`EventStore::search_for_identity`].
+#[derive(Debug, Clone, Default, serde::Deserialize)]
+pub struct EventSearch {
+    pub name: Option<String>,
+    pub q: Option<String>,
+    pub from: Option<DateTime<Utc>>,
+    pub to: Option<DateTime<Utc>>,
 }

@@ -4,7 +4,8 @@ import { EntityPage, Text } from '../crud';
 import { Badge, ErrorBox, Field, JsonField, Toggle, fmtDate } from '../ui';
 
 type Kind = 'webhook' | 'onesignal' | 'fcm' | 'apns' | 'facebook';
-type Integration = { id: string; key: string; name: string; kind: Kind; config: Record<string, unknown>; enabled: boolean; version: number; updated_at: string };
+type Health = { last_status: string | null; last_error: string | null; last_at: string | null; sent_count: number; failed_count: number };
+type Integration = { id: string; key: string; name: string; kind: Kind; config: Record<string, unknown>; enabled: boolean; health: Health; version: number; updated_at: string };
 
 const HINT: Record<Kind, string> = {
   webhook: 'config: url (required), secret (HMAC-SHA256 → X-Zanshin-Signature), headers {…}',
@@ -34,6 +35,17 @@ function TestSend({ i }: { i: Integration }) {
   );
 }
 
+function Health({ h }: { h?: Health }) {
+  if (!h || !h.last_status) return <span className="hint">never used</span>;
+  const tone = h.last_status === 'failed' ? 'warn' : 'ok';
+  return (
+    <div>
+      <Badge tone={tone}>{h.last_status}</Badge> <span className="hint">{fmtDate(h.last_at!)}</span>
+      <div className="hint">{h.sent_count} sent · {h.failed_count} failed{h.last_error ? ` · ${h.last_error}` : ''}</div>
+    </div>
+  );
+}
+
 export default function Integrations() {
   return (
     <EntityPage<Integration>
@@ -44,6 +56,7 @@ export default function Integrations() {
         { h: 'Key', c: (i) => <><strong>{i.key}</strong><div className="hint">{i.name}</div></> },
         { h: 'Kind', c: (i) => <Badge tone="info">{i.kind}</Badge> },
         { h: 'Enabled', c: (i) => i.enabled ? <Badge tone="ok">on</Badge> : <Badge>off</Badge> },
+        { h: 'Health', c: (i) => <Health h={i.health} /> },
         { h: 'Updated', c: (i) => fmtDate(i.updated_at) },
       ]}
       blank={() => ({ key: '', name: '', kind: 'webhook', config: { ...BLANK.webhook }, enabled: true })}

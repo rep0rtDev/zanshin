@@ -23,6 +23,9 @@ pub const EV_IDENTITY_CREATE: &str = "$identity_create";
 pub const EV_SESSION_START: &str = "$session_start";
 pub const EV_SESSION_END: &str = "$session_end";
 pub const EV_IDENTIFY: &str = "$identify";
+pub const EV_IDENTITY_DELETE: &str = "$identity_delete";
+/// Emitted (and exported to sinks) in place of an event rejected by the taxonomy.
+pub const EV_EVENT_ERROR: &str = "$event_error";
 pub const EV_EXPERIMENT_JOIN: &str = "$experiment_join";
 pub const EV_LIVE_EVENT_JOIN: &str = "$live_event_join";
 

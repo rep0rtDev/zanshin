@@ -3,6 +3,7 @@ use serde_json::Value;
 use sqlx::{FromRow, PgPool};
 use uuid::Uuid;
 use zanshin_core::{
+    integrations::IntegrationHealth,
     integrations::{Integration, IntegrationKind},
     Error, Result,
 };
@@ -17,6 +18,11 @@ struct Row {
     kind: String,
     config: Value,
     enabled: bool,
+    last_status: Option<String>,
+    last_error: Option<String>,
+    last_at: Option<DateTime<Utc>>,
+    sent_count: i64,
+    failed_count: i64,
     version: i64,
     created_at: DateTime<Utc>,
     updated_at: DateTime<Utc>,
@@ -32,6 +38,13 @@ impl TryFrom<Row> for Integration {
             kind: r.kind.parse::<IntegrationKind>()?,
             config: r.config,
             enabled: r.enabled,
+            health: IntegrationHealth {
+                last_status: r.last_status,
+                last_error: r.last_error,
+                last_at: r.last_at,
+                sent_count: r.sent_count,
+                failed_count: r.failed_count,
+            },
             version: r.version,
             created_at: r.created_at,
             updated_at: r.updated_at,
@@ -39,7 +52,7 @@ impl TryFrom<Row> for Integration {
     }
 }
 
-const COLS: &str = "id, key, name, kind, config, enabled, version, created_at, updated_at";
+const COLS: &str = "id, key, name, kind, config, enabled, last_status, last_error, last_at, sent_count, failed_count, version, created_at, updated_at";
 
 #[derive(Clone)]
 pub struct IntegrationRepo {
@@ -106,6 +119,27 @@ impl IntegrationRepo {
         row.map(Integration::try_from)
             .transpose()?
             .ok_or_else(|| Error::not_found(format!("integrations {:?} not found", m.key)))
+    }
+
+    /// Record the outcome of a delivery attempt. `failed` replaces `last_error`; a success keeps
+    /// the previous error visible so operators can still see what went wrong last time.
+    pub async fn record_outcome(&self, key: &str, status: &str, detail: &str) -> Result<()> {
+        let failed = status == "failed";
+        sqlx::query(
+            "UPDATE integrations SET last_status = $2, last_at = now(),
+                    last_error = CASE WHEN $3 THEN $4 ELSE last_error END,
+                    sent_count = sent_count + CASE WHEN $2 = 'sent' THEN 1 ELSE 0 END,
+                    failed_count = failed_count + CASE WHEN $3 THEN 1 ELSE 0 END
+             WHERE key = $1",
+        )
+        .bind(key)
+        .bind(status)
+        .bind(failed)
+        .bind(detail.chars().take(500).collect::<String>())
+        .execute(&self.pg)
+        .await
+        .map_err(map_sqlx)?;
+        Ok(())
     }
 
     pub async fn delete(&self, key: &str) -> Result<()> {

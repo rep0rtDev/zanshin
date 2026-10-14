@@ -78,6 +78,12 @@ async fn delete_metric(
     AdminAuth(_): AdminAuth,
     Path(key): Path<String>,
 ) -> ApiResult<Json<Value>> {
+    crate::services::refs::ensure_unreferenced(
+        &state,
+        crate::services::refs::RefKind::Metric,
+        &key,
+    )
+    .await?;
     state.metrics.delete(&key).await?;
     Ok(Json(json!({ "deleted": key })))
 }

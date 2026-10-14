@@ -68,6 +68,8 @@ pub fn router() -> Router<AppState> {
                 .delete(delete_flag),
         )
         .route("/flags/{key}/overrides", get(list_overrides))
+        .route("/flags/{key}/diff", get(diff_flag_values))
+        .route("/flags/{key}/sizes", get(flag_sizes))
         .route(
             "/flags/{key}/overrides/{identity_id}",
             axum::routing::put(set_override).delete(delete_override),
@@ -457,6 +459,8 @@ async fn delete_flag(
     AdminAuth(_): AdminAuth,
     Path(key): Path<String>,
 ) -> ApiResult<Json<serde_json::Value>> {
+    crate::services::refs::ensure_unreferenced(&state, crate::services::refs::RefKind::Flag, &key)
+        .await?;
     state.flags.delete(&key).await?;
     Ok(Json(serde_json::json!({})))
 }
@@ -466,6 +470,74 @@ pub struct OverrideRow {
     pub identity_id: Uuid,
     pub external_id: String,
     pub value: serde_json::Value,
+}
+
+#[derive(Deserialize)]
+struct DiffQuery {
+    a: String,
+    b: String,
+}
+
+#[derive(Serialize)]
+struct DiffSide {
+    selector: String,
+    bytes: usize,
+    value: serde_json::Value,
+}
+
+#[derive(Serialize)]
+struct FlagDiff {
+    a: DiffSide,
+    b: DiffSide,
+    changes: Vec<zanshin_core::flags::ValueDiff>,
+}
+
+async fn diff_flag_values(
+    State(state): State<AppState>,
+    AdminAuth(_): AdminAuth,
+    Path(key): Path<String>,
+    Query(q): Query<DiffQuery>,
+) -> ApiResult<Json<FlagDiff>> {
+    let flag = state.flags.get(&key).await?;
+    let pick = |sel: &str| {
+        flag.named_value(sel)
+            .cloned()
+            .ok_or_else(|| zanshin_core::Error::not_found(format!("flag value {sel:?}")))
+    };
+    let (a, b) = (pick(&q.a)?, pick(&q.b)?);
+    Ok(Json(FlagDiff {
+        changes: zanshin_core::flags::diff_values(&a, &b),
+        a: DiffSide {
+            selector: q.a,
+            bytes: zanshin_core::flags::payload_bytes(&a),
+            value: a,
+        },
+        b: DiffSide {
+            selector: q.b,
+            bytes: zanshin_core::flags::payload_bytes(&b),
+            value: b,
+        },
+    }))
+}
+
+#[derive(Serialize)]
+struct PayloadSize {
+    selector: String,
+    bytes: usize,
+}
+
+async fn flag_sizes(
+    State(state): State<AppState>,
+    AdminAuth(_): AdminAuth,
+    Path(key): Path<String>,
+) -> ApiResult<Json<Vec<PayloadSize>>> {
+    let flag = state.flags.get(&key).await?;
+    Ok(Json(
+        flag.payload_sizes()
+            .into_iter()
+            .map(|(selector, bytes)| PayloadSize { selector, bytes })
+            .collect(),
+    ))
 }
 
 async fn list_overrides(
@@ -614,6 +686,12 @@ async fn delete_audience(
     AdminAuth(_): AdminAuth,
     Path(key): Path<String>,
 ) -> ApiResult<Json<serde_json::Value>> {
+    crate::services::refs::ensure_unreferenced(
+        &state,
+        crate::services::refs::RefKind::Audience,
+        &key,
+    )
+    .await?;
     state.audiences.delete(&key).await?;
     Ok(Json(serde_json::json!({})))
 }
@@ -709,6 +787,12 @@ async fn delete_experiment(
     AdminAuth(_): AdminAuth,
     Path(key): Path<String>,
 ) -> ApiResult<Json<serde_json::Value>> {
+    crate::services::refs::ensure_unreferenced(
+        &state,
+        crate::services::refs::RefKind::Experiment,
+        &key,
+    )
+    .await?;
     state.experiments.delete(&key).await?;
     Ok(Json(serde_json::json!({})))
 }
@@ -930,6 +1014,12 @@ async fn delete_live_event(
     AdminAuth(_): AdminAuth,
     Path(key): Path<String>,
 ) -> ApiResult<Json<serde_json::Value>> {
+    crate::services::refs::ensure_unreferenced(
+        &state,
+        crate::services::refs::RefKind::LiveEvent,
+        &key,
+    )
+    .await?;
     state.live_events.delete(&key).await?;
     Ok(Json(serde_json::json!({})))
 }
@@ -1093,16 +1183,34 @@ pub struct LimitQuery {
     pub limit: Option<i64>,
 }
 
+#[derive(Deserialize)]
+struct IdentityEventsQuery {
+    limit: Option<i64>,
+    name: Option<String>,
+    q: Option<String>,
+    from: Option<chrono::DateTime<chrono::Utc>>,
+    to: Option<chrono::DateTime<chrono::Utc>>,
+}
+
 async fn identity_events(
     State(state): State<AppState>,
     AdminAuth(_): AdminAuth,
     Path(identity_id): Path<Uuid>,
-    Query(q): Query<LimitQuery>,
+    Query(q): Query<IdentityEventsQuery>,
 ) -> ApiResult<Json<serde_json::Value>> {
     state.identity.get(identity_id).await?;
     let events = state
         .events
-        .recent_for_identity(identity_id, q.limit.unwrap_or(100))
+        .search_for_identity(
+            identity_id,
+            &zanshin_store::events::EventSearch {
+                name: q.name.clone(),
+                q: q.q.clone(),
+                from: q.from,
+                to: q.to,
+            },
+            q.limit.unwrap_or(100),
+        )
         .await?;
     Ok(Json(
         serde_json::json!({ "identity_id": identity_id, "events": events }),

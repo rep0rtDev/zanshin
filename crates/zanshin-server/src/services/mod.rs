@@ -21,6 +21,7 @@ pub mod messages;
 pub mod metrics;
 pub mod oidc;
 pub mod push;
+pub mod refs;
 pub mod taxonomy;
 pub mod templates;
 pub mod webhooks;

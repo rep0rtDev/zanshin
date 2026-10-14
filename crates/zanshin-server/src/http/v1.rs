@@ -28,6 +28,7 @@ pub fn router() -> Router<AppState> {
         .route("/identify", post(identify))
         .route("/properties", get(get_properties).put(update_properties))
         .route("/flags", get(get_flags))
+        .route("/flags/overrides", get(get_flag_overrides))
         .route("/flags/{key}", get(get_flag))
         .route("/audiences", get(get_audiences))
         .route("/experiments", get(get_experiments))
@@ -403,6 +404,21 @@ async fn get_flags(
     }))
 }
 
+#[derive(Serialize)]
+struct FlagOverrideList {
+    overrides: Vec<crate::services::eval::FlagOverrideView>,
+}
+
+async fn get_flag_overrides(
+    State(state): State<AppState>,
+    SessionAuth(ctx): SessionAuth,
+) -> ApiResult<Json<FlagOverrideList>> {
+    let identity = state.identity.get(ctx.identity_id()).await?;
+    Ok(Json(FlagOverrideList {
+        overrides: state.eval.overrides(&identity).await?,
+    }))
+}
+
 async fn get_flag(
     State(state): State<AppState>,
     SessionAuth(ctx): SessionAuth,
@@ -574,20 +590,30 @@ async fn send_events(
     Json(req): Json<EventBatch>,
 ) -> ApiResult<Json<serde_json::Value>> {
     let identity = state.identity.get(ctx.identity_id()).await?;
-    let events = state
+    let checked = state
         .taxonomy
         .check_events(identity.id, &identity.external_id, req.events)
         .await?;
+    let rejected = checked.errors.len();
     let n = state
         .events
-        .track(&identity, events, false, Some(ctx.claims.sid))
+        .track(&identity, checked.events, false, Some(ctx.claims.sid))
         .await?;
+    if rejected > 0 {
+        state
+            .events
+            .track(&identity, checked.errors, true, Some(ctx.claims.sid))
+            .await
+            .ok();
+    }
     let repo = state.taxonomy.repo.clone();
     let sid = ctx.claims.sid;
     tokio::spawn(async move {
         repo.touch_session(sid, chrono::Utc::now()).await.ok();
     });
-    Ok(Json(serde_json::json!({ "accepted": n })))
+    Ok(Json(
+        serde_json::json!({ "accepted": n, "rejected": rejected }),
+    ))
 }
 
 #[derive(Debug, Deserialize)]

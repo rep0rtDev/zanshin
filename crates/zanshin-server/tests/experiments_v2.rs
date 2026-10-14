@@ -328,11 +328,13 @@ async fn metrics_and_experiments_v2() {
         .unwrap()
         .iter()
         .any(|k| k == &json!(ekey)));
-    let (st, _) = adm(
+    // A metric still attached to an experiment cannot be deleted; the referrers are listed.
+    let (st, body) = adm(
         reqwest::Method::DELETE,
         format!("/admin/v1/metrics/{rkey}"),
         None,
     )
     .await;
-    assert_eq!(st, 200);
+    assert_eq!(st, 409, "{body}");
+    assert!(body.to_string().contains(&ekey), "{body}");
 }

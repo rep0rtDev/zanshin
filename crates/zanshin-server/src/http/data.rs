@@ -162,6 +162,8 @@ async fn reset_cursor(
 struct Kinds {
     #[serde(default)]
     kinds: Option<String>,
+    #[serde(default)]
+    keys: Option<String>,
 }
 
 fn split_kinds(k: &Option<String>) -> Option<Vec<String>> {
@@ -179,7 +181,12 @@ async fn export_config(
     Query(q): Query<Kinds>,
 ) -> ApiResult<Json<Value>> {
     Ok(Json(
-        config::export_bundle(&state, split_kinds(&q.kinds).as_deref()).await?,
+        config::export_bundle(
+            &state,
+            split_kinds(&q.kinds).as_deref(),
+            split_kinds(&q.keys).as_deref(),
+        )
+        .await?,
     ))
 }
 
@@ -194,6 +201,8 @@ struct DiffBody {
     mode: ImportMode,
     #[serde(default)]
     kinds: Option<Vec<String>>,
+    #[serde(default)]
+    keys: Option<Vec<String>>,
 }
 
 async fn diff_config(
@@ -202,7 +211,14 @@ async fn diff_config(
     Json(b): Json<DiffBody>,
 ) -> ApiResult<Json<Value>> {
     Ok(Json(
-        config::diff(&state, &b.bundle, b.mode, b.kinds.as_deref()).await?,
+        config::diff(
+            &state,
+            &b.bundle,
+            b.mode,
+            b.kinds.as_deref(),
+            b.keys.as_deref(),
+        )
+        .await?,
     ))
 }
 

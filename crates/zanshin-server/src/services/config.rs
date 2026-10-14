@@ -47,6 +47,9 @@ pub struct ImportRequest {
     pub mode: ImportMode,
     #[serde(default)]
     pub kinds: Option<Vec<String>>,
+    /// Only these entity keys (any kind); `None` = everything in the selected kinds.
+    #[serde(default)]
+    pub keys: Option<Vec<String>>,
     #[serde(default)]
     pub dry_run: bool,
 }
@@ -213,7 +216,19 @@ async fn record(
     }
 }
 
-pub async fn export_bundle(state: &AppState, kinds: Option<&[String]>) -> Result<Value> {
+fn key_selected(keys: Option<&[String]>, v: &Value) -> bool {
+    match keys {
+        None => true,
+        Some(ks) => key_of(v).is_some_and(|k| ks.contains(&k)),
+    }
+}
+
+/// Export the configuration, optionally narrowed to some entity `kinds` and/or specific `keys`.
+pub async fn export_bundle(
+    state: &AppState,
+    kinds: Option<&[String]>,
+    keys: Option<&[String]>,
+) -> Result<Value> {
     let mut entities = serde_json::Map::new();
     for kind in KINDS {
         if kinds.is_some_and(|k| !k.iter().any(|x| x == kind)) {
@@ -222,6 +237,7 @@ pub async fn export_bundle(state: &AppState, kinds: Option<&[String]>) -> Result
         let items: Vec<Value> = list_kind(state, kind)
             .await?
             .into_iter()
+            .filter(|v| key_selected(keys, v))
             .map(strip_volatile)
             .collect();
         entities.insert(kind.to_string(), Value::Array(items));
@@ -247,6 +263,7 @@ pub async fn diff(
     bundle: &Value,
     mode: ImportMode,
     kinds: Option<&[String]>,
+    keys: Option<&[String]>,
 ) -> Result<Value> {
     let entities = bundle_entities(bundle)?;
     let mut out = serde_json::Map::new();
@@ -258,6 +275,12 @@ pub async fn diff(
         let Some(incoming) = entities.get(*kind).and_then(|v| v.as_array()) else {
             continue;
         };
+        let incoming: Vec<Value> = incoming
+            .iter()
+            .filter(|v| key_selected(keys, v))
+            .cloned()
+            .collect();
+        let incoming = &incoming;
         let local: BTreeMap<String, Value> = list_kind(state, kind)
             .await?
             .into_iter()
@@ -305,7 +328,7 @@ pub async fn diff(
 /// Apply a bundle. Returns the diff that was (or would be, with `dry_run`) applied plus per-entity errors.
 pub async fn import(state: &AppState, req: &ImportRequest) -> Result<Value> {
     let kinds = req.kinds.as_deref();
-    let plan = diff(state, &req.bundle, req.mode, kinds).await?;
+    let plan = diff(state, &req.bundle, req.mode, kinds, req.keys.as_deref()).await?;
     if req.dry_run {
         return Ok(json!({ "dry_run": true, "plan": plan }));
     }
@@ -384,6 +407,7 @@ pub async fn import_from(
             bundle,
             mode,
             kinds,
+            keys: None,
             dry_run,
         },
     )

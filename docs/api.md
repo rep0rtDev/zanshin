@@ -115,6 +115,12 @@ listed in precedence order.
 
 One evaluation; 404 when the flag does not exist.
 
+### `GET /v1/flags/overrides` — session
+
+Every override currently applied to the caller, in evaluation order: `identity` (QA / support
+override), `experiment` (`source_key` = experiment, `variant`) and `live_event` (`source_key` =
+event). `{"overrides": [{"flag_key", "value", "source", "source_key", "variant"}]}`.
+
 ### `GET /v1/audiences` — session
 
 `{ "audiences": ["beta_testers", "whales"] }` — keys of every enabled audience whose condition
@@ -298,6 +304,31 @@ gRPC: `ServerGetFlags`, `ServerGetAudiences`, `ServerGetExperiments`, `ServerGet
 | `GET` | `/analytics/events?name=purchase&from=&to=&granularity=hour\|day` | — | `{ "buckets": [ { "bucket", "count", "identities", "sum" } ], "backend": "clickhouse" \| "postgres" }` (default window: last 7 days) |
 | `GET` | `/analytics/events/names?from=&to=&limit=` | — | event names by volume with unique identities |
 | `GET` | `/identities/{identity_id}/events?limit=` | — | most recent events of one identity (with `experiments` tags) |
+
+### LiveOps polish
+
+- `GET /admin/v1/flags/{key}/sizes` — serialized byte size of every value a client can receive
+  (`default`, `rule:<id>`, `variant:<key>`, `rule:<id>:variant:<key>`).
+- `GET /admin/v1/flags/{key}/diff?a=default&b=rule:vip` — leaf-level differences between two
+  values (`changes: [{path, from?, to?}]`, `/`-separated paths; an absent side is omitted) plus
+  both payload sizes. Unknown selectors are `404`.
+- Experiments carry `priority` (default `0`). When several running experiments pin the same flag
+  the highest priority wins (ties: earliest `starts_at`); the others still enrol and track metrics.
+- `POST /admin/v1/identities/{id}/messages` / server `send_message`: `inbox: false` skips the inbox
+  (requires `push` or `channels`), `template_key` or `template_name` renders a stored template
+  (locale from `locale`, else `default.locale`), `channels: ["onesignal"]` delivers through
+  integrations; inline `title` / `body` work without any template.
+- Integrations expose `health` (`last_status`, `last_error`, `last_at`, `sent_count`,
+  `failed_count`), updated on every delivery attempt.
+- `GET /admin/v1/identities/{id}/events?name=&q=&from=&to=&limit=` — player event search by exact
+  name, case-insensitive text in value / metadata and time window.
+- `GET /admin/v1/config/export?kinds=flags,templates&keys=a,b` and `keys` on
+  `POST /admin/v1/config/import` narrow bundles to specific entities.
+- Deleting a flag, audience, template, integration, metric, experiment or live event that another
+  entity still references returns `409 Conflict` listing the referrers (`experiment:pricing_v2`).
+- Events rejected by the taxonomy are exported to data sinks as `$event_error` (metadata: `event`,
+  `reason`, truncated `value`); `POST /v1/events` responds `{"accepted", "rejected"}`.
+  GDPR deletion emits `$identity_delete`, which survives the deletion as a tombstone.
 
 ### Analytics v2
 
