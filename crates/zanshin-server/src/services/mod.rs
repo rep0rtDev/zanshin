@@ -5,6 +5,7 @@ pub mod audit;
 pub mod bus;
 pub mod catalog;
 pub mod config;
+pub mod console_users;
 pub mod data;
 pub mod eval;
 pub mod events;

@@ -19,6 +19,15 @@ Release automation reads the section whose heading contains the tagged version.
   dashboard and alert rules, k6 smoke / baseline / stream load tests, `docs/production.md`
   (topology, sizing, upgrades, backup/restore, DR, observability, security checklist).
 - `zanshin_job_last_run_seconds` gauge per housekeeping job (feeds the stalled-housekeeping alert).
+- Console users and fine-grained permissions: email + password login (Argon2id) with TOTP second
+  factor and single-use recovery codes, server-side sessions (list / revoke, sign out everywhere),
+  admin-issued password-reset links, "create first admin" bootstrap flow; `resource:action`
+  grants (`read` / `write` / `delete` over 18 resources, `*` wildcard with per-resource overrides)
+  enforced on every `/admin/v1` route with a `permission required: flags:write` hint, archetype
+  presets (Admin, Developer, Game Designer, Debugger, Support, Analyst, Viewer), permission sets
+  on admin API keys, key rotation with a grace period (`POST /admin/v1/api-keys/{id}/rotate`),
+  `GET /admin/v1/permissions` catalog, Users and Account pages in the console with a permission
+  matrix editor, navigation and controls that follow the caller's grants.
 
 ### Security
 - rustls 0.23.46 (RUSTSEC-2026-0346..0349), maxminddb 0.27 (RUSTSEC-2025-0132).

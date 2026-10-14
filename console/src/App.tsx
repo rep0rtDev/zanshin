@@ -4,7 +4,11 @@ import { Palette, type PaletteItem } from './Palette';
 import { Toasts } from './toast';
 import Settings from './pages/Settings';
 import { MeContext } from './me';
-import { auth, authConfig, get, ssoLogout, type Me } from './api';
+import { ApiError, auth, authConfig, get, passwordLogin, resetPassword, ssoLogout, type AuthConfig, type Me } from './api';
+import Users from './pages/Users';
+import Account from './pages/Account';
+import { allows } from './permissions';
+import { toast } from './toast';
 import Dashboard from './pages/Dashboard';
 import Flags from './pages/Flags';
 import Experiments from './pages/Experiments';
@@ -24,42 +28,86 @@ import Data from './pages/Data';
 import ApiKeys from './pages/ApiKeys';
 import Audit from './pages/Audit';
 
-function Login({ onDone, sso }: { onDone: () => void; sso: boolean }) {
+function Login({ onDone, cfg }: { onDone: () => void; cfg: AuthConfig }) {
+  const params = new URLSearchParams(window.location.search);
+  const resetToken = window.location.pathname.endsWith('/reset') ? params.get('token') : null;
+  const defaultTab = resetToken ? 'reset' : cfg.password ? 'password' : cfg.needs_bootstrap ? 'bootstrap' : 'key';
+  const [tab, setTabState] = useState<'password' | 'key' | 'bootstrap' | 'reset'>(defaultTab);
+  const [touched, setTouched] = useState(false);
+  const setTab = (t: typeof tab) => { setTouched(true); setTabState(t); };
+  useEffect(() => { if (!touched) setTabState(defaultTab); }, [defaultTab, touched]);
   const [key, setKey] = useState('');
-  const [err, setErr] = useState<string | null>(() => new URLSearchParams(window.location.search).get('error'));
+  const [email, setEmail] = useState(''); const [password, setPassword] = useState(''); const [code, setCode] = useState('');
+  const [needCode, setNeedCode] = useState(false);
+  const [name, setName] = useState('');
+  const [err, setErr] = useState<string | null>(() => params.get('error'));
   const [busy, setBusy] = useState(false);
-  const submit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setBusy(true);
+  const run = async (fn: () => Promise<void>) => { setBusy(true); setErr(null); try { await fn(); } catch (e) { setErr((e as Error).message || 'Failed'); } finally { setBusy(false); } };
+  const withKey = (e: React.FormEvent) => { e.preventDefault(); void run(async () => { auth.set(key.trim()); try { await get('/me'); onDone(); } catch (e) { auth.clear(); throw e; } }); };
+  const withPassword = (e: React.FormEvent) => { e.preventDefault(); void run(async () => {
+    try { await passwordLogin(email, password, code); auth.clear(); onDone(); }
+    catch (e) { if (e instanceof ApiError && e.code === 'mfa_required') { setNeedCode(true); return; } throw e; }
+  }); };
+  const bootstrap = (e: React.FormEvent) => { e.preventDefault(); void run(async () => {
     auth.set(key.trim());
-    try {
-      await get('/me');
-      onDone();
-    } catch (e) {
-      auth.clear();
-      setErr((e as Error).message || 'Invalid key');
-    } finally {
-      setBusy(false);
-    }
-  };
+    try { await get('/me'); } catch (e) { auth.clear(); throw e; }
+    await (await import('./api')).post('/users', { email, name, password, archetype: 'admin' });
+    auth.clear();
+    await passwordLogin(email, password);
+    onDone();
+  }); };
+  const reset = (e: React.FormEvent) => { e.preventDefault(); void run(async () => { await resetPassword(resetToken!, password); window.history.replaceState(null, '', '/console/'); setTab('password'); setPassword(''); toast('Password set — sign in'); }); };
+  const tabs: [typeof tab, string][] = [];
+  if (cfg.password) tabs.push(['password', 'Email & password']);
+  if (cfg.needs_bootstrap) tabs.push(['bootstrap', 'Create first admin']);
+  tabs.push(['key', 'Admin API key']);
   return (
     <div className="login">
-      <form className="card" onSubmit={submit}>
+      <div className="card">
         <div className="brand">Zanshin<small>admin console</small></div>
-        {sso && (
-          <>
-            <a className="btn" href="/console/auth/login" style={{ width: '100%', display: 'block', textAlign: 'center', boxSizing: 'border-box' }}>Sign in with SSO</a>
-            <div className="hint" style={{ textAlign: 'center', margin: '12px 0' }}>or use an admin API key</div>
-          </>
+        {cfg.oidc && (<><a className="btn" href="/console/auth/login" style={{ width: '100%', display: 'block', textAlign: 'center', boxSizing: 'border-box' }}>Sign in with SSO</a><div className="hint" style={{ textAlign: 'center', margin: '12px 0' }}>or</div></>)}
+        {tab !== 'reset' && tabs.length > 1 && <div className="tabs" style={{ marginBottom: 12 }}>{tabs.map(([t, l]) => <button key={t} type="button" className={'tab' + (tab === t ? ' active' : '')} onClick={() => { setTab(t); setErr(null); }}>{l}</button>)}</div>}
+        {tab === 'password' && (
+          <form onSubmit={withPassword}>
+            <label className="field"><span className="label">Email</span><input type="email" autoFocus value={email} onChange={(e) => setEmail(e.target.value)} required autoComplete="username" disabled={needCode} /></label>
+            <label className="field"><span className="label">Password</span><input type="password" value={password} onChange={(e) => setPassword(e.target.value)} required autoComplete="current-password" disabled={needCode} /></label>
+            {needCode && <label className="field"><span className="label">One-time code</span><input autoFocus value={code} onChange={(e) => setCode(e.target.value)} inputMode="numeric" required autoComplete="one-time-code" /><span className="hint">From your authenticator app, or a recovery code.</span></label>}
+            {err && <div className="error">{err}</div>}
+            <button className="btn" disabled={busy} style={{ width: '100%' }}>{needCode ? 'Verify' : 'Sign in'}</button>
+            <div className="hint" style={{ marginTop: 10 }}>Forgot the password? Ask an admin for a reset link.</div>
+          </form>
         )}
-        <label className="field">
-          <span className="label">Admin API key</span>
-          <input type="password" autoFocus={!sso} value={key} onChange={(e) => setKey(e.target.value)} placeholder="zk_a_…" />
-          <span className="hint">The bootstrap key from config or an admin key minted via /admin/v1/api-keys. Stored in this browser only.</span>
-        </label>
-        {err && <div className="error">{err}</div>}
-        <button className="btn" disabled={!key || busy} style={{ width: '100%' }}>Sign in</button>
-      </form>
+        {tab === 'bootstrap' && (
+          <form onSubmit={bootstrap}>
+            <div className="hint" style={{ marginBottom: 10 }}>No console users exist yet. Use the bootstrap admin key from the server config once to create the first admin account.</div>
+            <label className="field"><span className="label">Bootstrap admin key</span><input type="password" autoFocus value={key} onChange={(e) => setKey(e.target.value)} required /></label>
+            <label className="field"><span className="label">Your name</span><input value={name} onChange={(e) => setName(e.target.value)} required /></label>
+            <label className="field"><span className="label">Email</span><input type="email" value={email} onChange={(e) => setEmail(e.target.value)} required /></label>
+            <label className="field"><span className="label">Password</span><input type="password" value={password} onChange={(e) => setPassword(e.target.value)} required minLength={12} autoComplete="new-password" /><span className="hint">At least 12 characters.</span></label>
+            {err && <div className="error">{err}</div>}
+            <button className="btn" disabled={busy} style={{ width: '100%' }}>Create admin & sign in</button>
+          </form>
+        )}
+        {tab === 'key' && (
+          <form onSubmit={withKey}>
+            <label className="field">
+              <span className="label">Admin API key</span>
+              <input type="password" autoFocus value={key} onChange={(e) => setKey(e.target.value)} placeholder="zk_a_…" />
+              <span className="hint">The bootstrap key from config or an admin key minted via /admin/v1/api-keys. Stored in this browser only.</span>
+            </label>
+            {err && <div className="error">{err}</div>}
+            <button className="btn" disabled={busy} style={{ width: '100%' }}>Sign in</button>
+          </form>
+        )}
+        {tab === 'reset' && (
+          <form onSubmit={reset}>
+            <div className="hint" style={{ marginBottom: 10 }}>Choose a new password for your account.</div>
+            <label className="field"><span className="label">New password</span><input type="password" autoFocus value={password} onChange={(e) => setPassword(e.target.value)} required minLength={12} autoComplete="new-password" /></label>
+            {err && <div className="error">{err}</div>}
+            <button className="btn" disabled={busy} style={{ width: '100%' }}>Set password</button>
+          </form>
+        )}
+      </div>
     </div>
   );
 }
@@ -81,7 +129,7 @@ const GROUPS: NavGroup[] = [
   { name: 'Engage', items: [['/messages', 'Messages', I.mail], ['/templates', 'Templates', I.doc], ['/journeys', 'Journeys', I.route], ['/integrations', 'Integrations', I.plug]] },
   { name: 'Players', items: [['/identities', 'Identities', I.users], ['/taxonomy', 'Taxonomy', I.tag]] },
   { name: 'Analytics', items: [['/insights', 'Insights', I.chart], ['/analytics', 'Events', I.pulse], ['/metrics', 'Metrics', I.gauge]] },
-  { name: 'Platform', items: [['/webhooks', 'Webhooks', I.hook], ['/data', 'Data', I.db], ['/api-keys', 'API keys', I.key], ['/audit', 'Audit log', I.list], ['/settings', 'Settings', I.gear]] },
+  { name: 'Platform', items: [['/webhooks', 'Webhooks', I.hook], ['/data', 'Data', I.db], ['/api-keys', 'API keys', I.key], ['/users', 'Users', I.users], ['/audit', 'Audit log', I.list], ['/settings', 'Settings', I.gear]] },
 ];
 
 const THEME_KEY = 'zanshin.theme';
@@ -98,7 +146,7 @@ function Crumbs() {
   return (
     <div className="crumbs">
       {item?.[0] && <span className="muted">{item[0]} /</span>}
-      <span>{item?.[1][1] ?? 'Overview'}</span>
+      <span>{item?.[1][1] ?? (parts[0] === 'account' ? 'Your account' : 'Overview')}</span>
       {parts.slice(1).map((p, i) => <span key={i} className="muted">/ {decodeURIComponent(p)}</span>)}
     </div>
   );
@@ -106,7 +154,7 @@ function Crumbs() {
 
 export default function App() {
   const [me, setMe] = useState<Me | null | undefined>(undefined);
-  const [sso, setSso] = useState(false);
+  const [cfg, setCfg] = useState<AuthConfig>({ oidc: false, password: false, needs_bootstrap: false });
   const [palette, setPalette] = useState(false);
   const [collapsed, setCollapsed] = useState(() => localStorage.getItem('zanshin.nav') === 'collapsed');
   const loadMe = useCallback(async () => {
@@ -117,8 +165,8 @@ export default function App() {
     }
   }, []);
   useEffect(() => {
-    authConfig().then((c) => setSso(c.oidc));
-    if (auth.key() || document.cookie.includes('zanshin_console=') || window.location.pathname.startsWith('/console')) void loadMe();
+    authConfig().then(setCfg);
+    if (auth.key() || document.cookie.includes('zanshin_console') || window.location.pathname.startsWith('/console')) void loadMe();
     else setMe(null);
   }, [loadMe]);
   const [theme, setTheme] = useState<'light' | 'dark'>(initialTheme);
@@ -130,18 +178,21 @@ export default function App() {
   useEffect(() => {
     const h = () => { auth.clear(); setMe(null); };
     window.addEventListener('zanshin:unauthorized', h);
+    const f = (e: Event) => { const m = String((e as CustomEvent).detail ?? ''); const req = m.match(/permission required: ([a-z_]+:[a-z]+)/); toast(req ? `No access — needs ${req[1]}` : m || 'Forbidden', 'bad'); };
+    window.addEventListener('zanshin:forbidden', f);
     const k = (e: KeyboardEvent) => { if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') { e.preventDefault(); setPalette((p) => !p); } };
     window.addEventListener('keydown', k);
-    return () => { window.removeEventListener('zanshin:unauthorized', h); window.removeEventListener('keydown', k); };
+    return () => { window.removeEventListener('zanshin:unauthorized', h); window.removeEventListener('zanshin:forbidden', f); window.removeEventListener('keydown', k); };
   }, []);
   if (me === undefined) return <div className="login"><div className="card">Loading…</div></div>;
-  if (!me) return <Login sso={sso} onDone={loadMe} />;
-  const groups = GROUPS.map((g) => ({ ...g, items: g.items.filter(([to]) => to !== '/api-keys' || me.role === 'admin') }));
+  if (!me) return <Login cfg={cfg} onDone={() => { authConfig().then(setCfg); void loadMe(); }} />;
+  const RES: Record<string, string> = { '/flags': 'flags', '/audiences': 'audiences', '/experiments': 'experiments', '/live-events': 'live_events', '/messages': 'messages', '/templates': 'templates', '/journeys': 'journeys', '/integrations': 'integrations', '/identities': 'identities', '/taxonomy': 'taxonomy', '/insights': 'analytics', '/analytics': 'analytics', '/metrics': 'metrics', '/webhooks': 'webhooks', '/data': 'data', '/api-keys': 'api_keys', '/users': 'users', '/audit': 'audit', '/settings': 'settings' };
+  const groups = GROUPS.map((g) => ({ ...g, items: g.items.filter(([to]) => !RES[to] || allows(me.permissions, RES[to], 'read')) }));
   const pages: PaletteItem[] = groups.flatMap((g) => g.items.map(([to, label]) => ({ label, to, group: g.name || 'Pages' })));
   const signOut = async (e: React.MouseEvent) => {
     e.preventDefault();
     auth.clear();
-    if (me.auth === 'oidc') await ssoLogout();
+    if (me.auth === 'oidc' || me.auth === 'user') await ssoLogout();
     setMe(null);
   };
   return (
@@ -163,7 +214,7 @@ export default function App() {
           <div className="side-foot">
             <div className="whoami" title={me.auth}>
               <span className="avatar">{(me.name || '?').slice(0, 1).toUpperCase()}</span>
-              <span className="brand-text trunc">{me.name}</span>
+              <NavLink to="/account" className="brand-text trunc" title="Your account">{me.name}</NavLink>
               <span className={'role role-' + me.role + ' brand-text'}>{me.role}</span>
             </div>
             <button className="theme-btn" onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}>{theme === 'dark' ? 'Light theme' : 'Dark theme'}</button>
@@ -171,7 +222,7 @@ export default function App() {
           </div>
         </nav>
         <div className="main-col">
-          <header className="topbar"><Crumbs /><div className="spacer" />{me.role === 'viewer' && <span className="badge warn">read-only</span>}</header>
+          <header className="topbar"><Crumbs /><div className="spacer" />{me.read_only && <span className="badge warn">read-only</span>}{me.must_change_password && <NavLink to="/account" className="badge warn">change your password</NavLink>}</header>
           <main className="main">
             <Routes>
               <Route path="/" element={<Dashboard />} />
@@ -190,7 +241,9 @@ export default function App() {
               <Route path="/journeys/*" element={<Journeys />} />
               <Route path="/insights/*" element={<Insights />} />
               <Route path="/data/*" element={<Data />} />
-              {me.role === 'admin' && <Route path="/api-keys" element={<ApiKeys />} />}
+              {allows(me.permissions, 'api_keys', 'read') && <Route path="/api-keys" element={<ApiKeys />} />}
+              {allows(me.permissions, 'users', 'read') && <Route path="/users" element={<Users />} />}
+              <Route path="/account" element={<Account onChanged={() => void loadMe()} />} />
               <Route path="/audit" element={<Audit />} />
               <Route path="/settings/*" element={<Settings />} />
               <Route path="*" element={<Navigate to="/" replace />} />

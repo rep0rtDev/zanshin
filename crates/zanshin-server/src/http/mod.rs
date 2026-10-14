@@ -17,6 +17,7 @@ pub mod messaging_v2;
 pub mod overload;
 pub mod server_api;
 pub mod taxonomy;
+pub mod users;
 pub mod v1;
 pub mod webhooks;
 pub mod ws;
@@ -125,7 +126,8 @@ pub fn router(state: AppState) -> Router {
                 .merge(webhooks::router())
                 .merge(journeys::router())
                 .merge(analytics_v2::router())
-                .merge(data::router()),
+                .merge(data::router())
+                .merge(users::router()),
         )
         .merge(console::router())
         .layer(axum::middleware::from_fn_with_state(
