@@ -47,13 +47,15 @@ console comes last once the model is stable.
       audience chips), live-event month calendar backed by `GET /admin/v1/live-events/occurrences`, message
       template preview, comparative analytics chart with tooltips, audit log screen, API key scopes/quotas UI,
       dark theme
+- [x] **Unreal SDK** (`sdk/unreal`): runtime plugin with `FZanshinClient` / `FZanshinStream` (engine HTTP,
+      WebSockets, Json only) and a Blueprint `UZanshinSubsystem` with a synchronous streamed flag cache
 - [x] **Unity SDK** (`sdk/unity`): dependency-free UPM package (netstandard2.1, own JSON), async client
       with single-flight refresh, all client endpoints, reconnecting `ClientWebSocket` stream with
       local flag cache; compiled in CI with `dotnet build`, smoke-tested against a live server
 
 ## 0.2 — reach
 
-- Unreal (C++), Godot (GDScript/C#) SDKs
+- Godot (GDScript/C#) SDK
 - Webhooks and outbound integrations (Slack / Discord / generic)
 - Multi-project (tenant) support with per-project keys
 - [x] Rate limiting (Redis token bucket per scope/caller, per-key quotas), audit log of admin actions

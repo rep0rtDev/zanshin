@@ -77,6 +77,7 @@ variables. `zanshin --check-config` prints the effective configuration with secr
 | Go SDK `sdk/go` (server-key client with local cache + change-stream invalidation) | ✅ |
 | TypeScript SDK `sdk/ts` (browser + Node, zero deps): session with auto-refresh, flags, experiments, live events, inbox, events, WebSocket stream | ✅ |
 | Admin console (`console/`, React, embedded in the binary at `/console`): visual rule builder, flags / experiments / audiences / live-event calendar / messages with preview / identities / analytics / API keys / audit log, dark theme | ✅ |
+| Unreal C++ SDK `sdk/unreal` (plugin on engine HTTP/WebSockets/Json modules, Blueprint subsystem) | ✅ |
 | Unity C# SDK `sdk/unity` (UPM, zero deps, netstandard2.1): same surface as the TS SDK incl. push-token registration and WebSocket stream | ✅ |
 | Push notifications (FCM HTTP v1 / APNs token auth): device token registry, `push: true` on campaigns and direct messages, proactive campaign sweep | ✅ |
 
@@ -139,6 +140,8 @@ API key). The UI is a React app in [`console/`](console) compiled into the serve
 - [`sdk/unity`](sdk/unity) — Unity 2021.3+ UPM package (`https://github.com/rep0rtDev/zanshin.git?path=sdk/unity`):
   async `ZanshinClient` with auto refresh, flags / experiments / live events / inbox / push tokens /
   events, `ZanshinStream` over `System.Net.WebSockets`.
+- [`sdk/unreal`](sdk/unreal) — Unreal Engine 5.3+ plugin: `FZanshinClient` (async, auto refresh, all client
+  endpoints), `FZanshinStream` over the engine `WebSockets` module, Blueprint-friendly `UZanshinSubsystem`.
 - [`sdk/go`](sdk/go) — Go for trusted backends: server-key client with a per-identity evaluation
   cache invalidated by the `/server/v1/stream` change feed, identity sync, direct messages, events.
 - [`nakama/`](nakama) — Nakama runtime plugin on top of the Go SDK: users become Zanshin
