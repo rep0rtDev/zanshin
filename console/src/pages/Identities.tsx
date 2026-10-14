@@ -52,6 +52,28 @@ function List() {
   );
 }
 
+function QaTime({ id }: { id: string }) {
+  const q = useLoad(() => get<{ qa_time: string | null }>(`/identities/${id}/qa-time`), [id]);
+  const [at, setAt] = useState('');
+  const [err, setErr] = useState<Error | null>(null);
+  const save = () => put(`/identities/${id}/qa-time`, { at: new Date(at).toISOString() }).then(() => { setErr(null); q.reload(); }, setErr);
+  const clear = () => del(`/identities/${id}/qa-time`).then(() => { setErr(null); q.reload(); }, setErr);
+  return (
+    <div className="card">
+      <div className="row" style={{ alignItems: 'end' }}>
+        <div className="grow">
+          <strong>QA time travel</strong>
+          <div className="hint">Pin this player's clock to test future live events and schedules. {q.data?.qa_time ? <Badge tone="info">pinned to {fmtDate(q.data.qa_time)}</Badge> : <span className="muted">real time</span>}</div>
+        </div>
+        <Field label="Travel to"><input type="datetime-local" value={at} onChange={(e) => setAt(e.target.value)} /></Field>
+        <button className="btn ghost" disabled={!at} onClick={save}>Pin</button>
+        {q.data?.qa_time && <button className="btn ghost" onClick={clear}>Reset</button>}
+      </div>
+      <ErrorBox error={err} />
+    </div>
+  );
+}
+
 function Detail() {
   const { id } = useParams();
   const nav = useNavigate();
@@ -75,6 +97,7 @@ function Detail() {
               <dt>Last seen</dt><dd>{fmtDate(i.last_seen_at)}</dd>
             </dl>
           </div>
+          <QaTime id={i.id} />
           <div className="tabs">
             {(['props', 'events', 'inbox', 'push'] as const).map((t) => <button key={t} className={tab === t ? 'active' : ''} onClick={() => setTab(t)}>{{ props: 'Properties', events: 'Events', inbox: 'Inbox', push: 'Push devices' }[t]}</button>)}
           </div>

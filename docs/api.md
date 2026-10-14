@@ -290,6 +290,23 @@ gRPC: `ServerGetFlags`, `ServerGetAudiences`, `ServerGetExperiments`, `ServerGet
 | `GET` | `/analytics/events/names?from=&to=&limit=` | — | event names by volume with unique identities |
 | `GET` | `/identities/{identity_id}/events?limit=` | — | most recent events of one identity (with `experiments` tags) |
 
+### Flags v2 / Live events v2
+
+Override chain for a flag value: **identity override → experiment variant → live-event flag override →
+rules in order (audience-scoped variants, rollout) → default**. `GET /admin/v1/flags/{key}/explain/{identity_id}`
+returns every layer with what matched and the final result (`reason` may now be `live_event`).
+
+Live event fields: `join_mode` (`auto` | `explicit`), `sticky`, `participation_secs`, `flag_overrides`
+(`{ "flag_key": value }` applied to participants while the event is active for them).
+
+| Route | Purpose |
+|-------|---------|
+| `POST /v1/live-events/{key}/join`, `POST /v1/live-events/{key}/leave` | Explicit participation (also allowed for `auto` events to start a participation timer). Join requires an open window and matching targeting; emits `$live_event_join`. |
+| `GET /v1/live-events` | Per-player view now includes `join_required`, `joined_at`, `participation_ends_at`. Sticky participants keep the event until their timer ends even outside a window / after targeting changes. |
+| `GET /admin/v1/live-events/{key}/participants?after&limit` | Who joined and when (`left_at` when they left). |
+| `GET /admin/v1/live-events/{key}/timeline?from&to` | Occurrences in range, joins per day, participant totals. |
+| `GET` / `PUT` / `DELETE /admin/v1/identities/{identity_id}/qa-time` `{ "at": "2026-12-24T18:00:00Z" }` | QA time travel: pin the evaluation clock for one identity (7 days) so future live-event windows and schedules can be tested; affects live events and the flag explain view. |
+
 ### Audiences v2
 
 Audience fields beyond the rule: `kind` (`dynamic` | `managed`), `recompute` (`live` | `scheduled`),

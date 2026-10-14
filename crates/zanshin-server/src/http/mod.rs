@@ -7,6 +7,7 @@ pub mod auth;
 pub mod console;
 pub mod error;
 pub mod limits;
+pub mod liveops;
 pub mod server_api;
 pub mod taxonomy;
 pub mod v1;
@@ -105,7 +106,8 @@ pub fn router(state: AppState) -> Router {
             "/admin/v1",
             admin::router()
                 .merge(taxonomy::router())
-                .merge(audiences::router()),
+                .merge(audiences::router())
+                .merge(liveops::router()),
         )
         .merge(console::router())
         .layer(axum::middleware::from_fn_with_state(

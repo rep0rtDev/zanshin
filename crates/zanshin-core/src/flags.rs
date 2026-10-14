@@ -131,12 +131,17 @@ pub enum Reason {
     Rule { rule_id: String },
     Variant { rule_id: String, variant: String },
     Experiment { experiment: String, variant: String },
+    LiveEvent { live_event: String },
 }
 
 /// A value fixed for this identity before rules are consulted.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Pinned<'a> {
     Override(&'a Value),
+    LiveEvent {
+        live_event: &'a str,
+        value: &'a Value,
+    },
     Experiment {
         experiment: &'a str,
         variant: &'a str,
@@ -279,6 +284,13 @@ impl Flag {
                 ev.reason = Reason::Experiment {
                     experiment: experiment.to_string(),
                     variant: variant.to_string(),
+                };
+                return ev;
+            }
+            Some(Pinned::LiveEvent { live_event, value }) => {
+                ev.value = value.clone();
+                ev.reason = Reason::LiveEvent {
+                    live_event: live_event.to_string(),
                 };
                 return ev;
             }

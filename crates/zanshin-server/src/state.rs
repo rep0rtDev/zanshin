@@ -165,6 +165,7 @@ impl AppState {
             live_events.clone(),
             messages.clone(),
             identities,
+            stores.cache.clone(),
         );
         Ok(Self {
             cfg,

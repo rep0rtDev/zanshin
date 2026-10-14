@@ -41,6 +41,21 @@ pub struct LiveEvent {
     /// Free-form payload handed to clients while the event is active.
     #[serde(default)]
     pub payload: Value,
+    /// `auto`: every targeted player is in while a window is open. `explicit`: the player must
+    /// join (`POST /v1/live-events/{key}/join`) during a window.
+    #[serde(default)]
+    pub join_mode: JoinMode,
+    /// Once joined, the player stays a participant across windows (and after targeting changes).
+    #[serde(default)]
+    pub sticky: bool,
+    /// Per-player participation length in seconds from join time (capped by the window end
+    /// unless `sticky`).
+    #[serde(default)]
+    pub participation_secs: Option<i64>,
+    /// Flag values that override normal evaluation for participants while the event is active
+    /// for them (`{ "flag_key": value }`).
+    #[serde(default)]
+    pub flag_overrides: serde_json::Map<String, Value>,
     #[serde(default)]
     pub tags: Vec<String>,
     pub version: i64,
@@ -55,6 +70,34 @@ pub struct Occurrence {
     pub end: DateTime<Utc>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum JoinMode {
+    #[default]
+    Auto,
+    Explicit,
+}
+
+impl JoinMode {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            JoinMode::Auto => "auto",
+            JoinMode::Explicit => "explicit",
+        }
+    }
+}
+
+impl std::str::FromStr for JoinMode {
+    type Err = Error;
+    fn from_str(s: &str) -> Result<Self> {
+        match s {
+            "auto" => Ok(JoinMode::Auto),
+            "explicit" => Ok(JoinMode::Explicit),
+            other => Err(Error::invalid(format!("unknown join_mode {other:?}"))),
+        }
+    }
+}
+
 /// What a client sees for an event that targets it.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ActiveEvent {
@@ -67,11 +110,22 @@ pub struct ActiveEvent {
     pub current: Option<Occurrence>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub next: Option<Occurrence>,
+    /// The player must call join before the event becomes active for them.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub join_required: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub joined_at: Option<DateTime<Utc>>,
+    /// When the player's participation ends (participation timer or window end).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub participation_ends_at: Option<DateTime<Utc>>,
     pub version: i64,
 }
 
 impl LiveEvent {
     pub fn validate(&self) -> Result<()> {
+        if self.participation_secs.is_some_and(|s| s <= 0) {
+            return Err(Error::invalid("participation_secs must be positive"));
+        }
         validate_key(&self.key)?;
         self.condition.validate()?;
         if let Some(d) = self.duration_secs {
@@ -173,16 +227,42 @@ impl LiveEvent {
         }
     }
 
+    /// Schedule-only view (no participant state).
     pub fn view(&self, now: DateTime<Utc>) -> ActiveEvent {
+        self.view_for(now, None)
+    }
+
+    /// View for a specific player given when (if ever) they joined. Explicit-join events are only
+    /// active for joined players; `participation_secs` ends participation early; `sticky`
+    /// participants stay active until their timer runs out even outside a window.
+    pub fn view_for(&self, now: DateTime<Utc>, joined_at: Option<DateTime<Utc>>) -> ActiveEvent {
         let current = self.current(now);
+        let timer_end =
+            joined_at.and_then(|j| self.participation_secs.map(|s| j + Duration::seconds(s)));
+        let joined = joined_at.is_some();
+        let (active, participation_ends_at) = match (&current, timer_end) {
+            (Some(c), Some(t)) => {
+                let end = if self.sticky { t } else { t.min(c.end) };
+                (
+                    now < end && (joined || self.join_mode == JoinMode::Auto),
+                    Some(end),
+                )
+            }
+            (Some(c), None) => (joined || self.join_mode == JoinMode::Auto, Some(c.end)),
+            (None, Some(t)) if self.sticky && joined => (now < t, Some(t)),
+            (None, _) => (false, None),
+        };
         ActiveEvent {
             key: self.key.clone(),
             name: self.name.clone(),
             description: self.description.clone(),
             value: self.payload.clone(),
-            active: current.is_some(),
+            active,
             next: self.next(now),
             current,
+            join_required: self.join_mode == JoinMode::Explicit && !joined,
+            joined_at,
+            participation_ends_at: if active { participation_ends_at } else { None },
             version: self.version,
         }
     }
@@ -212,6 +292,10 @@ mod tests {
             duration_secs: duration,
             recurrence: recurrence.map(String::from),
             payload: serde_json::json!({"xp": 2}),
+            join_mode: JoinMode::Auto,
+            sticky: false,
+            participation_secs: None,
+            flag_overrides: Default::default(),
             tags: vec![],
             version: 1,
             created_at: Utc::now(),
