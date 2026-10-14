@@ -14,6 +14,7 @@ pub async fn run(state: AppState, mut shutdown: watch::Receiver<bool>) {
         tokio::select! {
             _ = sweep.tick() => {
                 sweep_push(&state).await;
+                sweep_scheduled(&state).await;
                 close_idle_sessions(&state).await;
                 for key in state.audiences.due_for_recompute().await {
                     if let Err(e) = state.audiences.recompute(&key).await {
@@ -63,6 +64,17 @@ async fn sweep_push(state: &AppState) {
         .await
     {
         tracing::warn!(error = %e, "push campaign sweep failed");
+    }
+}
+
+async fn sweep_scheduled(state: &AppState) {
+    let identities = zanshin_store::identities::IdentityRepo::new(state.stores.pg.clone());
+    if let Err(e) = state
+        .messages
+        .sweep_scheduled(&state.eval, &identities)
+        .await
+    {
+        tracing::warn!(error = %e, "scheduled campaign sweep failed");
     }
 }
 

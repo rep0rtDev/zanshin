@@ -10,6 +10,7 @@ pub mod events;
 pub mod experiments;
 pub mod flags;
 pub mod identities;
+pub mod integrations;
 pub mod live_events;
 pub mod messages;
 pub mod metrics;
@@ -146,3 +147,4 @@ pub(crate) fn map_sqlx(e: sqlx::Error) -> Error {
         _ => Error::internal(e),
     }
 }
+pub mod templates;

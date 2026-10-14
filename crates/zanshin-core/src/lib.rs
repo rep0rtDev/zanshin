@@ -9,12 +9,14 @@ pub mod expr;
 pub mod flags;
 pub mod hash;
 pub mod identity;
+pub mod integrations;
 pub mod live_events;
 pub mod messages;
 pub mod metrics;
 pub mod properties;
 pub mod push;
 pub mod rules;
+pub mod templates;
 pub mod token;
 
 pub use error::{Error, Result};

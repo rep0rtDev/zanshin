@@ -171,6 +171,7 @@ function InboxTab({ id }: { id: string }) {
           { h: 'Title', c: (m) => <><strong>{m.title}</strong>{m.key && <div className="hint">campaign {m.key}</div>}</> },
           { h: 'State', c: (m) => m.read_at ? <Badge>read</Badge> : <Badge tone="info">unread</Badge> },
           { h: 'Expires', c: (m) => fmtDate(m.expires_at) },
+          { h: '', c: (m) => <button className="btn ghost sm" onClick={() => del(`/identities/${id}/inbox/${m.id}`).then(q.reload)}>Delete</button> },
         ]}
       />
     </>

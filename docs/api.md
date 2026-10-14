@@ -290,6 +290,32 @@ gRPC: `ServerGetFlags`, `ServerGetAudiences`, `ServerGetExperiments`, `ServerGet
 | `GET` | `/analytics/events/names?from=&to=&limit=` | — | event names by volume with unique identities |
 | `GET` | `/identities/{identity_id}/events?limit=` | — | most recent events of one identity (with `experiments` tags) |
 
+### Messaging v2: templates, schedules, integrations, delivery log
+
+| Route | Purpose |
+|-------|---------|
+| `GET/POST /admin/v1/templates`, `GET/PUT/DELETE /admin/v1/templates/{key}` | Template catalog: `format` (`plaintext` / `html` / `json`), `default_locale`, `translations` (`{ "en": { "title", "body" }, "de": … }`), `image_url`, `payload`. `GET` one includes `used_by` campaigns; a template in use cannot be deleted. |
+| `POST /admin/v1/templates/{key}/render` `{ identity_id \| external_id, locale }` | Preview the rendered title/body for a player (locale: exact → language → default). |
+| `POST /admin/v1/templates/{key}/test` `{ identity_id \| external_id, locale, push }` | Test send: renders and drops the message into that player's inbox (optionally pushes). |
+| `GET/POST /admin/v1/integrations`, `GET/PUT/DELETE /admin/v1/integrations/{key}` | Delivery integrations: `kind` `webhook` (`url`, `secret`, `headers`), `onesignal` (`app_id`, `api_key`), `facebook` (`access_token`; player needs a `facebook_id` property), `fcm` / `apns` (server push config). Secrets are masked on read; sending the mask back keeps the stored value. |
+| `POST /admin/v1/integrations/{key}/test` `{ external_id }` | Send a sample message through the integration; returns `{ status, detail }`. |
+| `GET /admin/v1/messages/{key}/deliveries?status&channel&after&limit` | Per-channel delivery log (`sent` / `failed` / `skipped` with detail) plus `stats` per channel/status. |
+| `DELETE /v1/inbox/{id}` | Remove a message from the player's inbox (unlike `DELETE /v1/messages/{id}`, which marks it consumed). |
+| `DELETE /admin/v1/identities/{id}/inbox/{msg}` | Same, from the console. |
+
+Campaign fields added: `template_key` (render from a template per player locale instead of inline title/body),
+`channels` (`["inbox", "<integration key>", …]`; the inbox row is always the delivery record), and `schedule`:
+
+```json
+{ "kind": "once" }
+{ "kind": "cron", "cron": "0 0 12 * * *", "window_secs": 86400 }
+{ "kind": "live_event", "live_event": "weekend_rush", "anchor": "start", "offset_secs": 0, "window_secs": 86400 }
+```
+
+`cron` and `live_event` campaigns deliver once per occurrence (the inbox row carries `occurrence`), both on the
+player's next inbox fetch and proactively by the housekeeping sweep every minute. Webhook deliveries are signed:
+`X-Zanshin-Signature: sha256=HMAC_SHA256(secret, "{X-Zanshin-Timestamp}.{body}")`.
+
 ### Metrics catalog / Experiments v2
 
 Metrics are named measurements over events: `kind` (`goal` | `monitor`), `event_name`, `aggregation`

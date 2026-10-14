@@ -3,9 +3,11 @@ import { get, post, useLoad } from '../api';
 import { EntityPage, Text, Num, Tags, DateTime } from '../crud';
 import { AudiencePicker, ConditionEditor } from '../RuleBuilder';
 import type { Cond } from '../RuleBuilder';
-import { Badge, ErrorBox, Field, JsonField, Stat, Toggle, fmtDate, fmtNum } from '../ui';
+import { Badge, ErrorBox, Field, JsonField, Stat, Table, Toggle, fmtDate, fmtNum } from '../ui';
 
+type Schedule = { kind: 'once' } | { kind: 'cron'; cron: string; window_secs?: number | null } | { kind: 'live_event'; live_event: string; anchor?: 'start' | 'end'; offset_secs?: number; window_secs?: number | null };
 type Campaign = {
+  template_key?: string | null; schedule?: Schedule; channels?: string[];
   key: string; name: string; enabled: boolean; title: string; body: string; image_url: string; payload: unknown; condition: Cond | null; audiences: string[];
   percentage: number; starts_at: string | null; ends_at: string | null; ttl_secs: number | null; priority: number; push: boolean; tags: string[]; version: number; updated_at: string;
 };
@@ -49,6 +51,84 @@ function CampaignStats({ c }: { c: Campaign }) {
   );
 }
 
+function TemplatePicker({ value, onChange }: { value: string | null; onChange: (v: string | null) => void }) {
+  const q = useLoad(() => get<{ items: { key: string; name: string; format: string }[] }>('/templates'), []);
+  return (
+    <Field label="Template" hint="optional: render title/body/payload from the template in each player's locale">
+      <select value={value ?? ''} onChange={(e) => onChange(e.target.value || null)}>
+        <option value="">— inline title/body —</option>
+        {(q.data?.items ?? []).map((t) => <option key={t.key} value={t.key}>{t.key}{t.name ? ` — ${t.name}` : ''} ({t.format})</option>)}
+      </select>
+    </Field>
+  );
+}
+
+function ScheduleEditor({ value, onChange }: { value: Schedule; onChange: (v: Schedule) => void }) {
+  const ev = useLoad(() => get<{ items: { key: string }[] } | { key: string }[]>('/live-events'), []);
+  const events = Array.isArray(ev.data) ? ev.data : ev.data?.items ?? [];
+  const kind = value.kind;
+  return (
+    <div className="row" style={{ alignItems: 'end' }}>
+      <Field label="Kind">
+        <select value={kind} onChange={(e) => { const k = e.target.value as Schedule['kind']; onChange(k === 'once' ? { kind: 'once' } : k === 'cron' ? { kind: 'cron', cron: '0 0 12 * * *' } : { kind: 'live_event', live_event: events[0]?.key ?? '', anchor: 'start', offset_secs: 0 }); }}>
+          <option value="once">once</option><option value="cron">cron (UTC)</option><option value="live_event">relative to live event</option>
+        </select>
+      </Field>
+      {value.kind === 'cron' && <>
+        <Text label="Cron (sec min hour dom mon dow)" value={value.cron} onChange={(cron) => onChange({ ...value, cron })} mono />
+        <Num label="Window (s)" value={value.window_secs ?? null} onChange={(window_secs) => onChange({ ...value, window_secs: window_secs ?? null })} hint="blank = 24h" />
+      </>}
+      {value.kind === 'live_event' && <>
+        <Field label="Live event"><select value={value.live_event} onChange={(e) => onChange({ ...value, live_event: e.target.value })}>{events.map((e) => <option key={e.key} value={e.key}>{e.key}</option>)}</select></Field>
+        <Field label="Anchor"><select value={value.anchor ?? 'start'} onChange={(e) => onChange({ ...value, anchor: e.target.value as 'start' | 'end' })}><option value="start">event start</option><option value="end">event end</option></select></Field>
+        <Num label="Offset (s)" value={value.offset_secs ?? 0} onChange={(offset_secs) => onChange({ ...value, offset_secs: offset_secs ?? 0 })} hint="negative = before" />
+      </>}
+    </div>
+  );
+}
+
+function ChannelsPicker({ value, onChange }: { value: string[]; onChange: (v: string[]) => void }) {
+  const q = useLoad(() => get<{ items: { key: string; kind: string; enabled: boolean }[] }>('/integrations'), []);
+  const items = q.data?.items ?? [];
+  return (
+    <div className="chips">
+      <span className="chip on">inbox</span>
+      {items.map((i) => { const on = value.includes(i.key); return <button key={i.key} type="button" className={'chip' + (on ? ' on' : '')} onClick={() => onChange(on ? value.filter((k) => k !== i.key) : [...value.filter((k) => k !== 'inbox'), i.key, 'inbox'])}>{i.key} <span className="hint">{i.kind}</span></button>; })}
+      {items.length === 0 && <span className="hint">No integrations yet — add one under Integrations.</span>}
+    </div>
+  );
+}
+
+type DeliveryRow = { id: string; external_id: string; occurrence: string | null; channel: string; status: string; detail: string; at: string };
+
+function Deliveries({ c }: { c: Campaign }) {
+  const [status, setStatus] = useState('');
+  const q = useLoad(() => get<{ items: DeliveryRow[]; stats: { channel: string; status: string; count: number }[] }>(`/messages/${encodeURIComponent(c.key)}/deliveries?limit=100${status ? '&status=' + status : ''}`), [c.key, status]);
+  return (
+    <div className="card">
+      <div className="row" style={{ alignItems: 'center' }}>
+        <strong>Delivery log</strong>
+        <select value={status} onChange={(e) => setStatus(e.target.value)}><option value="">all</option><option value="sent">sent</option><option value="failed">failed</option><option value="skipped">skipped</option></select>
+        <button className="btn ghost sm" onClick={q.reload}>Refresh</button>
+      </div>
+      <ErrorBox error={q.error} />
+      <div className="chips" style={{ marginTop: 8 }}>{(q.data?.stats ?? []).map((s) => <span key={s.channel + s.status} className="chip"><code>{s.channel}</code> {s.status}: {fmtNum(s.count)}</span>)}</div>
+      <Table<DeliveryRow>
+        rows={q.data?.items}
+        rowKey={(d) => d.id}
+        empty="No deliveries yet"
+        cols={[
+          { h: 'When', c: (d) => fmtDate(d.at) },
+          { h: 'Player', c: (d) => <span className="mono">{d.external_id}</span> },
+          { h: 'Channel', c: (d) => <code>{d.channel}</code> },
+          { h: 'Status', c: (d) => <Badge tone={d.status === 'sent' ? 'ok' : d.status === 'failed' ? 'bad' : 'warn'}>{d.status}</Badge> },
+          { h: 'Detail', c: (d) => <span className="hint">{d.detail}{d.occurrence ? ` · occurrence ${fmtDate(d.occurrence)}` : ''}</span> },
+        ]}
+      />
+    </div>
+  );
+}
+
 export function DirectSend({ identityId, onSent }: { identityId: string; onSent?: () => void }) {
   const [m, setM] = useState({ title: '', body: '', image_url: '', payload: {} as unknown, priority: 0, push: false });
   const [res, setRes] = useState<string | null>(null);
@@ -88,7 +168,7 @@ export default function Messages() {
         { h: 'Push', c: (c) => c.push ? <Badge tone="info">push</Badge> : <span className="muted">—</span> },
         { h: 'Priority', c: (c) => c.priority },
       ]}
-      blank={() => ({ key: '', name: '', enabled: true, title: '', body: '', image_url: '', payload: {}, condition: null, audiences: [], percentage: 100, starts_at: null, ends_at: null, ttl_secs: null, priority: 0, push: false, tags: [] })}
+      blank={() => ({ key: '', template_key: null, schedule: { kind: 'once' }, channels: ['inbox'], name: '', enabled: true, title: '', body: '', image_url: '', payload: {}, condition: null, audiences: [], percentage: 100, starts_at: null, ends_at: null, ttl_secs: null, priority: 0, push: false, tags: [] })}
       form={(d, set, isNew) => (
         <>
           <div className="row">
@@ -96,7 +176,8 @@ export default function Messages() {
             <Text label="Name" value={d.name} onChange={(name) => set({ name })} hint="internal" />
             <div className="field fixed"><span className="label">Enabled</span><Toggle value={!!d.enabled} onChange={(enabled) => set({ enabled })} label={d.enabled ? 'on' : 'off'} /></div>
           </div>
-          <Text label="Title" value={d.title} onChange={(title) => set({ title })} placeholder="Welcome back, {{default.name}}!" />
+          <TemplatePicker value={d.template_key ?? null} onChange={(template_key) => set({ template_key })} />
+          <Text label="Title" value={d.title} onChange={(title) => set({ title })} placeholder="Welcome back, {{default.name}}!" hint={d.template_key ? 'fallback only — the template renders title/body' : undefined} />
           <Field label="Body"><textarea rows={3} value={d.body ?? ''} onChange={(e) => set({ body: e.target.value })} style={{ fontFamily: 'inherit' }} /></Field>
           <div className="row">
             <Text label="Image URL" value={d.image_url} onChange={(image_url) => set({ image_url })} />
@@ -113,12 +194,14 @@ export default function Messages() {
             <Num label="Priority" value={d.priority} onChange={(priority) => set({ priority: priority ?? 0 })} hint="higher first in inbox" />
             <div className="field fixed"><span className="label">Push notification</span><Toggle value={!!d.push} onChange={(push) => set({ push })} label={d.push ? 'also push' : 'inbox only'} /></div>
           </div>
+          <Field label="Schedule" hint="once = on the first eligible inbox fetch; cron / live event = once per occurrence, also pushed proactively every minute"><ScheduleEditor value={d.schedule ?? { kind: 'once' }} onChange={(schedule) => set({ schedule })} /></Field>
+          <Field label="Channels" hint="inbox is always the delivery record; integrations are sent in addition"><ChannelsPicker value={d.channels ?? ['inbox']} onChange={(channels) => set({ channels })} /></Field>
           <Field label="Targeting condition"><ConditionEditor optional value={d.condition} onChange={(condition) => set({ condition })} /></Field>
           <Field label="Audiences"><AudiencePicker value={d.audiences ?? []} onChange={(audiences) => set({ audiences })} /></Field>
           <Tags value={d.tags} onChange={(tags) => set({ tags })} />
         </>
       )}
-      extra={(c) => <CampaignStats c={c} />}
+      extra={(c) => <><CampaignStats c={c} /><Deliveries c={c} /></>}
     />
   );
 }
