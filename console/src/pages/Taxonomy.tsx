@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { toast } from '../toast';
 import { NavLink, Navigate, Route, Routes } from 'react-router-dom';
 import { del, get, post, put, qs, useLoad } from '../api';
 import { Badge, Confirm, ErrorBox, Field, JsonField, Page, Table, Toggle, fmtDate, fmtNum } from '../ui';
@@ -252,7 +253,10 @@ function Schemas() {
   return (
     <>
       <p className="muted">JSON Schemas describe the shape of structured flag and live-event values. Attach one to a flag and every variant, override and default is validated on save.</p>
-      <div className="actions"><button className="btn" onClick={() => { setEdit({ name: '', description: '', schema: { type: 'object', properties: {} } }); setVerdict(null); }}>New schema</button></div>
+      <div className="actions">
+        <button className="btn" onClick={() => { setEdit({ name: '', description: '', schema: { type: 'object', properties: {} } }); setVerdict(null); }}>New schema</button>
+        <button className="btn ghost" title="ANY, Number, String, Object, Event-Revenue-Metadata — skips ones that already exist" onClick={() => run(async () => { const r = await post<{ created: string[] }>('/schemas/presets'); toast(r.created.length ? `Added ${r.created.join(', ')}` : 'Built-in validators already present'); q.reload(); })}>Add built-in validators</button>
+      </div>
       <ErrorBox error={error ?? q.error} />
       {edit && (
         <div className="card">

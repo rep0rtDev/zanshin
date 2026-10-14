@@ -372,6 +372,7 @@ Per-player automations under `/admin/v1/journeys` and the **Journeys** console p
 | `GET /admin/v1/journeys/{key}/runs/{id}` | One run with its step log. |
 | `POST /admin/v1/journeys/{key}/runs/{id}/exit` | Stop an active run. |
 | `GET /admin/v1/identities/{id}/journeys` | A player's runs across journeys, each with its step `log` (what happened, when). |
+| `GET /admin/v1/identities/{id}/flags` | Every flag as this player resolves it right now — value, `variant` and `reason` (`default` / `disabled` / `rule` / `variant` / `override` / `experiment` / `live_event`), the console's **Flags** tab on an identity. |
 
 Triggers: `{ "kind": "manual" }`, `{ "kind": "event", "name": "purchase" }`, `{ "kind": "identity_created" }`,
 `{ "kind": "audience_enter", "audience": "whales" }` (checked whenever the player produces an event, once per membership),
@@ -413,7 +414,7 @@ Outbound HTTP callbacks for system events, managed under `/admin/v1/webhooks` an
 
 Event types: `identity.created` / `identity.authenticated` / `identity.identified`, `session.started` / `session.ended`,
 `experiment.joined` / `experiment.exposed`, `live_event.joined`, `message.delivered` / `message.read`, `event.<name>` for every
-analytics event, and `<flag|audience|experiment|live_event|message>.<updated|deleted>` for configuration changes.
+analytics event, and `<flag|audience|experiment|live_event|message>.<updated|deleted>` for configuration changes, `flag.rule.created` / `flag.rule.updated` / `flag.rule.deleted` (one per targeting rule that appeared, changed or vanished in a flag update — Satori's variant events), `journey.step_reached` (a player reached a *Send to integration* step; carries `journey`, `step`, `integration`, delivery `status`), `message.direct_sent` (a direct message was sent from the console or API).
 
 Request: `POST url` with JSON `{ "webhook", "delivery_id", "attempt", "sent_at", "events": [ { "id", "type", "at", "data" } ] }` and
 headers `X-Zanshin-Event` (the type, or `batch`), `X-Zanshin-Delivery`, `X-Zanshin-Webhook`, `X-Zanshin-Timestamp`,
@@ -532,6 +533,7 @@ resolved per audience as **exclude list → include list → stored membership (
 
 | Route | Purpose |
 |-------|---------|
+| `DELETE /admin/v1/audiences/{key}/members/all` | Permanently deletes every identity in the audience (GDPR delete per member, events included). Only with `admin.audience_delete_all_enabled: true` on a non-production server and the `identities:delete` permission; otherwise 403. |
 | `GET /admin/v1/audiences/{key}/members?after&limit` | Current members with `joined_at` and `source` (`rule` / `include` / `managed`). Live audiences mirror rule results here as identities are evaluated. |
 | `POST` / `DELETE /admin/v1/audiences/{key}/members` `{ "external_ids": [...] }` | Managed membership (admin). Same on the server API: `POST` / `DELETE /server/v1/audiences/{key}/members` (server key, e.g. from Nakama). Unknown ids are returned in `missing`. |
 | `GET` / `PUT` / `DELETE /admin/v1/audiences/{key}/lists` | Include / exclude entries `{ "external_id", "mode": "include"|"exclude", "until"?, "reason"? }`; exclusions with `until` expire automatically. |
@@ -564,6 +566,7 @@ timestamp property and are available everywhere conditions are.
 | `GET/DELETE /admin/v1/taxonomy/rejected?limit=` | Last N (default 200) invalid events with identity, payload and reason, and whether they were dropped. |
 | `GET /admin/v1/taxonomy/properties`, `PUT/DELETE /admin/v1/taxonomy/properties/{key}` | Observed property catalog per namespace plus configuration; `read_only: true` makes a custom key writable only through the server API. |
 | `GET/POST /admin/v1/schemas`, `GET/PUT/DELETE /admin/v1/schemas/{id}`, `POST /admin/v1/schemas/validate` | JSON Schemas for structured values; `validate` takes `{ "schema", "samples": [...] }` and returns per-sample errors. |
+| `POST /admin/v1/schemas/presets` | Creates the built-in validators that are missing — `ANY`, `Number`, `String`, `Object`, `Event-Revenue-Metadata` (`amount` + ISO-4217 `currency`, optional `test`). Idempotent. |
 | `GET /admin/v1/identities/{id}/sessions`, `GET /admin/v1/identities/{id}/merges` | Play-session and merge history. |
 
 Configuration: `taxonomy.mode`, `taxonomy.auto_discover`, `taxonomy.geoip_db`, `taxonomy.session_inactivity`,
@@ -667,6 +670,9 @@ and `"true"` vs `true`.
 | `GET /healthz` | liveness |
 | `GET /readyz` | readiness — pings PostgreSQL, Redis and ClickHouse (if enabled) |
 | `GET /metrics` | Prometheus text format |
+| `GET /admin/v1/system` | Version, build info, store health, inventory counts, limits and `console.audience_delete_all_enabled`. |
+| `GET /admin/v1/system/config` | Effective configuration (defaults → `zanshin.yml` → `ZANSHIN__*` environment) with secrets masked (`***`, user-info stripped from URLs); Settings → Configuration, exportable as JSON. |
+| `GET/PUT /admin/v1/console/settings` | Console-wide display preferences shared by all users: `timezone` (IANA name, empty = browser) and `default_range_days`. |
 
 gRPC: `grpc.health.v1.Health/Check`, `grpc.reflection.v1.ServerReflection`.
 
@@ -733,6 +739,7 @@ changes are derived from successful mutating admin calls (actor, method, path).
 | DELETE | `/admin/v1/data/identities/{id}` | GDPR deletion: identity, sessions, inbox, assignments and all events (ClickHouse mutation). |
 | POST | `/admin/v1/data/events/purge` | `{ before, names? }` — delete events older than a timestamp (at least one hour in the past). |
 | POST | `/admin/v1/data/sample` | `{ players, days, seed }` — deterministic synthetic players with sessions, level-ups and purchases for trying analytics on an empty server. |
+| POST | `/admin/v1/data/defaults` | Re-creates the default audiences (`tier_1_countries`, `spenders`, `whales`, `non_spenders`, `new_players`, `lapsed_players`, `ios`, `android`) and metrics (`active_users`, `sessions`, `revenue`, `purchases`, `paying_users`, `ad_impressions`) that are missing; existing keys are untouched. |
 
 ## Console users and permissions
 

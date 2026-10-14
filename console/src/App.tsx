@@ -4,6 +4,7 @@ import { Palette, type PaletteItem } from './Palette';
 import { Toasts } from './toast';
 import Settings from './pages/Settings';
 import { MeContext } from './me';
+import { setDisplayTz } from './ui';
 import { ApiError, auth, authConfig, get, passwordLogin, project, resetPassword, ssoLogout, type AuthConfig, type Me } from './api';
 import Users from './pages/Users';
 import Account from './pages/Account';
@@ -189,6 +190,7 @@ export default function App() {
   const loadMe = useCallback(async () => {
     try {
       setMe(await get<Me>('/me'));
+      get<{ timezone?: string }>('/console/settings').then((c) => setDisplayTz(c.timezone ?? ''), () => {});
     } catch {
       setMe(null);
     }

@@ -539,6 +539,14 @@ impl JourneyService {
                     props: flat,
                 };
                 let o = self.deps.integrations.deliver(integration, &out).await;
+                let _ = self.hooks.send(WebhookEvent::new(
+                    "journey.step_reached",
+                    serde_json::json!({
+                        "journey": j.key, "step": step.id, "integration": integration,
+                        "identity_id": identity.id, "external_id": identity.external_id,
+                        "title": title, "body": body, "payload": payload, "status": o.status,
+                    }),
+                ));
                 if o.status == "failed" {
                     return Err(Error::unavailable(format!(
                         "integration {integration}: {}",

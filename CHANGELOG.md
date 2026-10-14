@@ -6,6 +6,20 @@ Release automation reads the section whose heading contains the tagged version.
 
 ## [Unreleased]
 
+### Added
+- Satori parity leftovers: **Flags** tab on an identity (`GET /admin/v1/identities/{id}/flags`) showing every
+  resolved flag with its value source (default / rule / variant / override / experiment / live event); the
+  expression ("query view") editor is now available on every condition — flag rules, live events, journeys,
+  messages and experiments, not only audiences; built-in validators (`POST /admin/v1/schemas/presets`:
+  `ANY`, `Number`, `String`, `Object`, `Event-Revenue-Metadata`); Settings → General console preferences
+  (`GET/PUT /admin/v1/console/settings`: display timezone for all users, default analytics range) and a
+  Settings → Configuration tab with the effective, secret-masked server configuration and JSON export
+  (`GET /admin/v1/system/config`); default data restore (`POST /admin/v1/data/defaults`: Tier-1-Countries,
+  Spenders, Whales, New-Players, Lapsed-Players, iOS / Android audiences and Active-Users, Sessions, Revenue,
+  Purchases, Paying-Users, Ad-Impressions metrics); **Delete all identities** on an audience, gated by
+  `admin.audience_delete_all_enabled` and refused in production; webhook event types `flag.rule.created` /
+  `flag.rule.updated` / `flag.rule.deleted`, `journey.step_reached` and `message.direct_sent`.
+
 ### Changed
 - Console cleanup (same design, tidier): denser spacing for cards, tables, forms and stats; detail
   pages are roughly a third of their former height; audience and metric chip walls replaced by a

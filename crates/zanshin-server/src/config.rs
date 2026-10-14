@@ -11,6 +11,10 @@ use zanshin_store::{ClickHouseConfig, DatabaseConfig, RedisConfig};
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct Config {
+    /// The merged configuration as loaded (defaults + file + environment), kept for
+    /// `GET /admin/v1/system/config`; see [`Config::redacted`].
+    #[serde(skip)]
+    pub effective: serde_json::Value,
     pub server: ServerConfig,
     pub database: DatabaseConfig,
     pub redis: RedisConfig,
@@ -296,6 +300,10 @@ pub struct AdminConfig {
     /// Lifetime of a console login (cookie session) established through OIDC.
     #[serde(default = "default_console_session_ttl", with = "humantime_serde")]
     pub console_session_ttl: Duration,
+    /// Enables "Delete all identities" on an audience in the console (development
+    /// environments only; refused when `server.production` is set).
+    #[serde(default)]
+    pub audience_delete_all_enabled: bool,
 }
 
 /// OpenID Connect login for the admin console (authorization code + PKCE).
@@ -467,9 +475,65 @@ impl Config {
                 .split("__")
                 .map(|k| k.as_str().to_lowercase().into()),
         );
-        let cfg: Config = fig.extract().context("invalid configuration")?;
+        let mut cfg: Config = fig.extract().context("invalid configuration")?;
+        cfg.effective = fig.extract().unwrap_or(serde_json::Value::Null);
         cfg.validate()?;
         Ok(cfg)
+    }
+
+    /// Effective configuration with secrets masked: any key that looks like a credential
+    /// (`*secret*`, `*password*`, `*token*`, `*_key`, `bootstrap_key`, …) becomes `"***"`, and
+    /// user-info is stripped from connection URLs.
+    pub fn redacted(&self) -> serde_json::Value {
+        fn secret_key(k: &str) -> bool {
+            let k = k.to_ascii_lowercase();
+            [
+                "secret",
+                "password",
+                "passwd",
+                "token",
+                "credential",
+                "private",
+            ]
+            .iter()
+            .any(|w| k.contains(w))
+                || k.ends_with("_key")
+                || k == "key"
+        }
+        fn mask_url(v: &str) -> String {
+            match v.split_once("://") {
+                Some((scheme, rest)) if rest.contains('@') => {
+                    let (_, host) = rest.rsplit_once('@').unwrap_or(("", rest));
+                    format!("{scheme}://***@{host}")
+                }
+                _ => v.to_string(),
+            }
+        }
+        fn walk(v: &serde_json::Value) -> serde_json::Value {
+            match v {
+                serde_json::Value::Object(m) => serde_json::Value::Object(
+                    m.iter()
+                        .map(|(k, v)| {
+                            let out = if secret_key(k) && !v.is_null() && !v.is_object() {
+                                serde_json::Value::String("***".into())
+                            } else if let (true, Some(s)) =
+                                (k.ends_with("url") || k.ends_with("dsn"), v.as_str())
+                            {
+                                serde_json::Value::String(mask_url(s))
+                            } else {
+                                walk(v)
+                            };
+                            (k.clone(), out)
+                        })
+                        .collect(),
+                ),
+                serde_json::Value::Array(a) => {
+                    serde_json::Value::Array(a.iter().map(walk).collect())
+                }
+                other => other.clone(),
+            }
+        }
+        walk(&self.effective)
     }
 
     /// `ZANSHIN_FILE__SECTION__KEY=/run/secrets/x` reads the file and exposes its trimmed content

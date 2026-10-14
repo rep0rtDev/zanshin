@@ -757,6 +757,13 @@ impl MessageService {
         let mut c = self.bus.change(ChangeKind::Message, "direct", 0);
         c.identity_id = Some(identity.id);
         self.bus.publish(c).await;
+        let _ = self.hooks.send(zanshin_core::webhooks::WebhookEvent::new(
+            "message.direct_sent",
+            serde_json::json!({
+                "identity_id": identity.id, "external_id": identity.external_id,
+                "inbox_id": id, "title": title, "channels": msg.channels,
+            }),
+        ));
         metrics::counter!("zanshin_messages_delivered_total", "message" => "direct").increment(1);
         Ok(id)
     }
