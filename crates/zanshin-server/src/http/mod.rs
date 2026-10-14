@@ -1,6 +1,7 @@
 //! REST/JSON surface (axum).
 
 pub mod admin;
+pub mod analytics_v2;
 pub mod audiences;
 pub mod audit;
 pub mod auth;
@@ -115,7 +116,8 @@ pub fn router(state: AppState) -> Router {
                 .merge(experiments_v2::router())
                 .merge(messaging_v2::router())
                 .merge(webhooks::router())
-                .merge(journeys::router()),
+                .merge(journeys::router())
+                .merge(analytics_v2::router()),
         )
         .merge(console::router())
         .layer(axum::middleware::from_fn_with_state(

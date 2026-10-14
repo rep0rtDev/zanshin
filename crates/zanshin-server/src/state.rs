@@ -1,5 +1,6 @@
 use crate::services::taxonomy::TaxonomyService;
 use crate::services::{
+    analytics::AnalyticsService,
     audit::AuditService,
     integrations::IntegrationService,
     journeys::{JourneyDeps, JourneyService},
@@ -15,10 +16,22 @@ use zanshin_store::taxonomy::TaxonomyRepo;
 use zanshin_core::token::TokenIssuer;
 use zanshin_store::audit::AuditRepo;
 use zanshin_store::{
-    api_keys::ApiKeyRepo, audiences::AudienceRepo, experiments::ExperimentRepo, flags::FlagRepo,
-    identities::IdentityRepo, integrations::IntegrationRepo, journeys::JourneyRepo,
-    live_events::LiveEventRepo, messages::MessageRepo, metrics::MetricRepo, push::PushTokenRepo,
-    sessions::SessionRepo, templates::TemplateRepo, webhooks::WebhookRepo, Stores,
+    analytics::{AnnotationRepo, DashboardRepo, PlayerMetricsRepo},
+    api_keys::ApiKeyRepo,
+    audiences::AudienceRepo,
+    experiments::ExperimentRepo,
+    flags::FlagRepo,
+    identities::IdentityRepo,
+    integrations::IntegrationRepo,
+    journeys::JourneyRepo,
+    live_events::LiveEventRepo,
+    messages::MessageRepo,
+    metrics::MetricRepo,
+    push::PushTokenRepo,
+    sessions::SessionRepo,
+    templates::TemplateRepo,
+    webhooks::WebhookRepo,
+    Stores,
 };
 
 use crate::{
@@ -59,6 +72,7 @@ pub struct AppState {
     pub integrations: IntegrationService,
     pub webhooks: WebhookService,
     pub journeys: JourneyService,
+    pub analytics: AnalyticsService,
     pub push: PushService,
     pub eval: Evaluator,
     pub taxonomy: TaxonomyService,
@@ -187,6 +201,14 @@ impl AppState {
             stores.cache.clone(),
             cfg.taxonomy.clone(),
         );
+        let analytics = AnalyticsService::new(
+            events.clone(),
+            PlayerMetricsRepo::new(stores.pg.clone()),
+            DashboardRepo::new(stores.pg.clone()),
+            AnnotationRepo::new(stores.pg.clone()),
+            taxonomy.clone(),
+            bus.clone(),
+        );
         let metrics = MetricService::new(MetricRepo::new(stores.pg.clone()), events.clone());
         let eval = Evaluator::new(
             flags.clone(),
@@ -230,6 +252,7 @@ impl AppState {
             integrations,
             webhooks,
             journeys,
+            analytics,
             push,
             eval,
             taxonomy,

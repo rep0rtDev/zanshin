@@ -237,6 +237,50 @@ impl EventService {
             .await
     }
 
+    pub async fn active_per_day(
+        &self,
+        from: chrono::DateTime<chrono::Utc>,
+        to: chrono::DateTime<chrono::Utc>,
+    ) -> Result<Vec<(String, i64)>> {
+        self.store.active_per_day(from, to).await
+    }
+
+    pub async fn active_in_range(
+        &self,
+        from: chrono::DateTime<chrono::Utc>,
+        to: chrono::DateTime<chrono::Utc>,
+    ) -> Result<i64> {
+        self.store.active_in_range(from, to).await
+    }
+
+    pub async fn revenue_per_day(
+        &self,
+        names: &[String],
+        from: chrono::DateTime<chrono::Utc>,
+        to: chrono::DateTime<chrono::Utc>,
+    ) -> Result<Vec<(String, f64, i64, i64)>> {
+        self.store.revenue_per_day(names, from, to).await
+    }
+
+    pub async fn funnel_rows(
+        &self,
+        names: &[String],
+        from: chrono::DateTime<chrono::Utc>,
+        to: chrono::DateTime<chrono::Utc>,
+        limit: i64,
+    ) -> Result<Vec<(Uuid, String, chrono::DateTime<chrono::Utc>, Value)>> {
+        self.store.funnel_rows(names, from, to, limit).await
+    }
+
+    pub async fn active_days(
+        &self,
+        identities: &[Uuid],
+        from: chrono::DateTime<chrono::Utc>,
+        to: chrono::DateTime<chrono::Utc>,
+    ) -> Result<Vec<(Uuid, String)>> {
+        self.store.active_days(identities, from, to).await
+    }
+
     pub async fn recent_for_identity(
         &self,
         identity_id: Uuid,

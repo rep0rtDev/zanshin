@@ -1,6 +1,7 @@
 //! Persistence layer. PostgreSQL is the system of record, Redis the shared cache /
 //! pub-sub bus, ClickHouse the (optional) analytics event sink.
 
+pub mod analytics;
 pub mod api_keys;
 pub mod audiences;
 pub mod audit;

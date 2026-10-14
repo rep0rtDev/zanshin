@@ -1,5 +1,6 @@
 //! Domain types and IO-free logic shared by the server, stores and bridges.
 
+pub mod analytics;
 pub mod apikey;
 pub mod audiences;
 pub mod error;
