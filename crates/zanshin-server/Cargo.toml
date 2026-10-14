@@ -72,4 +72,5 @@ parquet = { version = "60", default-features = false, features = ["snap"] }
 bytes = "1"
 
 [dev-dependencies]
+sqlx.workspace = true
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls", "cookies"] }

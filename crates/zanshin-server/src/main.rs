@@ -3,7 +3,7 @@ use std::sync::Arc;
 use anyhow::Context;
 use clap::Parser;
 use tokio::signal;
-use zanshin_server::{config::Config, grpc, http, state::AppState, telemetry};
+use zanshin_server::{config::Config, grpc, http, telemetry};
 
 #[derive(Parser, Debug)]
 #[command(
@@ -46,27 +46,38 @@ async fn main() -> anyhow::Result<()> {
         "starting zanshin"
     );
 
-    let state = AppState::build(Arc::new(cfg)).await?;
+    let (stop_tx, stop_rx) = tokio::sync::watch::channel(false);
+    let projects =
+        zanshin_server::services::projects::Projects::start(Arc::new(cfg), stop_rx.clone()).await?;
+    let state = projects.default_state().clone();
     let http_addr = state.cfg.server.http_addr;
     let grpc_addr = state.cfg.server.grpc_addr;
     let grace = state.cfg.server.shutdown_grace;
     let deadline = state.cfg.server.shutdown_timeout;
 
     // Two-phase shutdown: signal → drain (readyz 503, listeners still open) → stop listeners.
-    let (stop_tx, stop_rx) = tokio::sync::watch::channel(false);
     {
-        let state = state.clone();
+        let projects = projects.clone();
         tokio::spawn(async move {
             shutdown_signal().await;
             tracing::info!(grace = ?grace, "shutdown signal received, draining");
-            state.begin_drain();
+            let states = projects.states().await;
+            for s in &states {
+                s.begin_drain();
+            }
             tokio::time::sleep(grace).await;
             let _ = stop_tx.send(true);
-            let _ = state.shutdown.send(true);
+            for s in &states {
+                let _ = s.shutdown.send(true);
+            }
         });
     }
 
-    let http_task = tokio::spawn(http::serve(state.clone(), http_addr, stop_rx.clone()));
+    let http_task = tokio::spawn(http::serve(
+        projects.clone().router(),
+        http_addr,
+        stop_rx.clone(),
+    ));
     let grpc_task = tokio::spawn(grpc::serve(state.clone(), grpc_addr, stop_rx.clone()));
     let housekeeping = tokio::spawn(zanshin_server::housekeeping::run(state.clone(), stop_rx));
 

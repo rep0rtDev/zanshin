@@ -96,6 +96,7 @@ variables. `zanshin --check-config` prints the effective configuration with secr
 | C++17 SDK `sdk/cpp` (header-only, bring-your-own transport, libcurl adapter) | ✅ |
 | OpenAPI 3 spec + Swagger UI (`/docs`, `/openapi.json`) | ✅ |
 | `zanshinctl` CLI (config export / import / diff / promote, keys, players, flags, sinks) | ✅ |
+| Multi-project: isolated games / environments per deployment (schema + Redis + ClickHouse per project, `x-zanshin-project`, console switcher) | ✅ |
 | Unity C# SDK `sdk/unity` (UPM, zero deps, netstandard2.1): same surface as the TS SDK incl. push-token registration and WebSocket stream | ✅ |
 | Swift `sdk/swift`, Kotlin / JVM `sdk/kotlin`, Dart / Flutter `sdk/dart` SDKs (zero deps, full client surface, live stream) | ✅ |
 | Nakama runtime modules for Go (`nakama/`), JavaScript (`nakama/ts`) and Lua (`nakama/lua`) with identical RPCs; gRPC at full parity with REST | ✅ |

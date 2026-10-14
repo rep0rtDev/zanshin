@@ -21,6 +21,7 @@ pub mod locks;
 pub mod messages;
 pub mod metrics;
 pub mod notifications;
+pub mod projects;
 pub mod push;
 pub mod sessions;
 pub mod taxonomy;
@@ -30,6 +31,7 @@ use std::time::Duration;
 use anyhow::Context;
 use serde::Deserialize;
 use sqlx::postgres::{PgPool, PgPoolOptions};
+use std::str::FromStr;
 use zanshin_core::{Error, Result};
 
 pub use sqlx;
@@ -102,13 +104,50 @@ impl Stores {
         redis: &RedisConfig,
         ch: &ClickHouseConfig,
     ) -> Result<Self> {
+        Self::connect_project(db, redis, ch, None).await
+    }
+
+    /// PostgreSQL schema that holds a project's tables (`None` = the default project in `public`).
+    pub fn schema_for(project: Option<&str>) -> Option<String> {
+        project
+            .filter(|p| !p.is_empty() && *p != "default")
+            .map(|p| format!("zanshin_{p}"))
+    }
+
+    /// Connect the stores of one project: its own PostgreSQL schema (`zanshin_<slug>`, created and
+    /// migrated here), Redis key prefix `<prefix>:<slug>` and ClickHouse database `<db>_<slug>`.
+    /// `None` / `"default"` is the original single-tenant layout.
+    pub async fn connect_project(
+        db: &DatabaseConfig,
+        redis: &RedisConfig,
+        ch: &ClickHouseConfig,
+        project: Option<&str>,
+    ) -> Result<Self> {
+        let schema = Self::schema_for(project);
+        let slug = project.filter(|_| schema.is_some());
+        let mut opts =
+            sqlx::postgres::PgConnectOptions::from_str(&db.url).context("parsing postgres url")?;
+        if let Some(schema) = &schema {
+            let base = PgPoolOptions::new()
+                .max_connections(1)
+                .acquire_timeout(Duration::from_secs(10))
+                .connect(&db.url)
+                .await
+                .context("connecting to postgres")?;
+            sqlx::query(&format!("CREATE SCHEMA IF NOT EXISTS \"{schema}\""))
+                .execute(&base)
+                .await
+                .context("creating project schema")?;
+            base.close().await;
+            opts = opts.options([("search_path", schema.as_str())]);
+        }
         let pg = PgPoolOptions::new()
             .max_connections(db.max_connections)
             .acquire_timeout(Duration::from_secs(10))
-            .connect(&db.url)
+            .connect_with(opts)
             .await
             .context("connecting to postgres")?;
-        tracing::info!("connected to postgres");
+        tracing::info!(project = slug.unwrap_or("default"), "connected to postgres");
 
         if db.migrate {
             sqlx::migrate!("../../migrations")
@@ -118,11 +157,18 @@ impl Stores {
             tracing::info!("database migrations applied");
         }
 
-        let cache = cache::Cache::connect(redis).await?;
+        let mut cache = cache::Cache::connect(redis).await?;
+        if let Some(slug) = slug {
+            cache = cache.with_prefix(format!("{}:{slug}", redis.key_prefix));
+        }
         tracing::info!("connected to redis");
 
         let clickhouse = if ch.enabled {
-            let c = clickhouse_sink::ClickHouse::connect(ch).await?;
+            let mut ch_cfg = ch.clone();
+            if let Some(slug) = slug {
+                ch_cfg.database = format!("{}_{slug}", ch.database);
+            }
+            let c = clickhouse_sink::ClickHouse::connect(&ch_cfg).await?;
             tracing::info!(url = %ch.url, "connected to clickhouse");
             Some(c)
         } else {

@@ -17,6 +17,7 @@ pub mod liveops;
 pub mod messaging_v2;
 pub mod notifications;
 pub mod overload;
+pub mod projects;
 pub mod server_api;
 pub mod taxonomy;
 pub mod users;
@@ -127,6 +128,7 @@ pub fn router(state: AppState) -> Router {
                 .merge(messaging_v2::router())
                 .merge(webhooks::router())
                 .merge(notifications::router())
+                .merge(projects::router())
                 .merge(journeys::router())
                 .merge(analytics_v2::router())
                 .merge(data::router())
@@ -176,7 +178,7 @@ pub fn router(state: AppState) -> Router {
 }
 
 pub async fn serve(
-    state: AppState,
+    app: Router,
     addr: SocketAddr,
     mut shutdown: watch::Receiver<bool>,
 ) -> anyhow::Result<()> {
@@ -184,7 +186,7 @@ pub async fn serve(
     tracing::info!(%addr, "http listening");
     axum::serve(
         listener,
-        router(state).into_make_service_with_connect_info::<SocketAddr>(),
+        app.into_make_service_with_connect_info::<SocketAddr>(),
     )
     .with_graceful_shutdown(async move {
         let _ = shutdown.wait_for(|v| *v).await;

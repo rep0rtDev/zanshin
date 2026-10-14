@@ -29,6 +29,21 @@ pub struct Claims {
     pub exp: i64,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub iss: Option<String>,
+    /// Project slug for non-default projects (lets the server route a bare token).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub prj: Option<String>,
+}
+
+/// Read the `prj` claim without verifying the signature (routing only; the project's issuer
+/// verifies the token afterwards).
+pub fn peek_project(jwt: &str) -> Option<String> {
+    use base64::Engine;
+    let payload = jwt.split('.').nth(1)?;
+    let bytes = base64::engine::general_purpose::URL_SAFE_NO_PAD
+        .decode(payload)
+        .ok()?;
+    let v: serde_json::Value = serde_json::from_slice(&bytes).ok()?;
+    v.get("prj")?.as_str().map(str::to_string)
 }
 
 impl Claims {
@@ -42,6 +57,7 @@ pub struct TokenIssuer {
     enc: EncodingKey,
     dec: DecodingKey,
     issuer: String,
+    project: Option<String>,
     access_ttl: Duration,
     refresh_ttl: Duration,
 }
@@ -77,9 +93,16 @@ impl TokenIssuer {
             enc: EncodingKey::from_secret(secret),
             dec: DecodingKey::from_secret(secret),
             issuer: issuer.into(),
+            project: None,
             access_ttl: Duration::from_std(access_ttl).map_err(Error::internal)?,
             refresh_ttl: Duration::from_std(refresh_ttl).map_err(Error::internal)?,
         })
+    }
+
+    /// Stamp issued tokens with a project slug (non-default projects).
+    pub fn with_project(mut self, project: Option<String>) -> Self {
+        self.project = project.filter(|p| p != "default" && !p.is_empty());
+        self
     }
 
     pub fn access_ttl(&self) -> Duration {
@@ -112,6 +135,7 @@ impl TokenIssuer {
             iat: now.timestamp(),
             exp: (now + self.access_ttl).timestamp(),
             iss: Some(self.issuer.clone()),
+            prj: self.project.clone(),
         })?;
         let refresh_exp = now + self.refresh_ttl;
         let refresh = self.sign(Claims {
@@ -123,6 +147,7 @@ impl TokenIssuer {
             iat: now.timestamp(),
             exp: refresh_exp.timestamp(),
             iss: Some(self.issuer.clone()),
+            prj: self.project.clone(),
         })?;
         Ok(IssuedSession {
             session_id,

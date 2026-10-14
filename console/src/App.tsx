@@ -4,7 +4,7 @@ import { Palette, type PaletteItem } from './Palette';
 import { Toasts } from './toast';
 import Settings from './pages/Settings';
 import { MeContext } from './me';
-import { ApiError, auth, authConfig, get, passwordLogin, resetPassword, ssoLogout, type AuthConfig, type Me } from './api';
+import { ApiError, auth, authConfig, get, passwordLogin, project, resetPassword, ssoLogout, type AuthConfig, type Me } from './api';
 import Users from './pages/Users';
 import Account from './pages/Account';
 import { allows } from './permissions';
@@ -154,6 +154,33 @@ function Crumbs() {
   );
 }
 
+type ProjectRow = { slug: string; name: string; archived: boolean; running: boolean };
+
+/** Project selector; hidden when the deployment has a single project. */
+function ProjectSwitcher() {
+  const [items, setItems] = useState<ProjectRow[] | null>(null);
+  const cur = project.get();
+  useEffect(() => {
+    get<{ items: ProjectRow[] }>('/projects').then((r) => setItems(r.items), () => setItems([]));
+  }, []);
+  if (!items || items.length < 2) return null;
+  return (
+    <select
+      className="project-switcher"
+      title="Project"
+      value={cur}
+      onChange={(e) => {
+        project.set(e.target.value);
+        window.location.assign('/');
+      }}
+    >
+      {items.filter((p) => !p.archived || p.slug === cur).map((p) => (
+        <option key={p.slug} value={p.slug}>{p.name || p.slug}{p.running ? '' : ' (stopped)'}</option>
+      ))}
+    </select>
+  );
+}
+
 export default function App() {
   const [me, setMe] = useState<Me | null | undefined>(undefined);
   const [cfg, setCfg] = useState<AuthConfig>({ oidc: false, password: false, needs_bootstrap: false });
@@ -224,7 +251,7 @@ export default function App() {
           </div>
         </nav>
         <div className="main-col">
-          <header className="topbar"><Crumbs /><div className="spacer" />{me.read_only && <span className="badge warn">read-only</span>}{me.must_change_password && <NavLink to="/account" className="badge warn">change your password</NavLink>}</header>
+          <header className="topbar"><Crumbs /><div className="spacer" /><ProjectSwitcher />{me.read_only && <span className="badge warn">read-only</span>}{me.must_change_password && <NavLink to="/account" className="badge warn">change your password</NavLink>}</header>
           <main className="main">
             <Routes>
               <Route path="/" element={<Dashboard />} />

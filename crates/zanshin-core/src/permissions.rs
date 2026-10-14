@@ -221,6 +221,7 @@ pub fn resource_for_path(path: &str) -> Option<&'static str> {
         "integrations" => "integrations",
         "webhooks" => "webhooks",
         "notification-channels" => "integrations",
+        "projects" => "settings",
         "journeys" => "journeys",
         "identities" => "identities",
         "taxonomy" | "labels" | "schemas" => "taxonomy",

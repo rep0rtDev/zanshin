@@ -264,6 +264,22 @@ For trusted backends (game servers, the Nakama module). Identities are addressed
 
 gRPC: `ServerGetFlags`, `ServerGetAudiences`, `ServerGetExperiments`, `ServerGetLiveEvents`, `ServerSendMessage`, `ServerSendEvents`.
 
+## Projects (multi-tenant deployments)
+
+One deployment can host several isolated projects (games or environments). Each non-default project has
+its own PostgreSQL schema, Redis namespace and ClickHouse database — configuration, players, events, API
+keys and analytics never cross projects; console users and SSO are shared. Pick the project with the
+`x-zanshin-project: <slug>` header (or `?project=<slug>`); session tokens issued inside a project carry a
+`prj` claim, so client calls with a bearer token or `?token=` need no header. Unknown slugs → 404.
+Management lives on the default project and needs `settings:*`:
+
+| Method | Path | Notes |
+| --- | --- | --- |
+| GET | `/admin/v1/projects` | `{items: [{slug, name, description, archived, running, …}], current}` |
+| POST | `/admin/v1/projects` | `{slug, name?, description?}`; slug `[a-z][a-z0-9_]{1,31}`; creates + migrates the schema and starts the project |
+| GET | `/admin/v1/projects/{slug}` | |
+| PUT | `/admin/v1/projects/{slug}` | `{name?, description?, archived?}`; archiving stops routing but keeps the data, un-archiving starts it again |
+
 ## Admin API — `/admin/v1` (admin key)
 
 | Method | Path | Body / query | Returns |
