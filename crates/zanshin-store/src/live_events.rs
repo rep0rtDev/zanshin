@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use chrono::{DateTime, Utc};
 use serde_json::Value;
 use sqlx::{FromRow, PgPool};
@@ -20,6 +22,10 @@ struct Row {
     duration_secs: Option<i64>,
     recurrence: Option<String>,
     payload: Value,
+    join_mode: String,
+    sticky: bool,
+    participation_secs: Option<i64>,
+    flag_overrides: Value,
     tags: Vec<String>,
     version: i64,
     created_at: DateTime<Utc>,
@@ -43,6 +49,13 @@ impl TryFrom<Row> for LiveEvent {
             duration_secs: r.duration_secs,
             recurrence: r.recurrence,
             payload: r.payload,
+            join_mode: r.join_mode.parse()?,
+            sticky: r.sticky,
+            participation_secs: r.participation_secs,
+            flag_overrides: match r.flag_overrides {
+                Value::Object(m) => m,
+                _ => Default::default(),
+            },
             tags: r.tags,
             version: r.version,
             created_at: r.created_at,
@@ -51,7 +64,7 @@ impl TryFrom<Row> for LiveEvent {
     }
 }
 
-const COLS: &str = "id, key, name, description, enabled, condition, audiences, starts_at, ends_at, duration_secs, recurrence, payload, tags, version, created_at, updated_at";
+const COLS: &str = "id, key, name, description, enabled, condition, audiences, starts_at, ends_at, duration_secs, recurrence, payload, join_mode, sticky, participation_secs, flag_overrides, tags, version, created_at, updated_at";
 
 #[derive(Clone)]
 pub struct LiveEventRepo {
@@ -86,8 +99,9 @@ impl LiveEventRepo {
 
     pub async fn create(&self, e: &LiveEvent) -> Result<LiveEvent> {
         let row: Row = sqlx::query_as(&format!(
-            "INSERT INTO live_events (id, key, name, description, enabled, condition, audiences, starts_at, ends_at, duration_secs, recurrence, payload, tags)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13) RETURNING {COLS}"
+            "INSERT INTO live_events (id, key, name, description, enabled, condition, audiences, starts_at, ends_at, duration_secs, recurrence, payload, tags,
+                                      join_mode, sticky, participation_secs, flag_overrides)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17) RETURNING {COLS}"
         ))
         .bind(e.id)
         .bind(&e.key)
@@ -102,6 +116,10 @@ impl LiveEventRepo {
         .bind(&e.recurrence)
         .bind(&e.payload)
         .bind(&e.tags)
+        .bind(e.join_mode.as_str())
+        .bind(e.sticky)
+        .bind(e.participation_secs)
+        .bind(Value::Object(e.flag_overrides.clone()))
         .fetch_one(&self.pg)
         .await
         .map_err(|err| match map_sqlx(err) {
@@ -114,7 +132,9 @@ impl LiveEventRepo {
     pub async fn update(&self, e: &LiveEvent) -> Result<LiveEvent> {
         let row: Option<Row> = sqlx::query_as(&format!(
             "UPDATE live_events SET name = $2, description = $3, enabled = $4, condition = $5, audiences = $6, starts_at = $7, ends_at = $8,
-                                    duration_secs = $9, recurrence = $10, payload = $11, tags = $12, version = version + 1, updated_at = now()
+                                    duration_secs = $9, recurrence = $10, payload = $11, tags = $12,
+                                    join_mode = $13, sticky = $14, participation_secs = $15, flag_overrides = $16,
+                                    version = version + 1, updated_at = now()
              WHERE key = $1 RETURNING {COLS}"
         ))
         .bind(&e.key)
@@ -129,6 +149,10 @@ impl LiveEventRepo {
         .bind(&e.recurrence)
         .bind(&e.payload)
         .bind(&e.tags)
+        .bind(e.join_mode.as_str())
+        .bind(e.sticky)
+        .bind(e.participation_secs)
+        .bind(Value::Object(e.flag_overrides.clone()))
         .fetch_optional(&self.pg)
         .await
         .map_err(map_sqlx)?;
@@ -147,5 +171,101 @@ impl LiveEventRepo {
             return Err(Error::not_found(format!("live event {key:?} not found")));
         }
         Ok(())
+    }
+}
+
+/// Participant of a live event.
+#[derive(Debug, Clone, serde::Serialize, FromRow)]
+pub struct Participant {
+    pub identity_id: Uuid,
+    pub external_id: String,
+    pub joined_at: DateTime<Utc>,
+    pub left_at: Option<DateTime<Utc>>,
+}
+
+impl LiveEventRepo {
+    /// Record a join (idempotent; re-joining after leaving resets the timer).
+    pub async fn join(&self, live_event_id: Uuid, identity_id: Uuid) -> Result<DateTime<Utc>> {
+        let (joined_at,): (DateTime<Utc>,) = sqlx::query_as(
+            "INSERT INTO live_event_members (live_event_id, identity_id) VALUES ($1, $2)
+             ON CONFLICT (live_event_id, identity_id) DO UPDATE
+               SET joined_at = CASE WHEN live_event_members.left_at IS NULL THEN live_event_members.joined_at ELSE now() END,
+                   left_at = NULL
+             RETURNING joined_at",
+        )
+        .bind(live_event_id)
+        .bind(identity_id)
+        .fetch_one(&self.pg)
+        .await
+        .map_err(map_sqlx)?;
+        Ok(joined_at)
+    }
+
+    pub async fn leave(&self, live_event_id: Uuid, identity_id: Uuid) -> Result<bool> {
+        let r = sqlx::query(
+            "UPDATE live_event_members SET left_at = now()
+             WHERE live_event_id = $1 AND identity_id = $2 AND left_at IS NULL",
+        )
+        .bind(live_event_id)
+        .bind(identity_id)
+        .execute(&self.pg)
+        .await
+        .map_err(map_sqlx)?;
+        Ok(r.rows_affected() > 0)
+    }
+
+    /// Active joins for one identity: event id → joined_at.
+    pub async fn joins_for(&self, identity_id: Uuid) -> Result<HashMap<Uuid, DateTime<Utc>>> {
+        let rows: Vec<(Uuid, DateTime<Utc>)> = sqlx::query_as(
+            "SELECT live_event_id, joined_at FROM live_event_members WHERE identity_id = $1 AND left_at IS NULL",
+        )
+        .bind(identity_id)
+        .fetch_all(&self.pg)
+        .await
+        .map_err(map_sqlx)?;
+        Ok(rows.into_iter().collect())
+    }
+
+    pub async fn participants(
+        &self,
+        live_event_id: Uuid,
+        after: Option<Uuid>,
+        limit: i64,
+    ) -> Result<Vec<Participant>> {
+        sqlx::query_as(
+            "SELECT m.identity_id, i.external_id, m.joined_at, m.left_at
+             FROM live_event_members m JOIN identities i ON i.id = m.identity_id
+             WHERE m.live_event_id = $1 AND ($2::uuid IS NULL OR m.identity_id > $2)
+             ORDER BY m.identity_id LIMIT $3",
+        )
+        .bind(live_event_id)
+        .bind(after)
+        .bind(limit)
+        .fetch_all(&self.pg)
+        .await
+        .map_err(map_sqlx)
+    }
+
+    /// Joins per day for the timeline (UTC buckets).
+    pub async fn join_timeline(&self, live_event_id: Uuid) -> Result<Vec<(DateTime<Utc>, i64)>> {
+        sqlx::query_as(
+            "SELECT date_trunc('day', joined_at) AS day, count(*)::bigint FROM live_event_members
+             WHERE live_event_id = $1 GROUP BY 1 ORDER BY 1",
+        )
+        .bind(live_event_id)
+        .fetch_all(&self.pg)
+        .await
+        .map_err(map_sqlx)
+    }
+
+    pub async fn participant_count(&self, live_event_id: Uuid) -> Result<(i64, i64)> {
+        sqlx::query_as(
+            "SELECT count(*)::bigint, count(*) FILTER (WHERE left_at IS NULL)::bigint
+             FROM live_event_members WHERE live_event_id = $1",
+        )
+        .bind(live_event_id)
+        .fetch_one(&self.pg)
+        .await
+        .map_err(map_sqlx)
     }
 }

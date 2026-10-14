@@ -34,6 +34,8 @@ pub fn router() -> Router<AppState> {
         .route("/experiments/{key}/expose", post(expose_experiment))
         .route("/events", post(send_events))
         .route("/live-events", get(get_live_events))
+        .route("/live-events/{key}/join", post(join_live_event))
+        .route("/live-events/{key}/leave", post(leave_live_event))
         .route("/messages", get(get_messages))
         .route(
             "/messages/{id}",
@@ -472,6 +474,35 @@ pub struct InboxQuery {
 pub struct UpdateMessageRequest {
     #[serde(default)]
     pub read: bool,
+}
+
+async fn join_live_event(
+    State(state): State<AppState>,
+    SessionAuth(ctx): SessionAuth,
+    Path(key): Path<String>,
+) -> ApiResult<Json<ActiveEvent>> {
+    let identity = state.identity.get(ctx.identity_id()).await?;
+    let view = state.eval.join_live_event(&identity, &key).await?;
+    state
+        .events
+        .system(
+            &identity,
+            zanshin_core::events::EV_LIVE_EVENT_JOIN,
+            &key,
+            None,
+            None,
+        )
+        .await;
+    Ok(Json(view))
+}
+
+async fn leave_live_event(
+    State(state): State<AppState>,
+    SessionAuth(ctx): SessionAuth,
+    Path(key): Path<String>,
+) -> ApiResult<Json<serde_json::Value>> {
+    let left = state.live_events.leave(ctx.identity_id(), &key).await?;
+    Ok(Json(serde_json::json!({ "left": left })))
 }
 
 async fn get_live_events(

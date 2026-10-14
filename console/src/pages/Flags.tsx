@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import type { ReactNode } from 'react';
 import { get, post, put, useLoad, del } from '../api';
 import { EntityPage, Text, Tags } from '../crud';
 import { RulesEditor, TypedValue } from '../RuleBuilder';
@@ -42,6 +43,46 @@ function Overrides({ flag, reload }: { flag: Flag; reload: () => void }) {
           { h: '', w: '110px', c: (o) => <Confirm danger onConfirm={() => del(`/flags/${encodeURIComponent(flag.key)}/overrides/${o.identity_id}`).then(() => { q.reload(); reload(); }, setErr)}>Remove</Confirm> },
         ]}
       />
+    </div>
+  );
+}
+
+type ExplainRule = { id: string; name: string; condition_matches: boolean; audiences_match: boolean; in_rollout: boolean; value: unknown };
+type ExplainOut = { enabled: boolean; identity_override: unknown; experiment: { experiment: string; variant: string; value: unknown } | null; live_event: { live_event: string; value: unknown } | null; rules: ExplainRule[]; default_value: unknown; audiences: string[]; now: string; result: { value: unknown; reason: { kind: string } } };
+
+function Explain({ flag }: { flag: Flag }) {
+  const [ext, setExt] = useState('');
+  const [out, setOut] = useState<ExplainOut | null>(null);
+  const [err, setErr] = useState<Error | null>(null);
+  const run = async () => {
+    try {
+      const id = await get<{ id: string }>(`/identities/by-external-id/${encodeURIComponent(ext)}`);
+      setOut(await get<ExplainOut>(`/flags/${encodeURIComponent(flag.key)}/explain/${id.id}`)); setErr(null);
+    } catch (e) { setErr(e as Error); }
+  };
+  const J = (v: unknown) => <code>{JSON.stringify(v)}</code>;
+  const layer = (name: string, hit: boolean, body: ReactNode) => <li key={name} style={{ opacity: hit ? 1 : 0.55 }}><Badge tone={hit ? 'ok' : undefined}>{name}</Badge> {body}</li>;
+  return (
+    <div className="card">
+      <strong>Explain for a player</strong>
+      <div className="hint">Override chain: identity override → experiment → live event → rules → default.</div>
+      <ErrorBox error={err} />
+      <div className="row" style={{ marginTop: 10 }}>
+        <Field label="External id"><input value={ext} onChange={(e) => setExt(e.target.value)} placeholder="player-123" /></Field>
+        <div className="field fixed"><span className="label">&nbsp;</span><button className="btn ghost" disabled={!ext} onClick={run}>Explain</button></div>
+      </div>
+      {out && (
+        <>
+          <div style={{ marginTop: 10 }}>Result: {J(out.result.value)} <Badge tone="info">{out.result.reason.kind}</Badge> <span className="hint">clock {fmtDate(out.now)} · audiences: {out.audiences.join(', ') || '—'}</span></div>
+          <ol className="chain">
+            {layer('identity override', out.identity_override != null, out.identity_override != null ? J(out.identity_override) : <span className="muted">none</span>)}
+            {layer('experiment', !!out.experiment, out.experiment ? <>{out.experiment.experiment} / {out.experiment.variant} → {J(out.experiment.value)}</> : <span className="muted">not enrolled</span>)}
+            {layer('live event', !!out.live_event, out.live_event ? <>{out.live_event.live_event} → {J(out.live_event.value)}</> : <span className="muted">no active event overrides this flag</span>)}
+            {out.rules.map((r) => layer(`rule ${r.name || r.id}`, r.condition_matches && r.audiences_match && r.in_rollout, <>{r.condition_matches ? 'condition ✓' : 'condition ✗'} · {r.audiences_match ? 'audiences ✓' : 'audiences ✗'} · {r.in_rollout ? 'rollout ✓' : 'rollout ✗'} → {J(r.value)}</>))}
+            {layer('default', true, J(out.default_value))}
+          </ol>
+        </>
+      )}
     </div>
   );
 }
@@ -102,7 +143,7 @@ export default function Flags() {
           <Tags value={d.tags} onChange={(tags) => set({ tags })} />
         </>
       )}
-      extra={(f, reload) => (<><Overrides flag={f} reload={reload} /><DryRun flag={f} /></>)}
+      extra={(f, reload) => (<><Overrides flag={f} reload={reload} /><Explain flag={f} /><DryRun flag={f} /></>)}
     />
   );
 }

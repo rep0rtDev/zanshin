@@ -3,6 +3,7 @@
 use std::collections::{HashMap, HashSet};
 
 use serde_json::Value;
+use uuid::Uuid;
 use zanshin_core::{
     experiments::Assignment,
     flags::{Evaluation, Pinned},
@@ -26,6 +27,7 @@ pub struct Evaluator {
     pub live_events: LiveEventService,
     pub messages: MessageService,
     identities: IdentityRepo,
+    cache: zanshin_store::cache::Cache,
 }
 
 /// Everything known about one identity for one evaluation pass.
@@ -36,6 +38,10 @@ pub struct EvalContext {
     /// flag key → (experiment key, variant key, value)
     pub flag_pins: HashMap<String, (String, String, Value)>,
     pub overrides: HashMap<String, Value>,
+    /// flag key → (live event key, value) from events active for the player
+    pub live_pins: HashMap<String, (String, Value)>,
+    /// Evaluation clock (QA time travel or real now).
+    pub now: chrono::DateTime<chrono::Utc>,
 }
 
 impl Evaluator {
@@ -46,6 +52,7 @@ impl Evaluator {
         live_events: LiveEventService,
         messages: MessageService,
         identities: IdentityRepo,
+        cache: zanshin_store::cache::Cache,
     ) -> Self {
         Self {
             flags,
@@ -54,6 +61,46 @@ impl Evaluator {
             live_events,
             messages,
             identities,
+            cache,
+        }
+    }
+
+    fn qa_key(&self, identity_id: Uuid) -> String {
+        self.cache.key(&["qa_time", &identity_id.to_string()])
+    }
+
+    /// The clock used for this identity: a QA "time travel" override if one is set, else now.
+    pub async fn now_for(&self, identity_id: Uuid) -> chrono::DateTime<chrono::Utc> {
+        self.cache
+            .get_json::<chrono::DateTime<chrono::Utc>>(&self.qa_key(identity_id))
+            .await
+            .ok()
+            .flatten()
+            .unwrap_or_else(chrono::Utc::now)
+    }
+
+    pub async fn qa_time(&self, identity_id: Uuid) -> Option<chrono::DateTime<chrono::Utc>> {
+        self.cache
+            .get_json(&self.qa_key(identity_id))
+            .await
+            .ok()
+            .flatten()
+    }
+
+    /// Pin the evaluation clock for an identity (expires after 7 days).
+    pub async fn set_qa_time(
+        &self,
+        identity_id: Uuid,
+        at: Option<chrono::DateTime<chrono::Utc>>,
+    ) -> Result<()> {
+        let key = self.qa_key(identity_id);
+        match at {
+            Some(t) => {
+                self.cache
+                    .set_json(&key, &t, std::time::Duration::from_secs(7 * 86400))
+                    .await
+            }
+            None => self.cache.del(&key).await,
         }
     }
 
@@ -65,9 +112,58 @@ impl Evaluator {
     ) -> Vec<ActiveEvent> {
         let flat = flatten_with_identity(identity, &identity.properties);
         let audiences = self.audiences.memberships(identity, &flat).await;
+        let now = self.now_for(identity.id).await;
+        let joins = self.live_events.joins_for(identity.id).await;
         self.live_events
-            .for_subject(&flat, &audiences, names, active_only)
+            .for_participant(&flat, &audiences, names, active_only, now, &joins)
             .await
+    }
+
+    /// Join / leave a live event on behalf of the player.
+    pub async fn join_live_event(&self, identity: &Identity, key: &str) -> Result<ActiveEvent> {
+        let flat = flatten_with_identity(identity, &identity.properties);
+        let audiences = self.audiences.memberships(identity, &flat).await;
+        let now = self.now_for(identity.id).await;
+        self.live_events
+            .join(identity.id, key, &flat, &audiences, now)
+            .await
+    }
+
+    /// Full override chain for one flag and identity, for the console "explain" view.
+    pub async fn explain_flag(&self, identity: &Identity, key: &str) -> Result<Value> {
+        let flag = self.flags.get(key).await?;
+        let ctx = self.context(identity, &identity.properties, true).await?;
+        let member = |k: &str| ctx.audiences.contains(k);
+        let rules: Vec<Value> = flag
+            .rules
+            .iter()
+            .map(|r| {
+                let rctx = zanshin_core::rules::Context { props: &ctx.flat };
+                serde_json::json!({
+                    "id": r.id, "name": r.name,
+                    "condition_matches": r.condition.matches(&rctx),
+                    "audiences_match": r.audiences.iter().all(|a| member(a)),
+                    "in_rollout": zanshin_core::hash::in_rollout(&format!("flag:{}", flag.key), &format!("{}:{}", flag.salt, r.id), &identity.external_id, r.percentage),
+                    "value": r.value, "variants": r.variants,
+                })
+            })
+            .collect();
+        let final_eval = self
+            .flags_with(identity, &ctx, std::slice::from_ref(&key.to_string()))
+            .await
+            .pop();
+        Ok(serde_json::json!({
+            "flag": flag.key,
+            "enabled": flag.enabled,
+            "identity_override": ctx.overrides.get(key),
+            "experiment": ctx.flag_pins.get(key).map(|(e, v, val)| serde_json::json!({"experiment": e, "variant": v, "value": val})),
+            "live_event": ctx.live_pins.get(key).map(|(e, val)| serde_json::json!({"live_event": e, "value": val})),
+            "rules": rules,
+            "default_value": flag.default_value,
+            "audiences": ctx.audiences.iter().collect::<Vec<_>>(),
+            "now": ctx.now,
+            "result": final_eval,
+        }))
     }
 
     pub async fn inbox(&self, identity: &Identity, limit: i64) -> Result<Vec<InboxMessage>> {
@@ -112,12 +208,30 @@ impl Evaluator {
         } else {
             HashMap::new()
         };
+        let now = self.now_for(identity.id).await;
+        let joins = if persist_assignments {
+            self.live_events.joins_for(identity.id).await
+        } else {
+            HashMap::new()
+        };
+        let catalog = self.live_events.list().await;
+        let live_pins = if catalog.iter().any(|e| !e.flag_overrides.is_empty()) {
+            let active = self
+                .live_events
+                .for_participant(&flat, &audiences, &[], true, now, &joins)
+                .await;
+            self.live_events.flag_pins(&active, &catalog)
+        } else {
+            HashMap::new()
+        };
         Ok(EvalContext {
             flat,
             audiences,
             assignments,
             flag_pins,
             overrides,
+            live_pins,
+            now,
         })
     }
 
@@ -140,10 +254,15 @@ impl Evaluator {
             let flag = &snapshot[k];
             let pinned = if let Some(v) = ctx.overrides.get(k) {
                 Some(Pinned::Override(v))
-            } else {
-                ctx.flag_pins.get(k).map(|(e, v, val)| Pinned::Experiment {
+            } else if let Some((e, v, val)) = ctx.flag_pins.get(k) {
+                Some(Pinned::Experiment {
                     experiment: e,
                     variant: v,
+                    value: val,
+                })
+            } else {
+                ctx.live_pins.get(k).map(|(e, val)| Pinned::LiveEvent {
+                    live_event: e,
                     value: val,
                 })
             };
