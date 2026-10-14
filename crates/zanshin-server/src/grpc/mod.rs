@@ -181,11 +181,13 @@ impl Zanshin for ZanshinGrpc {
         } else {
             Some(req.refresh_token.as_str())
         };
-        self.state
+        let sid = self
+            .state
             .identity
             .logout(token, refresh)
             .await
             .map_err(to_status)?;
+        crate::http::v1::end_play_session(&self.state, sid).await;
         Ok(Response::new(()))
     }
 

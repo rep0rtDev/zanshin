@@ -7,6 +7,7 @@ pub mod console;
 pub mod error;
 pub mod limits;
 pub mod server_api;
+pub mod taxonomy;
 pub mod v1;
 pub mod ws;
 
@@ -99,7 +100,7 @@ pub fn router(state: AppState) -> Router {
         .route("/metrics", get(metrics))
         .nest("/v1", v1::router())
         .nest("/server/v1", server_api::router())
-        .nest("/admin/v1", admin::router())
+        .nest("/admin/v1", admin::router().merge(taxonomy::router()))
         .merge(console::router())
         .layer(axum::middleware::from_fn_with_state(
             state.clone(),

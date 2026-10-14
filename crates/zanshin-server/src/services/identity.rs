@@ -15,6 +15,8 @@ use zanshin_store::{cache::Cache, identities::IdentityRepo, sessions::SessionRep
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SessionTokens {
+    pub session_id: Uuid,
+    pub created: bool,
     pub token: String,
     pub refresh_token: String,
     pub identity: Identity,
@@ -86,10 +88,56 @@ impl IdentityService {
             .await?;
         metrics::counter!("zanshin_sessions_created_total").increment(1);
         Ok(SessionTokens {
+            session_id: issued.session_id,
+            created,
             token: issued.access,
             refresh_token: issued.refresh,
             identity,
         })
+    }
+
+    /// Link the identity to a new external id. If that id already belongs to another identity the
+    /// current one is merged into it; otherwise the external id is renamed in place. Returns a
+    /// fresh session for the resulting identity and the id of the identity that was merged away.
+    pub async fn identify(
+        &self,
+        identity_id: Uuid,
+        new_external_id: &str,
+    ) -> Result<(SessionTokens, Option<Identity>)> {
+        validate_external_id(new_external_id)?;
+        let (identity, merged) = match self.identities.get_by_external_id(new_external_id).await {
+            Ok(target) if target.id == identity_id => (target, None),
+            Ok(target) => {
+                let source = self.identities.get(identity_id).await?;
+                let merged = self.identities.merge_into(identity_id, target.id).await?;
+                metrics::counter!("zanshin_identities_merged_total").increment(1);
+                (merged, Some(source))
+            }
+            Err(e) if e.is_not_found() => (
+                self.identities.rename(identity_id, new_external_id).await?,
+                None,
+            ),
+            Err(e) => return Err(e),
+        };
+        let issued = self.tokens.issue_new(identity.id, &identity.external_id)?;
+        self.sessions
+            .create(
+                issued.session_id,
+                identity.id,
+                &refresh_hash(&issued.refresh),
+                issued.refresh_expires_at,
+            )
+            .await?;
+        Ok((
+            SessionTokens {
+                session_id: issued.session_id,
+                created: false,
+                token: issued.access,
+                refresh_token: issued.refresh,
+                identity,
+            },
+            merged,
+        ))
     }
 
     pub async fn refresh(&self, refresh_token: &str) -> Result<SessionTokens> {
@@ -123,6 +171,8 @@ impl IdentityService {
         }
         self.identities.touch(identity.id).await.ok();
         Ok(SessionTokens {
+            session_id: claims.sid,
+            created: false,
             token: issued.access,
             refresh_token: issued.refresh,
             identity,
@@ -133,7 +183,7 @@ impl IdentityService {
         &self,
         access_token: Option<&str>,
         refresh_token: Option<&str>,
-    ) -> Result<()> {
+    ) -> Result<Uuid> {
         let mut sid = None;
         if let Some(t) = refresh_token {
             if let Ok(c) = self.tokens.verify(t, TokenKind::Refresh) {
@@ -148,7 +198,10 @@ impl IdentityService {
             }
         }
         match sid {
-            Some(sid) => self.revoke_session(sid).await,
+            Some(sid) => {
+                self.revoke_session(sid).await?;
+                Ok(sid)
+            }
             None => Err(Error::unauthenticated("no valid token supplied")),
         }
     }

@@ -27,6 +27,52 @@ pub struct Config {
     pub limits: LimitsConfig,
     #[serde(default)]
     pub audit: AuditConfig,
+    #[serde(default)]
+    pub taxonomy: TaxonomyConfig,
+}
+
+/// Event taxonomy enforcement and player-session tracking.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TaxonomyConfig {
+    /// `off`: accept anything; `warn`: store but report violations; `strict`: reject violations.
+    #[serde(default = "default_taxonomy_mode")]
+    pub mode: String,
+    /// Register unknown event names automatically (as "discovered").
+    #[serde(default = "default_true")]
+    pub auto_discover: bool,
+    /// Path to a MaxMind GeoLite2/GeoIP2 City or Country .mmdb; empty disables geo-IP.
+    #[serde(default)]
+    pub geoip_db: String,
+    /// A play session with no activity for this long is closed by housekeeping.
+    #[serde(default = "default_session_inactivity", with = "humantime_serde")]
+    pub session_inactivity: Duration,
+    /// Number of rejected/invalid events kept for the taxonomy debugger.
+    #[serde(default = "default_rejected_keep")]
+    pub rejected_keep: usize,
+}
+
+impl Default for TaxonomyConfig {
+    fn default() -> Self {
+        Self {
+            mode: default_taxonomy_mode(),
+            auto_discover: true,
+            geoip_db: String::new(),
+            session_inactivity: default_session_inactivity(),
+            rejected_keep: default_rejected_keep(),
+        }
+    }
+}
+
+fn default_taxonomy_mode() -> String {
+    "warn".into()
+}
+
+fn default_session_inactivity() -> Duration {
+    Duration::from_secs(30 * 60)
+}
+
+fn default_rejected_keep() -> usize {
+    200
 }
 
 /// Push notification delivery. `provider`: `none` (default), `log` (record only; dev/test),

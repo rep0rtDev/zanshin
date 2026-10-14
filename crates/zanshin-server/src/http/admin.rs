@@ -21,6 +21,26 @@ use crate::state::AppState;
 
 use super::{auth::AdminAuth, error::ApiResult, v1::IdentityResponse};
 
+/// `?tags=a,b` keeps only items carrying every listed label.
+#[derive(Debug, Default, Deserialize)]
+pub struct TagsQuery {
+    #[serde(default)]
+    pub tags: Option<String>,
+}
+
+impl TagsQuery {
+    pub fn matches(&self, tags: &[String]) -> bool {
+        match &self.tags {
+            None => true,
+            Some(t) => t
+                .split(',')
+                .map(str::trim)
+                .filter(|x| !x.is_empty())
+                .all(|x| tags.iter().any(|y| y == x)),
+        }
+    }
+}
+
 pub fn router() -> Router<AppState> {
     Router::new()
         .route("/api-keys", get(list_keys).post(create_key))
@@ -348,6 +368,7 @@ pub struct CreateFlagRequest {
 async fn list_flags(
     State(state): State<AppState>,
     AdminAuth(_): AdminAuth,
+    Query(tq): Query<TagsQuery>,
 ) -> ApiResult<Json<Vec<Flag>>> {
     Ok(Json(
         state
@@ -355,6 +376,7 @@ async fn list_flags(
             .list()
             .await
             .iter()
+            .filter(|f| tq.matches(&f.tags))
             .map(|f| (**f).clone())
             .collect(),
     ))
@@ -501,6 +523,7 @@ pub struct CreateAudienceRequest {
 async fn list_audiences(
     State(state): State<AppState>,
     AdminAuth(_): AdminAuth,
+    Query(tq): Query<TagsQuery>,
 ) -> ApiResult<Json<Vec<Audience>>> {
     Ok(Json(
         state
@@ -508,6 +531,7 @@ async fn list_audiences(
             .list()
             .await
             .iter()
+            .filter(|a| tq.matches(&a.tags))
             .map(|a| (**a).clone())
             .collect(),
     ))
@@ -594,6 +618,7 @@ pub struct CreateExperimentRequest {
 async fn list_experiments(
     State(state): State<AppState>,
     AdminAuth(_): AdminAuth,
+    Query(tq): Query<TagsQuery>,
 ) -> ApiResult<Json<Vec<Experiment>>> {
     Ok(Json(
         state
@@ -601,6 +626,7 @@ async fn list_experiments(
             .list()
             .await
             .iter()
+            .filter(|e| tq.matches(&e.tags))
             .map(|e| (**e).clone())
             .collect(),
     ))
@@ -801,6 +827,7 @@ pub struct CreateLiveEventRequest {
 async fn list_live_events(
     State(state): State<AppState>,
     AdminAuth(_): AdminAuth,
+    Query(tq): Query<TagsQuery>,
 ) -> ApiResult<Json<Vec<LiveEvent>>> {
     Ok(Json(
         state
@@ -808,6 +835,7 @@ async fn list_live_events(
             .list()
             .await
             .iter()
+            .filter(|e| tq.matches(&e.tags))
             .map(|e| (**e).clone())
             .collect(),
     ))
@@ -862,6 +890,7 @@ pub struct CreateMessageRequest {
 async fn list_messages(
     State(state): State<AppState>,
     AdminAuth(_): AdminAuth,
+    Query(tq): Query<TagsQuery>,
 ) -> ApiResult<Json<Vec<MessageCampaign>>> {
     Ok(Json(
         state
@@ -869,6 +898,7 @@ async fn list_messages(
             .list()
             .await
             .iter()
+            .filter(|m| tq.matches(&m.tags))
             .map(|m| (**m).clone())
             .collect(),
     ))

@@ -48,6 +48,10 @@ impl Error {
         Self::Internal(err.into())
     }
 
+    pub fn is_not_found(&self) -> bool {
+        matches!(self, Self::NotFound(_))
+    }
+
     /// Stable machine-readable code used by both REST and gRPC surfaces.
     pub fn code(&self) -> &'static str {
         match self {

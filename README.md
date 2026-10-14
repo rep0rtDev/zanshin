@@ -71,9 +71,11 @@ variables. `zanshin --check-config` prints the effective configuration with secr
 | Feature flags: typed values, targeting rules (`all`/`any`/`not`, 20 operators incl. semver), percentage rollouts, weighted variants, per-identity overrides, live push over WebSocket / gRPC stream, replicated via Redis | ✅ |
 | Audiences (rule-based segments with sampling) gating flags and experiments | ✅ |
 | A/B experiments: targeting, allocation %, weighted variants, sticky assignment, exposure tracking, lifecycle draft→running→paused→stopped, results per variant, optional flag linkage | ✅ |
-| Live events (schedules), in-app messages / inbox | 🔜 |
+| Live events (schedules), in-app messages / inbox | ✅ |
+| Taxonomy: labels across every resource, event definitions with value types + metadata JSON Schema (off / warn / strict enforcement, auto-discovery, rejected-event debugger), read-only custom properties, JSON Schemas for structured flag values | ✅ |
+| Player model: default properties enriched from request headers / geo-IP (platform, OS, device, app version, locale, language, timezone, country / region / city), `POST /v1/identify` to rename or merge an anonymous identity into an account (properties, events, assignments, inbox, devices move; merge history kept), play sessions with inactivity timeout, synthetic `$identity_create` / `$session_start` / `$session_end` / `$identify` / `$experiment_join` events | ✅ |
 | Analytics events: client/server ingest, batching writer, ClickHouse sink (PostgreSQL fallback), events tagged with live experiment assignments, timeseries / top names / per-identity log, per-variant experiment metrics with conversion | ✅ |
-| Computed properties maintained from events: `session_count`, `first/last_seen_at`, `event_count`, per-event `count` / `sum` / `last_at` — targetable from rules | ✅ |
+| Computed properties maintained from events: `session_count`, `first/last_seen_at`, `event_count`, per-event `count` / `sum` / `first_at` / `last_at` / `high` / `low` / `last_value`, `play_time_sec` — targetable from rules | ✅ |
 | Go SDK `sdk/go` (server-key client with local cache + change-stream invalidation) | ✅ |
 | TypeScript SDK `sdk/ts` (browser + Node, zero deps): session with auto-refresh, flags, experiments, live events, inbox, events, WebSocket stream | ✅ |
 | Admin console (`console/`, React, embedded in the binary at `/console`): visual rule builder, flags / experiments / audiences / live-event calendar / messages with preview / identities / analytics / API keys / audit log, dark theme | ✅ |

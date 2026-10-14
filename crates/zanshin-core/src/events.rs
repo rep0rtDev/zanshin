@@ -19,6 +19,12 @@ pub const MAX_SKEW_PAST_DAYS: i64 = 30;
 pub const EV_AUTHENTICATE: &str = "$authenticate";
 pub const EV_EXPOSURE: &str = "$exposure";
 pub const EV_MESSAGE_READ: &str = "$message_read";
+pub const EV_IDENTITY_CREATE: &str = "$identity_create";
+pub const EV_SESSION_START: &str = "$session_start";
+pub const EV_SESSION_END: &str = "$session_end";
+pub const EV_IDENTIFY: &str = "$identify";
+pub const EV_EXPERIMENT_JOIN: &str = "$experiment_join";
+pub const EV_LIVE_EVENT_JOIN: &str = "$live_event_join";
 
 /// One event as reported by a client.
 #[derive(Debug, Clone, Default, Deserialize)]
@@ -147,6 +153,26 @@ pub fn fold_computed(current: &PropertyMap, events: &[Event]) -> PropertyMap {
             }
             continue;
         }
+        if matches!(
+            e.name.as_str(),
+            EV_IDENTITY_CREATE
+                | EV_SESSION_START
+                | EV_IDENTIFY
+                | EV_LIVE_EVENT_JOIN
+                | EV_EXPERIMENT_JOIN
+        ) {
+            continue;
+        }
+        if e.name == EV_SESSION_END {
+            if let Some(d) = e.numeric_value() {
+                let total = cur(&patch, current, "play_time_sec")
+                    .and_then(|v| v.as_f64())
+                    .unwrap_or(0.0)
+                    + d;
+                patch.insert("play_time_sec".into(), json_num(total));
+            }
+            continue;
+        }
         event_count += 1.0;
         last_event = Some(last_event.map_or(e.event_time, |t| t.max(e.event_time)));
         first_event = Some(first_event.map_or(e.event_time, |t| t.min(e.event_time)));
@@ -165,6 +191,11 @@ pub fn fold_computed(current: &PropertyMap, events: &[Event]) -> PropertyMap {
         if prev.is_none_or(|p| e.event_time >= p) {
             patch.insert(last_key, Value::String(e.event_time.to_rfc3339()));
         }
+        let first_key = format!("events.{safe}.first_at");
+        let prev_first = cur(&patch, current, &first_key).as_ref().and_then(parse_ts);
+        if prev_first.is_none_or(|p| e.event_time < p) {
+            patch.insert(first_key, Value::String(e.event_time.to_rfc3339()));
+        }
         if let Some(v) = e.numeric_value() {
             let sum_key = format!("events.{safe}.sum");
             let s = cur(&patch, current, &sum_key)
@@ -172,6 +203,17 @@ pub fn fold_computed(current: &PropertyMap, events: &[Event]) -> PropertyMap {
                 .unwrap_or(0.0)
                 + v;
             patch.insert(sum_key, json_num(s));
+            let high_key = format!("events.{safe}.high");
+            let low_key = format!("events.{safe}.low");
+            let high = cur(&patch, current, &high_key).and_then(|x| x.as_f64());
+            if high.is_none_or(|h| v > h) {
+                patch.insert(high_key, json_num(v));
+            }
+            let low = cur(&patch, current, &low_key).and_then(|x| x.as_f64());
+            if low.is_none_or(|l| v < l) {
+                patch.insert(low_key, json_num(v));
+            }
+            patch.insert(format!("events.{safe}.last_value"), json_num(v));
         }
     }
     if event_count != num(current, "event_count") {

@@ -44,6 +44,37 @@ refresh token revokes the whole session (401 `refresh token already used`).
 `{ "token": "…", "refresh_token": "…" }` (either is enough) → `{}`. Access tokens of the session are
 rejected immediately afterwards.
 
+### `POST /v1/identify` — session
+
+Link the current identity to a new external id (anonymous → account). If no identity owns `id` the
+external id is renamed in place; otherwise the current identity is **merged** into the existing one:
+custom / default properties move (the target wins on conflict), computed counters are summed, events,
+experiment assignments, flag overrides, inbox and push devices are re-attached, the merge is recorded
+(`GET /admin/v1/identities/{id}/merges`) and the source identity is deleted. The old session is closed;
+the response is a fresh session for the resulting identity (same shape as `POST /v1/authenticate`).
+
+```json
+{ "id": "steam:7656119" }
+```
+
+Server-side equivalent (server key): `POST /server/v1/identities/{external_id}/identify` with the same body.
+
+#### Default-property enrichment
+
+On authenticate the server fills `default` properties the client did not send from request headers:
+`X-Zanshin-Platform`, `X-Zanshin-OS`, `X-Zanshin-OS-Version`, `X-Zanshin-Device`, `X-Zanshin-App-Version`,
+`X-Zanshin-Timezone`, `Accept-Language` (→ `locale`, `language`), and — when `taxonomy.geoip_db` points to a
+MaxMind City/Country database — `country`, `region`, `city`, `timezone` from the client IP
+(`CF-IPCountry` / `X-Country` are used as a country fallback). Properties sent explicitly always win.
+
+#### Play sessions & synthetic events
+
+Every authenticate / identify opens a play session (`GET /admin/v1/identities/{id}/sessions`); events and
+refreshes keep it alive, logout or `taxonomy.session_inactivity` (default 30 min) close it with a duration.
+The server emits `$identity_create`, `$session_start`, `$session_end` (value = seconds), `$identify`
+(`metadata.from` / `to` / `merged`) and `$experiment_join` (`metadata.experiment`, value = variant).
+These never count towards `event_count`; `$session_end` maintains `play_time_sec`.
+
 ### `GET /v1/identity` — session
 
 Returns the identity object (without properties).
@@ -258,6 +289,21 @@ gRPC: `ServerGetFlags`, `ServerGetAudiences`, `ServerGetExperiments`, `ServerGet
 | `GET` | `/analytics/events?name=purchase&from=&to=&granularity=hour\|day` | — | `{ "buckets": [ { "bucket", "count", "identities", "sum" } ], "backend": "clickhouse" \| "postgres" }` (default window: last 7 days) |
 | `GET` | `/analytics/events/names?from=&to=&limit=` | — | event names by volume with unique identities |
 | `GET` | `/identities/{identity_id}/events?limit=` | — | most recent events of one identity (with `experiments` tags) |
+
+### Taxonomy
+
+| Route | Purpose |
+|-------|---------|
+| `GET/POST /admin/v1/labels`, `PUT/DELETE /admin/v1/labels/{id}`, `GET /admin/v1/labels/{id}/usage` | Labels registry. Renaming / deleting a label rewrites the `tags` of every flag, audience, experiment, live event, message and event definition. All list endpoints accept `?tags=a,b` (every tag must match). |
+| `GET/POST /admin/v1/taxonomy/events`, `GET/PUT/DELETE /admin/v1/taxonomy/events/{name}` | Event definitions: `value_type` (`any` / `number` / `string` / `object` / `revenue` — requires `metadata.amount` + `metadata.currency`), optional `metadata_schema` (JSON Schema), `exclude_from_activity`, `tags`. Core events (`sessionStart`, `purchaseCompleted`, `levelCompleted`, …) are seeded and cannot be deleted. |
+| `GET/PUT /admin/v1/taxonomy/settings` | `mode`: `off` (no checks) · `warn` (store, report) · `strict` (reject with 400 / drop in batches); `auto_discover` registers unknown event names as `discovered` definitions. |
+| `GET/DELETE /admin/v1/taxonomy/rejected?limit=` | Last N (default 200) invalid events with identity, payload and reason, and whether they were dropped. |
+| `GET /admin/v1/taxonomy/properties`, `PUT/DELETE /admin/v1/taxonomy/properties/{key}` | Observed property catalog per namespace plus configuration; `read_only: true` makes a custom key writable only through the server API. |
+| `GET/POST /admin/v1/schemas`, `GET/PUT/DELETE /admin/v1/schemas/{id}`, `POST /admin/v1/schemas/validate` | JSON Schemas for structured values; `validate` takes `{ "schema", "samples": [...] }` and returns per-sample errors. |
+| `GET /admin/v1/identities/{id}/sessions`, `GET /admin/v1/identities/{id}/merges` | Play-session and merge history. |
+
+Configuration: `taxonomy.mode`, `taxonomy.auto_discover`, `taxonomy.geoip_db`, `taxonomy.session_inactivity`,
+`taxonomy.rejected_keep` (env `ZANSHIN__TAXONOMY__*`).
 
 ### Live event definition
 

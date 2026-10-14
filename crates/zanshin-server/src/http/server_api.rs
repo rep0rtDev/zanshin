@@ -37,6 +37,10 @@ pub fn router() -> Router<AppState> {
         .route("/stream", get(stream))
         .route("/identities", post(upsert_identity))
         .route(
+            "/identities/{external_id}/identify",
+            post(identify_identity),
+        )
+        .route(
             "/identities/{external_id}/properties",
             axum::routing::put(update_identity_properties),
         )
@@ -270,6 +274,62 @@ async fn upsert_identity(
         .events
         .system(&i, zanshin_core::events::EV_AUTHENTICATE, "", None, None)
         .await;
+    Ok(Json(IdentityWithProperties {
+        identity: IdentityResponse::from(&i),
+        properties: i.properties,
+    }))
+}
+
+#[derive(Debug, Deserialize)]
+pub struct IdentifyIdentityRequest {
+    pub id: String,
+}
+
+/// Link an identity to a new external id (merging into an existing identity if the id is taken).
+async fn identify_identity(
+    State(state): State<AppState>,
+    ServerAuth(_): ServerAuth,
+    Path(external_id): Path<String>,
+    Json(req): Json<IdentifyIdentityRequest>,
+) -> ApiResult<Json<IdentityWithProperties>> {
+    let from = state.identity.get_by_external_id(&external_id).await?;
+    let (s, merged) = state.identity.identify(from.id, &req.id).await?;
+    if let Some(src) = &merged {
+        state
+            .taxonomy
+            .repo
+            .record_merge(&zanshin_store::taxonomy::IdentityMerge {
+                id: uuid::Uuid::now_v7(),
+                from_identity: src.id,
+                from_external: src.external_id.clone(),
+                into_identity: s.identity.id,
+                into_external: s.identity.external_id.clone(),
+                merged_at: chrono::Utc::now(),
+            })
+            .await
+            .ok();
+    }
+    let mut meta = serde_json::Map::new();
+    meta.insert(
+        "from".into(),
+        serde_json::Value::String(from.external_id.clone()),
+    );
+    meta.insert(
+        "to".into(),
+        serde_json::Value::String(s.identity.external_id.clone()),
+    );
+    meta.insert("merged".into(), serde_json::Value::Bool(merged.is_some()));
+    state
+        .events
+        .system(
+            &s.identity,
+            zanshin_core::events::EV_IDENTIFY,
+            "",
+            Some(meta),
+            None,
+        )
+        .await;
+    let i = s.identity;
     Ok(Json(IdentityWithProperties {
         identity: IdentityResponse::from(&i),
         properties: i.properties,
