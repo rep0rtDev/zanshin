@@ -281,7 +281,7 @@ function Dashboards() {
   );
 }
 
-type Tab = 'status' | 'calendar' | 'metrics' | 'explore' | 'map' | 'playtime' | 'retention' | 'funnels' | 'ltv' | 'errors' | 'dashboards';
+type Tab = 'status' | 'calendar' | 'metrics' | 'explore' | 'lifetime' | 'map' | 'playtime' | 'retention' | 'funnels' | 'ltv' | 'errors' | 'dashboards';
 const FILTERED: Tab[] = ['metrics', 'explore', 'map', 'playtime', 'retention', 'funnels', 'ltv'];
 
 export default function Insights() {
