@@ -120,3 +120,15 @@ jobs:
         run: |
           dotnet build Zanshin.csproj -c Release
           dotnet build Tests~/Smoke/Smoke.csproj -c Release
+
+  godot:
+    name: godot sdk
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: install godot 4.3 (headless)
+        run: |
+          curl -sL -o godot.zip https://github.com/godotengine/godot/releases/download/4.3-stable/Godot_v4.3-stable_linux.x86_64.zip
+          unzip -q godot.zip && mv Godot_v4.3-stable_linux.x86_64 godot && chmod +x godot
+      - name: parse addon + smoke runner (skips the live flow without a server)
+        run: ./godot --headless --path sdk/godot/smoke --script res://smoke.gd

@@ -78,6 +78,7 @@ variables. `zanshin --check-config` prints the effective configuration with secr
 | TypeScript SDK `sdk/ts` (browser + Node, zero deps): session with auto-refresh, flags, experiments, live events, inbox, events, WebSocket stream | ✅ |
 | Admin console (`console/`, React, embedded in the binary at `/console`): visual rule builder, flags / experiments / audiences / live-event calendar / messages with preview / identities / analytics / API keys / audit log, dark theme | ✅ |
 | Unreal C++ SDK `sdk/unreal` (plugin on engine HTTP/WebSockets/Json modules, Blueprint subsystem) | ✅ |
+| Godot GDScript SDK `sdk/godot` (addon, HTTPRequest + WebSocketPeer, zero deps) | ✅ |
 | Unity C# SDK `sdk/unity` (UPM, zero deps, netstandard2.1): same surface as the TS SDK incl. push-token registration and WebSocket stream | ✅ |
 | Push notifications (FCM HTTP v1 / APNs token auth): device token registry, `push: true` on campaigns and direct messages, proactive campaign sweep | ✅ |
 
@@ -142,6 +143,8 @@ API key). The UI is a React app in [`console/`](console) compiled into the serve
   events, `ZanshinStream` over `System.Net.WebSockets`.
 - [`sdk/unreal`](sdk/unreal) — Unreal Engine 5.3+ plugin: `FZanshinClient` (async, auto refresh, all client
   endpoints), `FZanshinStream` over the engine `WebSockets` module, Blueprint-friendly `UZanshinSubsystem`.
+- [`sdk/godot`](sdk/godot) — Godot 4.3+ GDScript addon (`Zanshin` autoload): awaitable client with auto refresh,
+  typed helpers, `WebSocketPeer` live stream; headless smoke test against a live server.
 - [`sdk/go`](sdk/go) — Go for trusted backends: server-key client with a per-identity evaluation
   cache invalidated by the `/server/v1/stream` change feed, identity sync, direct messages, events.
 - [`nakama/`](nakama) — Nakama runtime plugin on top of the Go SDK: users become Zanshin
