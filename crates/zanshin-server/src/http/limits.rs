@@ -48,6 +48,11 @@ pub async fn limit(State(state): State<AppState>, req: Request, next: Next) -> R
         return next.run(req).await;
     }
     let (mut parts, body) = req.into_parts();
+    // Console cookies (OIDC or password login) are resolved once here and reused by the extractors.
+    let console = match api_key_from_parts(&parts) {
+        Some(_) => None,
+        None => console_principal(&parts, &state).await,
+    };
     let (scope, id, override_pm) = match api_key_from_parts(&parts) {
         Some(key) => match state.api_keys.authenticate(&key).await {
             Ok(p) => {
@@ -71,9 +76,9 @@ pub async fn limit(State(state): State<AppState>, req: Request, next: Next) -> R
                 return decide(state, Scope::Ip, ip, None, req, next).await;
             }
         },
-        None if console_principal(&parts, &state).is_some() => {
-            let p = console_principal(&parts, &state).expect("checked above");
-            let id = format!("oidc:{}", p.name);
+        None if console.is_some() => {
+            let p = console.expect("checked above");
+            let id = format!("console:{}", p.name);
             parts.extensions.insert::<Principal>(p);
             (Scope::Admin, id, None)
         }

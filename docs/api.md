@@ -613,3 +613,60 @@ Ship raw events to external storage. Each sink keeps a `(received_at, id)` curso
 | DELETE | `/admin/v1/data/identities/{id}` | GDPR deletion: identity, sessions, inbox, assignments and all events (ClickHouse mutation). |
 | POST | `/admin/v1/data/events/purge` | `{ before, names? }` — delete events older than a timestamp (at least one hour in the past). |
 | POST | `/admin/v1/data/sample` | `{ players, days, seed }` — deterministic synthetic players with sessions, level-ups and purchases for trying analytics on an empty server. |
+
+## Console users and permissions
+
+Admin access is authorised by **permissions**: a map `resource -> [read, write, delete]` over
+`flags, audiences, experiments, metrics, live_events, messages, templates, integrations, webhooks,
+journeys, identities, taxonomy, analytics, data, audit, api_keys, users, settings`. The key `*`
+applies to every resource that has no explicit entry (so `{"*": ["read"], "flags": ["read","write"]}`
+is "read everything, edit flags"). `write` implies `read`. Every `/admin/v1` route maps to one
+resource by its first path segment and to an action by method (`GET` → read, `DELETE` → delete,
+otherwise write); a refused call answers `403` with `message: "permission required: <resource>:<action>"`.
+Legacy roles still work: `admin` = everything, `editor` = everything except writing `api_keys` /
+`users`, `viewer` = read-only.
+
+`GET /admin/v1/permissions` — resources, actions and the archetype presets with their grants:
+`admin`, `developer`, `game_designer`, `debugger`, `support`, `analyst`, `viewer`.
+
+### Users (`users:*`)
+
+| Method | Path | Notes |
+| --- | --- | --- |
+| `GET` | `/admin/v1/users` | list (never includes hashes or secrets) |
+| `POST` | `/admin/v1/users` | `{email, name, password?, archetype?, permissions?}` — without `password` the response carries a one-time `reset_token` |
+| `GET` / `PATCH` / `DELETE` | `/admin/v1/users/{id}` | `PATCH {name?, archetype?|null, permissions?, disabled?}`; permission changes revoke the user's sessions |
+| `POST` | `/admin/v1/users/{id}/reset-link` | `{reset_token, path, expires_in_secs}` (24 h, single use) |
+| `DELETE` | `/admin/v1/users/{id}/mfa` | remove the user's authenticator (lost device) |
+| `DELETE` | `/admin/v1/users/{id}/sessions` | sign the user out everywhere |
+
+### Login (no API key)
+
+* `POST /console/auth/password` `{email, password, code?}` → sets the `zanshin_console_user`
+  cookie (HttpOnly, SameSite=Lax, Secure behind TLS). When the user has MFA and no `code` is given
+  the answer is `401 {"code": "mfa_required"}`; `code` accepts a TOTP or a recovery code.
+* `POST /console/auth/reset` `{token, password}` — completes a reset link.
+* `POST /console/auth/logout` — revokes the session and clears the cookie.
+* `GET /console/auth/config` → `{oidc, password, needs_bootstrap}`; with `needs_bootstrap` the
+  console offers to create the first admin using the bootstrap key.
+
+Passwords: Argon2id, at least 12 characters, common words rejected; an initial password set by an
+admin must be changed on first login (`must_change_password` in `GET /admin/v1/me`).
+
+### Own account (`/admin/v1/me/*`, console users only)
+
+| Method | Path | Notes |
+| --- | --- | --- |
+| `GET` | `/me` | now also `permissions`, `user_id`, `mfa_enabled`, `must_change_password`, `auth: "user"` |
+| `POST` | `/me/password` | `{current_password, new_password}`; revokes other sessions |
+| `POST` | `/me/mfa/setup` | `{secret, otpauth_url}` (RFC 6238, SHA-1, 30 s, 6 digits) |
+| `POST` | `/me/mfa/enable` | `{code}` → `{recovery_codes: [10 single-use codes]}` |
+| `POST` | `/me/mfa/disable` | `{code}` |
+| `GET` | `/me/sessions` · `DELETE /me/sessions/{id}` | active sessions with IP / user agent |
+
+### API keys
+
+`POST /admin/v1/api-keys` accepts `permissions` or `archetype` for admin keys (they override
+`role`). `POST /admin/v1/api-keys/{id}/rotate` `{grace_hours?: 24}` mints a successor with the same
+name, kind, limits and grants and gives the old key `expires_at = now + grace`; the rows link
+through `rotated_from` / `rotated_to`, and a key rotates at most once.

@@ -32,6 +32,7 @@ export async function api<T = unknown>(method: string, path: string, body?: unkn
       message = e.message ?? message;
     } catch { /* plain */ }
     if (res.status === 401) window.dispatchEvent(new Event('zanshin:unauthorized'));
+    if (res.status === 403) window.dispatchEvent(new CustomEvent('zanshin:forbidden', { detail: message }));
     throw new ApiError(res.status, code, message);
   }
   return (text ? JSON.parse(text) : {}) as T;
@@ -82,15 +83,33 @@ export function qs(params: Record<string, string | number | boolean | undefined 
 }
 
 export type Role = 'viewer' | 'editor' | 'admin';
-export type Me = { name: string; auth: 'api_key' | 'bootstrap' | 'oidc'; role: Role; read_only: boolean };
+export type Me = { name: string; auth: 'api_key' | 'bootstrap' | 'oidc' | 'user'; role: Role; read_only: boolean; permissions: Record<string, ('read' | 'write' | 'delete')[]>; user_id: string | null; mfa_enabled: boolean; must_change_password: boolean };
 
 /** Whether the server offers OIDC single sign-on for the console. */
-export async function authConfig(): Promise<{ oidc: boolean }> {
+export type AuthConfig = { oidc: boolean; password: boolean; needs_bootstrap: boolean };
+export async function authConfig(): Promise<AuthConfig> {
   try {
     const r = await fetch('/console/auth/config', { credentials: 'same-origin' });
-    return r.ok ? ((await r.json()) as { oidc: boolean }) : { oidc: false };
+    return r.ok ? ((await r.json()) as AuthConfig) : { oidc: false, password: false, needs_bootstrap: false };
   } catch {
-    return { oidc: false };
+    return { oidc: false, password: false, needs_bootstrap: false };
+  }
+}
+
+/** Email + password (+ one-time code) login; throws ApiError with code `mfa_required` when a code is needed. */
+export async function passwordLogin(email: string, password: string, code?: string): Promise<void> {
+  const r = await fetch('/console/auth/password', { method: 'POST', credentials: 'same-origin', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ email, password, code: code || undefined }) });
+  if (!r.ok) {
+    const e = await r.json().catch(() => ({}));
+    throw new ApiError(r.status, e.code ?? 'error', e.message ?? r.statusText);
+  }
+}
+
+export async function resetPassword(token: string, password: string): Promise<void> {
+  const r = await fetch('/console/auth/reset', { method: 'POST', credentials: 'same-origin', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ token, password }) });
+  if (!r.ok) {
+    const e = await r.json().catch(() => ({}));
+    throw new ApiError(r.status, e.code ?? 'error', e.message ?? r.statusText);
   }
 }
 

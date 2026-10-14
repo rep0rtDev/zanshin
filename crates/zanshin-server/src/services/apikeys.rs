@@ -6,6 +6,7 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 use zanshin_core::{
     apikey::{self, ApiKeyKind, Role},
+    permissions::{Action, Permissions},
     Error, Result,
 };
 use zanshin_store::{
@@ -30,11 +31,25 @@ pub struct Principal {
     /// Admin principals only: what the console / admin API lets them do.
     #[serde(default)]
     pub role: Role,
+    /// Explicit grants; `None` = derived from `role` (older keys, OIDC roles).
+    #[serde(default)]
+    pub permissions: Option<Permissions>,
+    /// Console user behind this principal (password / TOTP login), if any.
+    #[serde(default)]
+    pub user_id: Option<Uuid>,
 }
 
 impl Principal {
     pub fn is_admin(&self) -> bool {
         self.kind == ApiKeyKind::Admin
+    }
+    pub fn permissions(&self) -> Permissions {
+        self.permissions
+            .clone()
+            .unwrap_or_else(|| Permissions::from_role(self.role))
+    }
+    pub fn allows(&self, resource: &str, action: Action) -> bool {
+        self.permissions().allows(resource, action)
     }
     pub fn is_server(&self) -> bool {
         matches!(self.kind, ApiKeyKind::Server | ApiKeyKind::Admin)
@@ -69,6 +84,8 @@ impl ApiKeyService {
                     read_only: false,
                     rate_limit_per_minute: None,
                     role: Role::Admin,
+                    permissions: None,
+                    user_id: None,
                 });
             }
         }
@@ -91,6 +108,8 @@ impl ApiKeyService {
             read_only: row.role() == Role::Viewer,
             rate_limit_per_minute: row.rate_limit_per_minute.map(|n| n as u32),
             role: row.role(),
+            permissions: row.permissions.as_ref().map(|_| row.permissions()),
+            user_id: None,
         };
         let _ = self.cache.set_json(&cache_key, &principal, CACHE_TTL).await;
         let repo = self.repo.clone();
@@ -98,6 +117,17 @@ impl ApiKeyService {
             let _ = repo.touch(row.id).await;
         });
         Ok(principal)
+    }
+
+    /// Mint a successor key with identical properties; the old one expires after `grace`.
+    pub async fn rotate(&self, id: Uuid, grace: chrono::Duration) -> Result<(ApiKeyRow, String)> {
+        let old = self.repo.get(id).await?;
+        let generated = apikey::generate(old.kind());
+        let row = self
+            .repo
+            .rotate(id, &generated.prefix, &generated.hash, grace)
+            .await?;
+        Ok((row, generated.plaintext))
     }
 
     pub async fn create(

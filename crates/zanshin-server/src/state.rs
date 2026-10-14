@@ -2,6 +2,7 @@ use crate::services::taxonomy::TaxonomyService;
 use crate::services::{
     analytics::AnalyticsService,
     audit::AuditService,
+    console_users::ConsoleUserService,
     export::ExportService,
     integrations::IntegrationService,
     journeys::{JourneyDeps, JourneyService},
@@ -20,6 +21,7 @@ use zanshin_store::{
     analytics::{AnnotationRepo, DashboardRepo, PlayerMetricsRepo},
     api_keys::ApiKeyRepo,
     audiences::AudienceRepo,
+    console_users::ConsoleUserRepo,
     experiments::ExperimentRepo,
     export::{ConfigHistoryRepo, ExportRunRepo, ExportSinkRepo},
     flags::FlagRepo,
@@ -60,6 +62,7 @@ pub struct AppState {
     pub identity: IdentityService,
     pub api_keys: ApiKeyService,
     pub oidc: OidcService,
+    pub console_users: ConsoleUserService,
     pub limits: RateLimiter,
     pub audit: AuditService,
     pub bus: ChangeBus,
@@ -167,6 +170,11 @@ impl AppState {
             &cfg.auth.jwt_secret,
             cfg.admin.console_session_ttl,
         );
+        let console_users = ConsoleUserService::new(
+            ConsoleUserRepo::new(stores.pg.clone()),
+            cfg.admin.console_session_ttl,
+            cfg.telemetry.service_name.clone(),
+        );
         let limits = RateLimiter::new(stores.cache.clone(), cfg.limits.clone());
         let audit = AuditService::new(AuditRepo::new(stores.pg.clone()), cfg.audit.clone());
         let bus = ChangeBus::new(stores.cache.clone(), cfg.redis.url.clone());
@@ -266,6 +274,7 @@ impl AppState {
             identity,
             api_keys,
             oidc,
+            console_users,
             limits,
             audit,
             bus,

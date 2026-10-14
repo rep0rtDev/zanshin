@@ -109,6 +109,11 @@ async fn purge(state: &AppState) {
         Ok(_) => {}
         Err(e) => tracing::warn!(error = %e, "session purge failed"),
     }
+    match state.console_users.repo().purge_sessions().await {
+        Ok(n) if n > 0 => tracing::info!(purged = n, "stale console sessions purged"),
+        Ok(_) => {}
+        Err(e) => tracing::warn!(error = %e, "console session purge failed"),
+    }
     match state.audit.prune().await {
         Ok(n) if n > 0 => tracing::info!(purged = n, "old audit entries purged"),
         Ok(_) => {}

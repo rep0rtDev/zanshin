@@ -57,6 +57,8 @@ impl ConsoleUser {
             read_only: self.role == Role::Viewer,
             rate_limit_per_minute: None,
             role: self.role,
+            permissions: None,
+            user_id: None,
         }
     }
 }

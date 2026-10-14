@@ -45,6 +45,7 @@ pub fn router() -> Router<AppState> {
     Router::new()
         .route("/api-keys", get(list_keys).post(create_key))
         .route("/api-keys/{id}", axum::routing::delete(revoke_key))
+        .route("/api-keys/{id}/rotate", axum::routing::post(rotate_key))
         .route("/identities", get(list_identities))
         .route(
             "/identities/{id}",
@@ -185,6 +186,12 @@ pub struct CreateKeyRequest {
     /// Per-key request budget, overrides `limits.*_per_minute` for this key.
     #[serde(default)]
     pub rate_limit_per_minute: Option<i32>,
+    /// Admin keys only: explicit `resource -> [read, write, delete]` grants (override `role`).
+    #[serde(default)]
+    pub permissions: Option<zanshin_core::permissions::Permissions>,
+    /// Admin keys only: named preset (`developer`, `game_designer`, …) used when `permissions` is absent.
+    #[serde(default)]
+    pub archetype: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -210,8 +217,44 @@ async fn create_key(
                 expires_at: req.expires_at,
                 rate_limit_per_minute: req.rate_limit_per_minute,
                 role: req.role,
+                permissions: match (&req.permissions, &req.archetype) {
+                    (Some(p), _) => {
+                        p.validate().map_err(zanshin_core::Error::invalid)?;
+                        Some(p.clone())
+                    }
+                    (None, Some(a)) => {
+                        Some(zanshin_core::permissions::archetype(a).ok_or_else(|| {
+                            zanshin_core::Error::invalid(format!("unknown archetype {a:?}"))
+                        })?)
+                    }
+                    (None, None) => None,
+                },
             },
         )
+        .await?;
+    Ok(Json(CreatedKey { key, secret }))
+}
+
+#[derive(Debug, Deserialize, Default)]
+pub struct RotateKeyRequest {
+    /// How long the old key keeps working (hours, default 24, max 720).
+    #[serde(default)]
+    pub grace_hours: Option<i64>,
+}
+
+async fn rotate_key(
+    State(state): State<AppState>,
+    AdminAuth(_): AdminAuth,
+    Path(id): Path<Uuid>,
+    body: Option<Json<RotateKeyRequest>>,
+) -> ApiResult<Json<CreatedKey>> {
+    let hours = body
+        .map(|Json(b)| b.grace_hours.unwrap_or(24))
+        .unwrap_or(24)
+        .clamp(0, 720);
+    let (key, secret) = state
+        .api_keys
+        .rotate(id, chrono::Duration::hours(hours))
         .await?;
     Ok(Json(CreatedKey { key, secret }))
 }
@@ -1231,10 +1274,14 @@ async fn live_event_occurrences(
 #[derive(Serialize)]
 pub struct Me {
     pub name: String,
-    /// `api_key`, `bootstrap` or `oidc`.
+    /// `api_key`, `bootstrap`, `oidc` or `user`.
     pub auth: &'static str,
     pub role: Role,
     pub read_only: bool,
+    pub permissions: zanshin_core::permissions::Permissions,
+    pub user_id: Option<Uuid>,
+    pub mfa_enabled: bool,
+    pub must_change_password: bool,
 }
 
 async fn system(
@@ -1291,16 +1338,26 @@ async fn system(
     })))
 }
 
-async fn me(AdminAuth(p): AdminAuth) -> Json<Me> {
-    let auth = match (p.key_id, p.name.as_str()) {
-        (Some(_), _) => "api_key",
-        (None, "bootstrap") => "bootstrap",
-        (None, _) => "oidc",
+async fn me(State(state): State<AppState>, AdminAuth(p): AdminAuth) -> ApiResult<Json<Me>> {
+    let auth = match (p.key_id, p.user_id, p.name.as_str()) {
+        (Some(_), _, _) => "api_key",
+        (None, Some(_), _) => "user",
+        (None, None, "bootstrap") => "bootstrap",
+        (None, None, _) => "oidc",
     };
-    Json(Me {
+    let user = match p.user_id {
+        Some(id) => Some(state.console_users.repo().get(id).await?),
+        None => None,
+    };
+    let permissions = p.permissions();
+    Ok(Json(Me {
+        read_only: !permissions.can_write_anything(),
         name: p.name,
         auth,
         role: p.role,
-        read_only: p.role == Role::Viewer,
-    })
+        permissions,
+        user_id: p.user_id,
+        mfa_enabled: user.as_ref().is_some_and(|u| u.totp_enabled),
+        must_change_password: user.as_ref().is_some_and(|u| u.must_change_password),
+    }))
 }

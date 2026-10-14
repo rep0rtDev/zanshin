@@ -69,7 +69,7 @@ pub async fn principal(parts: &mut Parts, state: &AppState) -> Result<Option<Pri
         return Ok(Some(p.clone()));
     }
     let Some(key) = api_key_from_parts(parts) else {
-        if let Some(p) = console_principal(parts, state) {
+        if let Some(p) = console_principal(parts, state).await {
             parts.extensions.insert(p.clone());
             return Ok(Some(p));
         }
@@ -157,22 +157,21 @@ impl FromRequestParts<AppState> for AdminAuth {
         if !p.is_admin() {
             return Err(Error::denied("admin api key required").into());
         }
-        let reads_only = matches!(
-            parts.method,
-            axum::http::Method::GET | axum::http::Method::HEAD | axum::http::Method::OPTIONS
-        );
-        if !reads_only && !p.role.can_write() {
-            return Err(Error::denied("viewer role: read-only access").into());
-        }
         // Inside the nested `/admin/v1` router the request URI is already stripped.
         let path = parts
             .extensions
             .get::<axum::extract::OriginalUri>()
             .map(|u| u.path().to_string())
             .unwrap_or_else(|| parts.uri.path().to_string());
-        let manages_keys = path.starts_with("/admin/v1/api-keys") || path.starts_with("/api-keys");
-        if !reads_only && manages_keys && !p.role.can_manage_keys() {
-            return Err(Error::denied("admin role required to manage api keys").into());
+        if let Some(resource) = zanshin_core::permissions::resource_for_path(&path) {
+            let action = zanshin_core::permissions::Action::for_method(parts.method.as_str());
+            if !p.allows(resource, action) {
+                return Err(Error::denied(format!(
+                    "permission required: {resource}:{}",
+                    action.as_str()
+                ))
+                .into());
+            }
         }
         Ok(AdminAuth(p))
     }
@@ -198,12 +197,26 @@ impl FromRequestParts<AppState> for ServerAuth {
     }
 }
 
-/// Admin principal carried by the console's OIDC session cookie, if any.
-pub fn console_principal(parts: &Parts, state: &AppState) -> Option<Principal> {
-    if !state.oidc.enabled() {
-        return None;
-    }
+/// Admin principal carried by a console cookie: an OIDC session (stateless JWT) or a console
+/// user session (server-side, password / TOTP login).
+pub async fn console_principal(parts: &Parts, state: &AppState) -> Option<Principal> {
     let cookie = header_str(parts, header::COOKIE.as_str())?;
-    let token = crate::services::oidc::cookie_value(cookie, crate::services::oidc::SESSION_COOKIE)?;
-    state.oidc.verify_session(token).map(|u| u.principal())
+    if state.oidc.enabled() {
+        if let Some(token) =
+            crate::services::oidc::cookie_value(cookie, crate::services::oidc::SESSION_COOKIE)
+        {
+            if let Some(u) = state.oidc.verify_session(token) {
+                return Some(u.principal());
+            }
+        }
+    }
+    let token = crate::services::oidc::cookie_value(
+        cookie,
+        crate::services::console_users::SESSION_COOKIE,
+    )?;
+    let (session, user) = state.console_users.verify_session(token).await.ok()??;
+    let mut p = crate::services::console_users::ConsoleUserService::principal_for(&user);
+    p.name = user.email.clone();
+    let _ = session;
+    Some(p)
 }

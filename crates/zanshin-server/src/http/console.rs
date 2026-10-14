@@ -4,7 +4,7 @@
 use axum::{
     body::Body,
     extract::{Path, Query, State},
-    http::{header, HeaderMap, StatusCode, Uri},
+    http::{header, HeaderMap, HeaderValue, StatusCode, Uri},
     response::{IntoResponse, Redirect, Response},
     routing::{get, post},
     Json, Router,
@@ -35,18 +35,121 @@ pub fn router() -> Router<AppState> {
         .route("/console/auth/login", get(auth_login))
         .route("/console/auth/callback", get(auth_callback))
         .route("/console/auth/logout", post(auth_logout))
+        .route("/console/auth/password", post(auth_password))
+        .route("/console/auth/reset", post(auth_reset))
         .route("/console/{*path}", get(asset))
 }
 
 #[derive(Serialize)]
 struct AuthConfig {
     oidc: bool,
+    /// Email + password (+ TOTP) login is always available once a user exists.
+    password: bool,
+    /// No console users yet: the UI offers "create the first admin" with the bootstrap key.
+    needs_bootstrap: bool,
 }
 
 async fn auth_config(State(state): State<AppState>) -> Json<AuthConfig> {
+    let users = state.console_users.repo().count().await.unwrap_or(1);
     Json(AuthConfig {
         oidc: state.oidc.enabled(),
+        password: users > 0,
+        needs_bootstrap: users == 0,
     })
+}
+
+#[derive(Deserialize)]
+struct PasswordLogin {
+    email: String,
+    password: String,
+    #[serde(default)]
+    code: Option<String>,
+}
+
+/// Email + password (+ TOTP) login; sets the console user session cookie.
+async fn auth_password(
+    State(state): State<AppState>,
+    axum::extract::ConnectInfo(peer): axum::extract::ConnectInfo<std::net::SocketAddr>,
+    headers: HeaderMap,
+    Json(req): Json<PasswordLogin>,
+) -> Result<Response, ApiError> {
+    use crate::services::console_users::{LoginOutcome, SESSION_COOKIE as USER_COOKIE};
+    let ip = if state.cfg.server.trust_proxy {
+        headers
+            .get("x-forwarded-for")
+            .and_then(|v| v.to_str().ok())
+            .and_then(|v| v.split(',').next())
+            .map(|s| s.trim().to_string())
+            .unwrap_or_else(|| peer.ip().to_string())
+    } else {
+        peer.ip().to_string()
+    };
+    let ua = headers
+        .get(header::USER_AGENT)
+        .and_then(|v| v.to_str().ok());
+    match state
+        .console_users
+        .login(
+            &req.email,
+            &req.password,
+            req.code.as_deref(),
+            Some(&ip),
+            ua,
+        )
+        .await?
+    {
+        LoginOutcome::MfaRequired => Ok((
+            StatusCode::UNAUTHORIZED,
+            Json(
+                serde_json::json!({ "code": "mfa_required", "message": "one-time code required" }),
+            ),
+        )
+            .into_response()),
+        LoginOutcome::Ok { user, token, .. } => {
+            tracing::info!(email = %user.email, "console password login");
+            let secure = state.oidc.secure_cookies()
+                || headers
+                    .get("x-forwarded-proto")
+                    .and_then(|v| v.to_str().ok())
+                    == Some("https");
+            Ok((
+                [(
+                    header::SET_COOKIE,
+                    cookie(
+                        USER_COOKIE,
+                        &token,
+                        Some(state.console_users.session_ttl().as_secs()),
+                        secure,
+                    )
+                    .parse::<HeaderValue>()
+                    .expect("cookie header"),
+                )],
+                Json(serde_json::json!({
+                    "email": user.email,
+                    "name": user.name,
+                    "must_change_password": user.must_change_password,
+                })),
+            )
+                .into_response())
+        }
+    }
+}
+
+#[derive(Deserialize)]
+struct ResetRequest {
+    token: String,
+    password: String,
+}
+
+async fn auth_reset(
+    State(state): State<AppState>,
+    Json(req): Json<ResetRequest>,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    let user = state
+        .console_users
+        .complete_reset(&req.token, &req.password)
+        .await?;
+    Ok(Json(serde_json::json!({ "email": user.email })))
 }
 
 fn cookie(name: &str, value: &str, max_age: Option<u64>, secure: bool) -> String {
@@ -153,14 +256,28 @@ async fn auth_callback(
     r
 }
 
-async fn auth_logout(State(state): State<AppState>) -> Response {
+async fn auth_logout(State(state): State<AppState>, headers: HeaderMap) -> Response {
+    use crate::services::console_users::SESSION_COOKIE as USER_COOKIE;
+    let secure = state.oidc.secure_cookies();
+    // Revoke the server-side user session, if the request carried one.
+    if let Some(token) = headers
+        .get(header::COOKIE)
+        .and_then(|v| v.to_str().ok())
+        .and_then(|c| cookie_value(c, USER_COOKIE))
+    {
+        if let Ok(Some((session, user))) = state.console_users.verify_session(token).await {
+            let _ = state.console_users.logout(user.id, session.id).await;
+        }
+    }
     let mut r = StatusCode::NO_CONTENT.into_response();
-    r.headers_mut().insert(
-        header::SET_COOKIE,
-        cookie(SESSION_COOKIE, "", Some(0), state.oidc.secure_cookies())
-            .parse()
-            .expect("cookie header"),
-    );
+    for name in [SESSION_COOKIE, USER_COOKIE] {
+        r.headers_mut().append(
+            header::SET_COOKIE,
+            cookie(name, "", Some(0), secure)
+                .parse()
+                .expect("cookie header"),
+        );
+    }
     r
 }
 
