@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 
 export function Page({ title, actions, children }: { title: ReactNode; actions?: ReactNode; children: ReactNode }) {
@@ -113,5 +113,43 @@ export function Sparkline({ points, height = 48 }: { points: number[]; height?: 
     <svg viewBox={`0 0 ${w} ${height}`} preserveAspectRatio="none" className="spark" style={{ height }}>
       <polyline points={d} fill="none" stroke="currentColor" strokeWidth="1.5" vectorEffect="non-scaling-stroke" />
     </svg>
+  );
+}
+
+export function Menu({ items, label = '⋯' }: { items: { label: ReactNode; onClick: () => void; danger?: boolean; disabled?: boolean }[]; label?: ReactNode }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const h = (e: MouseEvent) => { if (!ref.current?.contains(e.target as Node)) setOpen(false); };
+    document.addEventListener('mousedown', h);
+    return () => document.removeEventListener('mousedown', h);
+  }, [open]);
+  return (
+    <div className="menu" ref={ref} onClick={(e) => e.stopPropagation()}>
+      <button className="btn ghost sm" onClick={() => setOpen((o) => !o)} aria-label="More">{label}</button>
+      {open && (
+        <div className="menu-pop">
+          {items.map((it, i) => <button key={i} className={'menu-item' + (it.danger ? ' danger' : '')} disabled={it.disabled} onClick={() => { setOpen(false); it.onClick(); }}>{it.label}</button>)}
+        </div>
+      )}
+    </div>
+  );
+}
+
+export function Empty({ title, hint, action }: { title: ReactNode; hint?: ReactNode; action?: ReactNode }) {
+  return <div className="empty"><div style={{ fontWeight: 600 }}>{title}</div>{hint && <div className="hint" style={{ marginTop: 4 }}>{hint}</div>}{action && <div style={{ marginTop: 12 }}>{action}</div>}</div>;
+}
+
+export function Pager({ page, pages, size, onPage, onSize, total }: { page: number; pages: number; size: number; onPage: (p: number) => void; onSize: (s: number) => void; total: number }) {
+  if (total <= 25) return null;
+  return (
+    <div className="pager">
+      <span className="hint">{fmtNum(total)} total</span>
+      <select value={size} onChange={(e) => onSize(Number(e.target.value))} style={{ width: 'auto' }}>{[25, 50, 100].map((n) => <option key={n} value={n}>{n} / page</option>)}</select>
+      <button className="btn ghost sm" disabled={page <= 0} onClick={() => onPage(page - 1)}>‹</button>
+      <span className="hint">{page + 1} / {pages}</span>
+      <button className="btn ghost sm" disabled={page >= pages - 1} onClick={() => onPage(page + 1)}>›</button>
+    </div>
   );
 }

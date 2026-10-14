@@ -166,6 +166,7 @@ pub fn router() -> Router<AppState> {
         )
         .route("/stats", get(stats))
         .route("/me", get(me))
+        .route("/system", get(system))
         .route("/audit", get(list_audit))
 }
 
@@ -1234,6 +1235,59 @@ pub struct Me {
     pub auth: &'static str,
     pub role: Role,
     pub read_only: bool,
+}
+
+async fn system(
+    State(state): State<AppState>,
+    AdminAuth(_): AdminAuth,
+) -> ApiResult<Json<serde_json::Value>> {
+    let cfg = &state.cfg;
+    let stores_ok = state.stores.ping().await.is_ok();
+    let now = chrono::Utc::now();
+    let count = |r: zanshin_core::Result<usize>| r.unwrap_or(0);
+    let counts = serde_json::json!({
+        "flags": state.flags.list().await.len(),
+        "audiences": state.audiences.list().await.len(),
+        "experiments": state.experiments.list().await.len(),
+        "live_events": state.live_events.list().await.len(),
+        "messages": state.messages.list().await.len(),
+        "templates": count(state.templates.list().await.map(|v| v.len())),
+        "journeys": count(state.journeys.list().await.map(|v| v.len())),
+        "webhooks": count(state.webhooks.list().await.map(|v| v.len())),
+        "integrations": count(state.integrations.list().await.map(|v| v.len())),
+        "metrics": count(state.metrics.list().await.map(|v| v.len())),
+    });
+    Ok(Json(serde_json::json!({
+        "version": env!("CARGO_PKG_VERSION"),
+        "started_at": state.started_at,
+        "uptime_secs": (now - state.started_at).num_seconds().max(0),
+        "stores": {
+            "postgres": stores_ok,
+            "redis": stores_ok,
+            "clickhouse": state.stores.clickhouse.is_some(),
+            "event_store": if state.stores.clickhouse.is_some() { "clickhouse" } else { "postgres" },
+        },
+        "push": { "provider": cfg.push.provider },
+        "auth": {
+            "oidc": cfg.admin.oidc.is_some(),
+            "access_ttl_secs": cfg.auth.access_ttl.as_secs(),
+            "refresh_ttl_secs": cfg.auth.refresh_ttl.as_secs(),
+        },
+        "limits": {
+            "enabled": if cfg.limits.enabled { 1 } else { 0 },
+            "ip_per_minute": cfg.limits.ip_per_minute,
+            "client_per_minute": cfg.limits.client_per_minute,
+            "session_per_minute": cfg.limits.session_per_minute,
+            "server_per_minute": cfg.limits.server_per_minute,
+        },
+        "taxonomy": {
+            "mode": cfg.taxonomy.mode,
+            "auto_discover": cfg.taxonomy.auto_discover,
+            "geoip": !cfg.taxonomy.geoip_db.is_empty(),
+        },
+        "audit_retention_days": cfg.audit.retention.as_secs() / 86_400,
+        "counts": counts,
+    })))
 }
 
 async fn me(AdminAuth(p): AdminAuth) -> Json<Me> {
