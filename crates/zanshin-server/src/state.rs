@@ -1,3 +1,4 @@
+use crate::services::currency::CurrencyService;
 use crate::services::taxonomy::TaxonomyService;
 use crate::services::{
     analytics::AnalyticsService,
@@ -83,6 +84,7 @@ pub struct AppState {
     pub push: PushService,
     pub eval: Evaluator,
     pub taxonomy: TaxonomyService,
+    pub currency: CurrencyService,
     pub started_at: chrono::DateTime<chrono::Utc>,
     /// Cluster-wide job locks (Postgres advisory locks).
     pub locks: zanshin_store::locks::JobLock,
@@ -229,6 +231,19 @@ impl AppState {
             stores.cache.clone(),
             cfg.taxonomy.clone(),
         );
+        let currency = CurrencyService::new(
+            zanshin_store::currency::CurrencyRepo::new(stores.pg.clone()),
+            cfg.taxonomy.currency_rates_url.clone(),
+        );
+        {
+            let c = currency.clone();
+            tokio::spawn(async move {
+                if let Err(e) = c.load().await {
+                    tracing::warn!(error = %e, "currency rates not loaded");
+                }
+            });
+        }
+        events.attach_currency(currency.clone());
         {
             let ev = events.clone();
             let idr = identity.clone();
@@ -309,6 +324,7 @@ impl AppState {
             push,
             eval,
             taxonomy,
+            currency,
             metrics,
             started_at: chrono::Utc::now(),
             locks,

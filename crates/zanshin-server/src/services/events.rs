@@ -40,6 +40,7 @@ pub struct EventService {
     /// Set once the evaluator exists: tags every event with the live events (and variants) the
     /// player is in, as `live:<key>` → variant, next to experiment assignments.
     live: Arc<std::sync::RwLock<Option<super::eval::Evaluator>>>,
+    currency: Arc<std::sync::RwLock<Option<super::currency::CurrencyService>>>,
 }
 
 struct Inner {
@@ -62,6 +63,7 @@ impl EventService {
             experiments,
             cache: None,
             live: Arc::new(std::sync::RwLock::new(None)),
+            currency: Arc::new(std::sync::RwLock::new(None)),
             inner: Arc::new(Inner {
                 rx: std::sync::Mutex::new(Some(rx)),
             }),
@@ -98,6 +100,12 @@ impl EventService {
 
     /// Retention purge (see `retention.events`); returns rows removed in this batch.
     /// Wire the evaluator in (after construction) so events get live-event tags.
+    pub fn attach_currency(&self, currency: super::currency::CurrencyService) {
+        if let Ok(mut g) = self.currency.write() {
+            *g = Some(currency);
+        }
+    }
+
     pub fn attach_evaluator(&self, eval: super::eval::Evaluator) {
         if let Ok(mut g) = self.live.write() {
             *g = Some(eval);
@@ -180,13 +188,33 @@ impl EventService {
             }
         }
         let now = chrono::Utc::now();
+        let currency = self.currency.read().ok().and_then(|g| g.clone());
         let mut seen = std::collections::HashSet::new();
         let mut n = 0;
-        for input in inputs {
+        for mut input in inputs {
             if let Some(id) = input.id {
                 if !seen.insert(id) || self.is_duplicate(id).await {
                     metrics::counter!("zanshin_events_deduplicated_total").increment(1);
                     continue;
+                }
+            }
+            let mut tags = experiments.clone();
+            if let Some(m) = input.metadata.as_mut() {
+                if m.get("test").and_then(Value::as_bool) == Some(true) {
+                    tags.push((zanshin_core::events::TEST_TAG.into(), "1".into()));
+                }
+                if m.get("amount_usd").is_none() {
+                    let amount = m.get("amount").and_then(Value::as_f64);
+                    let code = m
+                        .get("currency")
+                        .and_then(Value::as_str)
+                        .map(str::to_string);
+                    if let (Some(a), Some(c), Some(cur)) = (amount, code, currency.as_ref()) {
+                        let day = input.timestamp.unwrap_or(now).date_naive();
+                        if let Some(u) = cur.to_usd(a, &c, day) {
+                            m.insert("amount_usd".into(), serde_json::json!(u));
+                        }
+                    }
                 }
             }
             let ev = Event::from_input(
@@ -194,7 +222,7 @@ impl EventService {
                 identity.id,
                 &identity.external_id,
                 session_id,
-                experiments.clone(),
+                tags,
                 now,
             );
             if self.hooks.receiver_count() > 0 {

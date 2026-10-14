@@ -43,6 +43,15 @@ pub struct IdentityService {
 }
 
 impl IdentityService {
+    pub async fn lifetime_rows(
+        &self,
+        from: chrono::DateTime<chrono::Utc>,
+        to: chrono::DateTime<chrono::Utc>,
+        limit: i64,
+    ) -> Result<Vec<(f64, f64, f64, f64, f64, f64)>> {
+        self.identities.lifetime_rows(from, to, limit).await
+    }
+
     pub fn new(
         identities: IdentityRepo,
         sessions: SessionRepo,

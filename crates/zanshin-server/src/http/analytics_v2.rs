@@ -48,6 +48,140 @@ pub fn router() -> Router<AppState> {
         .route("/analytics/errors", get(errors))
         .route("/analytics/status", get(status))
         .route("/analytics/calendar", get(calendar))
+        .route("/analytics/lifetime", get(lifetime))
+        .route(
+            "/currency-rates",
+            get(currency_rates).put(put_currency_rates),
+        )
+        .route("/currency-rates/refresh", post(refresh_currency_rates))
+        .route("/currency-rates/convert", get(convert_currency))
+}
+
+type LifetimeRow = (f64, f64, f64, f64, f64, f64);
+
+/// Lifetime engagement for players who installed in the range: distributions of sessions,
+/// play time, lifetime length and spend, plus averages and payer share.
+async fn lifetime(
+    State(state): State<AppState>,
+    AdminAuth(_): AdminAuth,
+    Query(q): Query<Range>,
+) -> ApiResult<Json<Value>> {
+    let (from, to) = window(q.from, q.to, 90)?;
+    let rows = state.identity.lifetime_rows(from, to, 200_000).await?;
+    let n = rows.len() as f64;
+    let bucket = |edges: &[f64], labels: &[&str], pick: &dyn Fn(&LifetimeRow) -> f64| {
+        let mut counts = vec![0i64; labels.len()];
+        for r in &rows {
+            let v = pick(r);
+            let idx = edges
+                .iter()
+                .position(|e| v < *e)
+                .unwrap_or(labels.len() - 1);
+            counts[idx] += 1;
+        }
+        labels
+            .iter()
+            .zip(counts)
+            .map(|(l, c)| json!({ "label": l, "players": c }))
+            .collect::<Vec<_>>()
+    };
+    let sum = |pick: &dyn Fn(&LifetimeRow) -> f64| rows.iter().map(pick).sum::<f64>();
+    let payers = rows.iter().filter(|r| r.3 > 0.0).count() as f64;
+    let avg = |t: f64| if n > 0.0 { t / n } else { 0.0 };
+    Ok(Json(json!({
+        "from": from, "to": to, "players": rows.len(), "truncated": rows.len() >= 200_000,
+        "averages": {
+            "sessions": avg(sum(&|r| r.0)),
+            "play_time_sec": avg(sum(&|r| r.1)),
+            "spend_usd": avg(sum(&|r| r.2)),
+            "purchases": avg(sum(&|r| r.3)),
+            "events": avg(sum(&|r| r.4)),
+            "lifetime_days": avg(sum(&|r| r.5)) / 86_400.0,
+            "payers_pct": if n > 0.0 { payers / n * 100.0 } else { 0.0 },
+            "arppu_usd": if payers > 0.0 { sum(&|r| r.2) / payers } else { 0.0 },
+        },
+        "buckets": {
+            "sessions": bucket(&[2.0, 4.0, 8.0, 16.0, 32.0], &["1", "2-3", "4-7", "8-15", "16-31", "32+"], &|r| r.0),
+            "play_time": bucket(&[300.0, 1800.0, 7200.0, 36_000.0, 180_000.0], &["<5m", "5-30m", "30m-2h", "2-10h", "10-50h", "50h+"], &|r| r.1),
+            "lifetime_days": bucket(&[86_400.0, 604_800.0, 2_592_000.0, 7_776_000.0], &["<1d", "1-7d", "7-30d", "30-90d", "90d+"], &|r| r.5),
+            "spend_usd": bucket(&[0.01, 5.0, 20.0, 100.0], &["$0", "<$5", "$5-20", "$20-100", "$100+"], &|r| r.2),
+        }
+    })))
+}
+
+#[derive(Deserialize)]
+struct RatesQuery {
+    #[serde(default)]
+    since: Option<chrono::NaiveDate>,
+}
+
+async fn currency_rates(
+    State(state): State<AppState>,
+    AdminAuth(_): AdminAuth,
+    Query(q): Query<RatesQuery>,
+) -> ApiResult<Json<Value>> {
+    let since = q
+        .since
+        .unwrap_or_else(|| chrono::Utc::now().date_naive() - chrono::Duration::days(30));
+    let items = state.currency.list_since(since).await?;
+    Ok(Json(json!({
+        "items": items,
+        "currencies": state.currency.known_currencies(),
+        "remote_configured": state.currency.remote_configured(),
+    })))
+}
+
+#[derive(Deserialize)]
+struct PutRates {
+    #[serde(default)]
+    day: Option<chrono::NaiveDate>,
+    /// code → USD per one unit of the currency (EUR: 1.08 means 1 EUR = 1.08 USD).
+    rates: std::collections::HashMap<String, f64>,
+}
+
+async fn put_currency_rates(
+    State(state): State<AppState>,
+    AdminAuth(_): AdminAuth,
+    Json(body): Json<PutRates>,
+) -> ApiResult<Json<Value>> {
+    let day = body.day.unwrap_or_else(|| chrono::Utc::now().date_naive());
+    let rates: Vec<(String, f64)> = body.rates.into_iter().collect();
+    let written = state.currency.upsert(day, &rates, "manual").await?;
+    Ok(Json(json!({ "day": day, "written": written })))
+}
+
+async fn refresh_currency_rates(
+    State(state): State<AppState>,
+    AdminAuth(_): AdminAuth,
+) -> ApiResult<Json<Value>> {
+    if !state.currency.remote_configured() {
+        return Err(zanshin_core::Error::invalid(
+            "no rate feed configured (taxonomy.currency_rates_url)",
+        )
+        .into());
+    }
+    let written = state.currency.refresh_remote(true).await?;
+    Ok(Json(json!({ "written": written })))
+}
+
+#[derive(Deserialize)]
+struct ConvertQuery {
+    amount: f64,
+    currency: String,
+    #[serde(default)]
+    day: Option<chrono::NaiveDate>,
+}
+
+async fn convert_currency(
+    State(state): State<AppState>,
+    AdminAuth(_): AdminAuth,
+    Query(q): Query<ConvertQuery>,
+) -> ApiResult<Json<Value>> {
+    let day = q.day.unwrap_or_else(|| chrono::Utc::now().date_naive());
+    Ok(Json(json!({
+        "amount": q.amount, "currency": q.currency.to_ascii_uppercase(), "day": day,
+        "amount_usd": state.currency.to_usd(q.amount, &q.currency, day),
+    })))
 }
 
 #[derive(Debug, Default, Deserialize)]
@@ -102,6 +236,9 @@ async fn explore(
     AdminAuth(_): AdminAuth,
     Json(q): Json<ExploreQuery>,
 ) -> ApiResult<Json<Value>> {
+    if !q.events.is_empty() {
+        return Ok(Json(state.analytics.explore_many(&q).await?));
+    }
     Ok(Json(state.analytics.explore(&q).await?))
 }
 

@@ -309,6 +309,22 @@ impl TaxonomyRepo {
         if !VALUE_TYPES.contains(&vt.as_str()) {
             return Err(Error::invalid(format!("unknown value_type {vt:?}")));
         }
+        if let Some(existing) = self.get_event_definition(name).await? {
+            if existing.is_core
+                && (input
+                    .value_type
+                    .as_ref()
+                    .is_some_and(|v| *v != existing.value_type)
+                    || input
+                        .metadata_schema
+                        .as_ref()
+                        .is_some_and(|s| Some(s) != existing.metadata_schema.as_ref()))
+            {
+                return Err(Error::invalid(format!(
+                    "{name:?} is a core event: its value type and metadata schema are immutable (description, tags and activity flag can change)"
+                )));
+            }
+        }
         if let Some(s) = &input.metadata_schema {
             if !s.is_null() && !s.is_object() {
                 return Err(Error::invalid(

@@ -154,6 +154,31 @@ impl IdentityRepo {
         Ok(row.into())
     }
 
+    /// Per-player lifetime figures for identities created in [from, to): sessions, play time,
+    /// spend (USD), purchases, events, lifetime seconds (first → last seen). Capped at `limit`.
+    pub async fn lifetime_rows(
+        &self,
+        from: DateTime<Utc>,
+        to: DateTime<Utc>,
+        limit: i64,
+    ) -> Result<Vec<(f64, f64, f64, f64, f64, f64)>> {
+        sqlx::query_as(
+            "SELECT COALESCE((computed_properties->>'session_count')::float8, 0),
+                    COALESCE((computed_properties->>'play_time_sec')::float8, 0),
+                    COALESCE((computed_properties->>'spend_usd')::float8, 0),
+                    COALESCE((computed_properties->>'purchases')::float8, 0),
+                    COALESCE((computed_properties->>'event_count')::float8, 0),
+                    GREATEST(EXTRACT(EPOCH FROM (COALESCE(last_seen_at, created_at) - created_at)), 0)::float8
+             FROM identities WHERE created_at >= $1 AND created_at < $2 ORDER BY created_at LIMIT $3",
+        )
+        .bind(from)
+        .bind(to)
+        .bind(limit)
+        .fetch_all(&self.pg)
+        .await
+        .map_err(map_sqlx)
+    }
+
     pub async fn set_computed(&self, id: Uuid, computed: &PropertyMap) -> Result<()> {
         sqlx::query(
             "UPDATE identities SET computed_properties = $2, updated_at = now() WHERE id = $1",

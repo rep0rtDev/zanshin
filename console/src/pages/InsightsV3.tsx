@@ -141,7 +141,11 @@ export function Explore({ filter }: { filter: Filter }) {
   const [sumField, setSumField] = useState('amount');
   const [gran, setGran] = useState<'day' | 'hour'>('day');
   const [res, setRes] = useState<ExploreRes | null>(null);
+  const [overlay, setOverlay] = useState('');
+  const [multi, setMulti] = useState<{ event: string; result: ExploreRes }[] | null>(null);
   const [err, setErr] = useState<Error | null>(null);
+  const overlayEvents = overlay.split(',').map((s) => s.trim()).filter(Boolean);
+  const runOverlay = () => post<{ series: { event: string; result: ExploreRes }[] }>('/analytics/explore', { events: [event, ...overlayEvents], from: r.from, sum_field: sumField || null, granularity: gran, filter }).then((d) => { setMulti(d.series); setErr(null); }, setErr);
   const run = () => post<ExploreRes>('/analytics/explore', { event, from: r.from, group_by: groupBy || null, sum_field: sumField || null, granularity: gran, filter }).then((d) => { setRes(d); setErr(null); }, setErr);
   const buckets = Array.from(new Set((res?.series ?? []).map((s) => s.bucket))).sort();
   const top = (res?.groups ?? []).slice(0, 6).map((g) => g.group);
@@ -156,9 +160,12 @@ export function Explore({ filter }: { filter: Filter }) {
         {(groupBy.startsWith('experiment:') || groupBy.startsWith('meta:')) && <Text label={groupBy.startsWith('meta:') ? 'Field' : 'Experiment key'} value={groupBy.split(':')[1] ?? ''} onChange={(v) => setGroupBy(groupBy.split(':')[0] + ':' + v)} mono />}
         <Text label="Sum metadata field" value={sumField} onChange={setSumField} mono />
         <Field label="Granularity"><select value={gran} onChange={(e) => setGran(e.target.value as typeof gran)}><option value="day">day</option><option value="hour">hour</option></select></Field>
-        <button className="btn" onClick={run} disabled={!event}>Run</button>
+        <Text label="Overlay events" value={overlay} onChange={setOverlay} mono hint="comma-separated, up to 7 more" />
+        <button className="btn" onClick={() => { setMulti(null); run(); }} disabled={!event}>Run</button>
+        <button className="btn secondary" onClick={() => { setRes(null); runOverlay(); }} disabled={!event || overlayEvents.length === 0}>Overlay</button>
       </div>
       <ErrorBox error={err} />
+      {multi && <OverlayChart series={multi} />}
       {res && <>
         <div className="stats">
           <Stat label="Events" value={fmtNum(res.total.count)} />
@@ -181,6 +188,28 @@ export function Explore({ filter }: { filter: Filter }) {
           { h: 'Σ value', c: (g) => money(g.sum) }, { h: `Σ ${sumField || 'amount'}`, c: (g) => money(g.field_sum) }, { h: 'Share', c: (g) => pct(res.total.count ? g.count / res.total.count : 0) },
         ]} />
       </>}
+    </div>
+  );
+}
+
+function OverlayChart({ series }: { series: { event: string; result: ExploreRes }[] }) {
+  const colors = ['#1a5fb4', '#1e8e3e', '#b26a00', '#a51d2d', '#613583', '#5e5c64', '#0e7490', '#9d174d'];
+  const buckets = Array.from(new Set(series.flatMap((s) => s.result.series.map((p) => p.bucket)))).sort();
+  const perEvent = series.map((s) => buckets.map((b) => s.result.series.filter((p) => p.bucket === b).reduce((a, p) => a + p.count, 0)));
+  const max = Math.max(1, ...perEvent.flat());
+  const x = (i: number) => (buckets.length > 1 ? (i / (buckets.length - 1)) * 580 + 10 : 300);
+  const y = (v: number) => 126 - (v / max) * 110;
+  return (
+    <div className="card stack">
+      <svg viewBox="0 0 600 136" style={{ width: '100%', height: 170 }}>
+        {perEvent.map((vals, si) => (
+          <polyline key={series[si].event} fill="none" stroke={colors[si % colors.length]} strokeWidth={2} points={vals.map((v, i) => `${x(i)},${y(v)}`).join(' ')} />
+        ))}
+      </svg>
+      <div className="row" style={{ gap: 12, flexWrap: 'wrap' }}>
+        {series.map((s, i) => <span key={s.event} className="hint"><span style={{ display: 'inline-block', width: 10, height: 10, background: colors[i % colors.length], marginRight: 4 }} /><code>{s.event}</code> · {fmtNum(s.result.total.count)} events · {fmtNum(s.result.groups.reduce((a, g) => a + g.identities, 0))} players</span>)}
+      </div>
+      <div className="hint">{buckets[0]} → {buckets[buckets.length - 1]}</div>
     </div>
   );
 }

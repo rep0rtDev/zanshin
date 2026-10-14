@@ -214,11 +214,44 @@ pub enum FunnelModel {
 /// Funnel fold with a time model. `rows` = (identity, step index, time, session); per identity
 /// the steps must be reached in order, each respecting the model's constraint. Returns how many
 /// identities reached each step.
+/// How conversions are counted: once per player (deepest chain) or once per entry.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum FunnelCount {
+    #[default]
+    Unique,
+    Total,
+}
+
+/// `static`: the cohort is players who entered (step 1) inside the range. `shifting`: players
+/// who entered up to one window before the range also count, as long as they reached a step
+/// inside the range — conversions "shift" into the period they happened in.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum FunnelCohort {
+    #[default]
+    Static,
+    Shifting,
+}
+
 pub fn fold_funnel_model(
+    rows: Vec<(Uuid, usize, DateTime<Utc>, Option<Uuid>)>,
+    steps: usize,
+    window_secs: i64,
+    model: FunnelModel,
+) -> Vec<i64> {
+    fold_funnel_v2(rows, steps, window_secs, model, FunnelCount::Unique, None)
+}
+
+/// Funnel fold with count mode and an optional range start for shifting cohorts: a chain whose
+/// entry lies before `range_start` counts only if one of its reached steps is at/after it.
+pub fn fold_funnel_v2(
     mut rows: Vec<(Uuid, usize, DateTime<Utc>, Option<Uuid>)>,
     steps: usize,
     window_secs: i64,
     model: FunnelModel,
+    count: FunnelCount,
+    range_start: Option<DateTime<Utc>>,
 ) -> Vec<i64> {
     // Same-timestamp events (one batch) are ordered by step so they can still chain.
     rows.sort_by(|a, b| a.0.cmp(&b.0).then(a.2.cmp(&b.2)).then(a.1.cmp(&b.1)));
@@ -239,6 +272,7 @@ pub fn fold_funnel_model(
             }
             let mut reached = 1usize;
             let mut prev = entered;
+            let mut last = entered;
             for &(_, s, at, sess) in &mine[k + 1..] {
                 if s != reached {
                     continue;
@@ -252,6 +286,7 @@ pub fn fold_funnel_model(
                 if ok {
                     reached += 1;
                     prev = at;
+                    last = at;
                     if reached == steps {
                         break;
                     }
@@ -260,13 +295,27 @@ pub fn fold_funnel_model(
                     break;
                 }
             }
-            best = best.max(reached);
-            if best == steps {
-                break;
+            if range_start.is_some_and(|rs| last < rs) {
+                continue;
+            }
+            match count {
+                FunnelCount::Total => {
+                    for c in counts.iter_mut().take(reached) {
+                        *c += 1;
+                    }
+                }
+                FunnelCount::Unique => {
+                    best = best.max(reached);
+                    if best == steps {
+                        break;
+                    }
+                }
             }
         }
-        for c in counts.iter_mut().take(best) {
-            *c += 1;
+        if count == FunnelCount::Unique {
+            for c in counts.iter_mut().take(best) {
+                *c += 1;
+            }
         }
         i = j;
     }
@@ -366,6 +415,9 @@ pub struct EventFilter {
     pub experiment: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub variant: Option<String>,
+    /// Include events flagged `metadata.test = true` (excluded by default).
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub include_test: bool,
 }
 
 impl EventFilter {

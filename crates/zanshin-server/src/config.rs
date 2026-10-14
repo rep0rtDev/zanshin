@@ -53,6 +53,10 @@ pub struct TaxonomyConfig {
     /// Number of rejected/invalid events kept for the taxonomy debugger.
     #[serde(default = "default_rejected_keep")]
     pub rejected_keep: usize,
+    /// Optional USD-base rate feed (`{"date": "YYYY-MM-DD", "rates": {"EUR": 0.92}}`, e.g.
+    /// `https://api.frankfurter.app/latest?from=USD`), polled every 6h to convert revenue to USD.
+    #[serde(default)]
+    pub currency_rates_url: Option<String>,
 }
 
 impl Default for TaxonomyConfig {
@@ -63,6 +67,7 @@ impl Default for TaxonomyConfig {
             geoip_db: String::new(),
             session_inactivity: default_session_inactivity(),
             rejected_keep: default_rejected_keep(),
+            currency_rates_url: None,
         }
     }
 }

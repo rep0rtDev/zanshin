@@ -460,6 +460,33 @@ Experiment fields added: `split_key` (`identity` or `property:<flat path>` — b
 | `GET /admin/v1/experiments/{key}/results.csv` | Results as CSV, one row per metric × variant (value, lift, credible interval, probability to beat control) plus assignment rows. |
 | `srm` and `stats` on `GET /admin/v1/experiments/{key}/results` | `srm { chi2, p_value, suspicious }` compares assignment counts with the variant weights (chi-square; `suspicious` below p = 0.001). Conversion metrics carry `stats { rate, ci_low, ci_high, prob_beats_control, expected_uplift }` from Beta(1,1) posteriors (deterministic Monte Carlo); the control has no comparison fields. |
 
+### Core events / Analytics v4
+
+- Core catalog: `GET /admin/v1/taxonomy/events?core=true|false&synthetic=true|false&discovered=true&q=`.
+  Core definitions are immutable in shape — `PUT` with a different `value_type` or a
+  `metadata_schema` returns `400`; `description`, `tags`, `exclude_from_activity` can change.
+- Currency rates (`analytics:*`): `GET /admin/v1/currency-rates?since=YYYY-MM-DD` → `{items,
+  currencies, remote_configured}`; `PUT /admin/v1/currency-rates {day?, rates: {EUR: 1.08}}`
+  (USD per unit); `POST /admin/v1/currency-rates/refresh` pulls the configured feed
+  (`taxonomy.currency_rates_url`, USD base, `{"date", "rates": {code: units per USD}}`);
+  `GET /admin/v1/currency-rates/convert?amount&currency&day` → `amount_usd` (null if unknown).
+  At ingest an event with `metadata.amount` + `metadata.currency` gets `metadata.amount_usd`
+  using the latest rate on or before its day.
+- Computed core properties: `purchases`, `spend_usd`, `last_purchase_at`, `ad_impressions`,
+  `ads_completed`, `ad_revenue_usd`, `currency.<code>.granted` / `.spent`.
+- Test flag: `metadata.test = true` tags the event `$test`; it is ignored by computed properties
+  and hidden from all reports unless the filter has `include_test: true`.
+- Funnels v2: `POST /admin/v1/analytics/funnel` accepts `count` (`unique` — once per player, deepest
+  chain; `total` — every entry) and `cohort` (`static` — entered inside the range; `shifting` —
+  entered up to one window earlier but reached a step inside the range).
+- Retention by operation: pass `experiment=live:<key>` (and optional `variant`) or
+  `experiment=<key>` to `GET /admin/v1/analytics/retention`.
+- Lifetime engagement: `GET /admin/v1/analytics/lifetime?from&to` → `{players, averages:
+  {sessions, play_time_sec, spend_usd, purchases, events, lifetime_days, payers_pct, arppu_usd},
+  buckets: {sessions, play_time, lifetime_days, spend_usd}}` for players created in the range.
+- Explore overlay: `POST /admin/v1/analytics/explore {events: [...], ...}` (≤ 8) → `{series:
+  [{event, result}]}` with the same range / granularity / filter for every event.
+
 ### Flags v2 / Live events v2
 
 Override chain for a flag value: **identity override → experiment variant → live-event flag override →

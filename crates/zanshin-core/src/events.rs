@@ -141,6 +141,80 @@ impl Event {
 /// Maintained keys: `event_count`, `last_event_at`, `first_event_at`, and per event name
 /// `events.<name>.count`, `events.<name>.last_at`, `events.<name>.sum` (numeric values only).
 /// `$authenticate` additionally maintains `session_count`, `first_seen_at`, `last_seen_at`.
+/// `metadata.test == true` marks QA traffic: excluded from computed properties and, via the
+/// `$test` tag, from every analytics report unless `include_test` is set.
+pub fn is_test(e: &Event) -> bool {
+    e.metadata.get("test").and_then(Value::as_bool) == Some(true)
+}
+
+pub const TEST_TAG: &str = "$test";
+
+/// Core-event semantics: purchases and spend in USD, ad impressions/revenue, virtual currency
+/// flows. `metadata.amount_usd` is filled at ingest from the daily rate table; a bare `amount`
+/// counts as USD only when no other currency is given.
+fn fold_core(patch: &mut PropertyMap, current: &PropertyMap, e: &Event) {
+    let md = e.metadata.as_object();
+    let num = |k: &str| md.and_then(|m| m.get(k)).and_then(Value::as_f64);
+    let text = |k: &str| md.and_then(|m| m.get(k)).and_then(Value::as_str);
+    let usd = num("amount_usd").or_else(|| {
+        text("currency")
+            .is_none_or(|c| c.eq_ignore_ascii_case("USD"))
+            .then(|| num("amount"))
+            .flatten()
+    });
+    let mut add = |k: &str, d: f64| {
+        let v = cur(&*patch, current, k)
+            .and_then(|v| v.as_f64())
+            .unwrap_or(0.0)
+            + d;
+        patch.insert(k.to_string(), json_num(v));
+    };
+    match e.name.as_str() {
+        "purchaseCompleted" => {
+            add("purchases", 1.0);
+            if let Some(u) = usd {
+                add("spend_usd", u);
+            }
+            patch.insert(
+                "last_purchase_at".into(),
+                Value::String(e.event_time.to_rfc3339()),
+            );
+        }
+        "adImpression" | "adCompleted" => {
+            add(
+                if e.name == "adImpression" {
+                    "ad_impressions"
+                } else {
+                    "ads_completed"
+                },
+                1.0,
+            );
+            if let Some(u) = usd {
+                add("ad_revenue_usd", u);
+            }
+        }
+        "currencyGranted" | "currencySpent" => {
+            if let (Some(code), Some(a)) = (text("currency"), num("amount")) {
+                let code: String = code
+                    .chars()
+                    .filter(|c| c.is_ascii_alphanumeric())
+                    .take(16)
+                    .collect::<String>()
+                    .to_ascii_lowercase();
+                if !code.is_empty() {
+                    let dir = if e.name == "currencyGranted" {
+                        "granted"
+                    } else {
+                        "spent"
+                    };
+                    add(&format!("currency.{code}.{dir}"), a);
+                }
+            }
+        }
+        _ => {}
+    }
+}
+
 pub fn fold_computed(current: &PropertyMap, events: &[Event]) -> PropertyMap {
     let mut patch = PropertyMap::new();
     let num = |m: &PropertyMap, k: &str| m.get(k).and_then(Value::as_f64).unwrap_or(0.0);
@@ -186,12 +260,16 @@ pub fn fold_computed(current: &PropertyMap, events: &[Event]) -> PropertyMap {
             }
             continue;
         }
+        if is_test(e) {
+            continue;
+        }
         event_count += 1.0;
         last_event = Some(last_event.map_or(e.event_time, |t| t.max(e.event_time)));
         first_event = Some(first_event.map_or(e.event_time, |t| t.min(e.event_time)));
         if e.name.starts_with('$') {
             continue;
         }
+        fold_core(&mut patch, current, e);
         let safe = e.name.replace('.', "_");
         let count_key = format!("events.{safe}.count");
         let last_key = format!("events.{safe}.last_at");
