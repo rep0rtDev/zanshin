@@ -240,14 +240,7 @@ pub fn fold_funnel_model(
     window_secs: i64,
     model: FunnelModel,
 ) -> Vec<i64> {
-    fold_funnel_v2(
-        rows,
-        steps,
-        window_secs,
-        model,
-        FunnelCount::Unique,
-        None,
-    )
+    fold_funnel_v2(rows, steps, window_secs, model, FunnelCount::Unique, None)
 }
 
 /// Funnel fold with count mode and an optional range start for shifting cohorts: a chain whose

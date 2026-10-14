@@ -96,7 +96,9 @@ impl CurrencyService {
     ) -> Result<usize> {
         for (code, rate) in rates {
             if code.trim().len() != 3 || !code.chars().all(|c| c.is_ascii_alphabetic()) {
-                return Err(Error::invalid(format!("currency code {code:?} must be 3 letters")));
+                return Err(Error::invalid(format!(
+                    "currency code {code:?} must be 3 letters"
+                )));
             }
             if !(rate.is_finite() && *rate > 0.0) {
                 return Err(Error::invalid(format!("rate for {code} must be > 0")));

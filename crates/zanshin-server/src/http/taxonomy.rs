@@ -155,7 +155,11 @@ async fn list_event_defs(
         .filter(|d| f.core.is_none_or(|c| d.is_core == c))
         .filter(|d| f.synthetic.is_none_or(|s| d.name.starts_with('$') == s))
         .filter(|d| f.discovered.is_none_or(|x| d.discovered == x))
-        .filter(|d| q.is_empty() || d.name.to_lowercase().contains(&q) || d.description.to_lowercase().contains(&q))
+        .filter(|d| {
+            q.is_empty()
+                || d.name.to_lowercase().contains(&q)
+                || d.description.to_lowercase().contains(&q)
+        })
         .collect();
     Ok(Json(items))
 }

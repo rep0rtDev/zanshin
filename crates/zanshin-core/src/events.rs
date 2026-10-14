@@ -182,7 +182,11 @@ fn fold_core(patch: &mut PropertyMap, current: &PropertyMap, e: &Event) {
         }
         "adImpression" | "adCompleted" => {
             add(
-                if e.name == "adImpression" { "ad_impressions" } else { "ads_completed" },
+                if e.name == "adImpression" {
+                    "ad_impressions"
+                } else {
+                    "ads_completed"
+                },
                 1.0,
             );
             if let Some(u) = usd {
@@ -198,7 +202,11 @@ fn fold_core(patch: &mut PropertyMap, current: &PropertyMap, e: &Event) {
                     .collect::<String>()
                     .to_ascii_lowercase();
                 if !code.is_empty() {
-                    let dir = if e.name == "currencyGranted" { "granted" } else { "spent" };
+                    let dir = if e.name == "currencyGranted" {
+                        "granted"
+                    } else {
+                        "spent"
+                    };
                     add(&format!("currency.{code}.{dir}"), a);
                 }
             }

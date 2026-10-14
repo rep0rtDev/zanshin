@@ -170,11 +170,11 @@ async fn analytics_v4_flow() {
         None,
     )
     .await;
-    assert!(nosyn
-        .as_array()
+    assert!(nosyn.as_array().unwrap().iter().all(|d| !d["name"]
+        .as_str()
         .unwrap()
-        .iter()
-        .all(|d| !d["name"].as_str().unwrap().starts_with('$') && d["is_core"] == false));
+        .starts_with('$')
+        && d["is_core"] == false));
 
     // --- events: USD conversion, test flag, computed core props ------------------------------
     let sess: Value = c
@@ -190,7 +190,8 @@ async fn analytics_v4_flow() {
     let tok = sess["token"].as_str().unwrap().to_string();
     let iid = sess["identity"]["id"].as_str().unwrap().to_string();
     let ev_name = format!("step_{sfx}");
-    let from_ts = (chrono::Utc::now() - chrono::Duration::days(1)).to_rfc3339_opts(chrono::SecondsFormat::Secs, true);
+    let from_ts = (chrono::Utc::now() - chrono::Duration::days(1))
+        .to_rfc3339_opts(chrono::SecondsFormat::Secs, true);
     let (st, b) = call(
         &c,
         &tok,
@@ -248,14 +249,18 @@ async fn analytics_v4_flow() {
     assert_eq!(st, 200, "{evs}");
     let items = evs["events"].as_array().cloned().unwrap_or_default();
     assert!(
-        items.iter().any(|e| e["metadata"]["amount_usd"] == json!(12.5)),
+        items
+            .iter()
+            .any(|e| e["metadata"]["amount_usd"] == json!(12.5)),
         "{evs}"
     );
     let explore = |include_test: bool| {
         adm(
             reqwest::Method::POST,
             "/admin/v1/analytics/explore".into(),
-            Some(json!({"event": ev_name, "from": from_ts, "filter": {"include_test": include_test}})),
+            Some(
+                json!({"event": ev_name, "from": from_ts, "filter": {"include_test": include_test}}),
+            ),
         )
     };
     let (st, x) = explore(false).await;

@@ -198,7 +198,11 @@ fn fparts(f: &EventFilter) -> [String; 6] {
         g(&f.app_version),
         g(&f.experiment),
         g(&f.variant),
-        if f.include_test { "1".into() } else { String::new() },
+        if f.include_test {
+            "1".into()
+        } else {
+            String::new()
+        },
     ]
 }
 

@@ -205,7 +205,10 @@ impl EventService {
                 }
                 if m.get("amount_usd").is_none() {
                     let amount = m.get("amount").and_then(Value::as_f64);
-                    let code = m.get("currency").and_then(Value::as_str).map(str::to_string);
+                    let code = m
+                        .get("currency")
+                        .and_then(Value::as_str)
+                        .map(str::to_string);
                     if let (Some(a), Some(c), Some(cur)) = (amount, code, currency.as_ref()) {
                         let day = input.timestamp.unwrap_or(now).date_naive();
                         if let Some(u) = cur.to_usd(a, &c, day) {

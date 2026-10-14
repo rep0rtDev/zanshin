@@ -73,7 +73,10 @@ async fn lifetime(
         let mut counts = vec![0i64; labels.len()];
         for r in &rows {
             let v = pick(r);
-            let idx = edges.iter().position(|e| v < *e).unwrap_or(labels.len() - 1);
+            let idx = edges
+                .iter()
+                .position(|e| v < *e)
+                .unwrap_or(labels.len() - 1);
             counts[idx] += 1;
         }
         labels

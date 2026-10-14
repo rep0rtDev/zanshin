@@ -7,10 +7,7 @@ use serde::Deserialize;
 use serde_json::{json, Value};
 use uuid::Uuid;
 use zanshin_core::{
-    analytics::{
-        Annotation, Dashboard, EventFilter, FunnelModel, FunnelStep, Widget,
-        WidgetKind,
-    },
+    analytics::{Annotation, Dashboard, EventFilter, FunnelModel, FunnelStep, Widget, WidgetKind},
     flags::validate_key,
     Error, Result,
 };

@@ -311,7 +311,10 @@ impl TaxonomyRepo {
         }
         if let Some(existing) = self.get_event_definition(name).await? {
             if existing.is_core
-                && (input.value_type.as_ref().is_some_and(|v| *v != existing.value_type)
+                && (input
+                    .value_type
+                    .as_ref()
+                    .is_some_and(|v| *v != existing.value_type)
                     || input
                         .metadata_schema
                         .as_ref()
