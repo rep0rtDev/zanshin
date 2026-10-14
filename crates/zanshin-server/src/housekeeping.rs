@@ -15,6 +15,11 @@ pub async fn run(state: AppState, mut shutdown: watch::Receiver<bool>) {
             _ = sweep.tick() => {
                 sweep_push(&state).await;
                 close_idle_sessions(&state).await;
+                for key in state.audiences.due_for_recompute().await {
+                    if let Err(e) = state.audiences.recompute(&key).await {
+                        tracing::warn!(audience = %key, error = %e, "scheduled recompute failed");
+                    }
+                }
                 if let Err(e) = state.taxonomy.repo.sync_labels().await {
                     tracing::debug!(error = %e, "label sync failed");
                 }

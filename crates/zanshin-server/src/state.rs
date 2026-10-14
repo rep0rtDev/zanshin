@@ -127,7 +127,11 @@ impl AppState {
             identities.clone(),
             bus.clone(),
         );
-        let audiences = AudienceService::new(AudienceRepo::new(stores.pg.clone()), bus.clone());
+        let audiences = AudienceService::new(
+            AudienceRepo::new(stores.pg.clone()),
+            IdentityRepo::new(stores.pg.clone()),
+            bus.clone(),
+        );
         let event_store = match &stores.clickhouse {
             Some(ch) => zanshin_store::events::EventStore::ClickHouse(Box::new(ch.clone())),
             None => zanshin_store::events::EventStore::Postgres(stores.pg.clone()),

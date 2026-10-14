@@ -64,10 +64,7 @@ impl Evaluator {
         active_only: bool,
     ) -> Vec<ActiveEvent> {
         let flat = flatten_with_identity(identity, &identity.properties);
-        let audiences = self
-            .audiences
-            .memberships(&identity.external_id, &flat)
-            .await;
+        let audiences = self.audiences.memberships(identity, &flat).await;
         self.live_events
             .for_subject(&flat, &audiences, names, active_only)
             .await
@@ -75,10 +72,7 @@ impl Evaluator {
 
     pub async fn inbox(&self, identity: &Identity, limit: i64) -> Result<Vec<InboxMessage>> {
         let flat = flatten_with_identity(identity, &identity.properties);
-        let audiences = self
-            .audiences
-            .memberships(&identity.external_id, &flat)
-            .await;
+        let audiences = self.audiences.memberships(identity, &flat).await;
         self.messages
             .inbox(identity, &flat, &audiences, limit)
             .await
@@ -91,10 +85,7 @@ impl Evaluator {
         persist_assignments: bool,
     ) -> Result<EvalContext> {
         let flat = flatten_with_identity(identity, props);
-        let audiences = self
-            .audiences
-            .memberships(&identity.external_id, &flat)
-            .await;
+        let audiences = self.audiences.memberships(identity, &flat).await;
         let mut assignments = Vec::new();
         let mut flag_pins = HashMap::new();
         if persist_assignments {
@@ -180,7 +171,7 @@ impl Evaluator {
         let flat = flatten_with_identity(identity, &identity.properties);
         let mut v: Vec<_> = self
             .audiences
-            .memberships(&identity.external_id, &flat)
+            .memberships(identity, &flat)
             .await
             .into_iter()
             .collect();
@@ -194,10 +185,7 @@ impl Evaluator {
         names: &[String],
     ) -> Result<Vec<Assignment>> {
         let flat = flatten_with_identity(identity, &identity.properties);
-        let audiences = self
-            .audiences
-            .memberships(&identity.external_id, &flat)
-            .await;
+        let audiences = self.audiences.memberships(identity, &flat).await;
         Ok(self
             .experiments
             .enrolments(identity, &flat, &audiences, names)

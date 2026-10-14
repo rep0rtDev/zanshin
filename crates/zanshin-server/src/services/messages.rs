@@ -232,10 +232,7 @@ impl MessageService {
                     continue;
                 };
                 let flat = super::eval::flatten_with_identity(&identity, &identity.properties);
-                let audiences = eval
-                    .audiences
-                    .memberships(&identity.external_id, &flat)
-                    .await;
+                let audiences = eval.audiences.memberships(&identity, &flat).await;
                 let done: HashSet<Uuid> = self
                     .repo
                     .delivered_campaigns(identity.id)

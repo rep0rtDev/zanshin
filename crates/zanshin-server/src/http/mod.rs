@@ -1,6 +1,7 @@
 //! REST/JSON surface (axum).
 
 pub mod admin;
+pub mod audiences;
 pub mod audit;
 pub mod auth;
 pub mod console;
@@ -100,7 +101,12 @@ pub fn router(state: AppState) -> Router {
         .route("/metrics", get(metrics))
         .nest("/v1", v1::router())
         .nest("/server/v1", server_api::router())
-        .nest("/admin/v1", admin::router().merge(taxonomy::router()))
+        .nest(
+            "/admin/v1",
+            admin::router()
+                .merge(taxonomy::router())
+                .merge(audiences::router()),
+        )
         .merge(console::router())
         .layer(axum::middleware::from_fn_with_state(
             state.clone(),

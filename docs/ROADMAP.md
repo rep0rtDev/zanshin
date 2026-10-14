@@ -64,8 +64,10 @@ console comes last once the model is stable.
   JSON Schemas for flag / live-event values (`/admin/v1/schemas`), default-property enrichment from
   `X-Zanshin-*` headers / `Accept-Language` / MaxMind geo-IP, `POST /v1/identify` (rename or merge),
   play sessions (`/admin/v1/identities/{id}/sessions`) with inactivity timeout, synthetic lifecycle events.
-- [ ] **Audiences v2**: stored membership with scheduled / event-driven recompute, member lists with join
-  time, includes / excludes, managed (external) audiences, usage references, copy, expression language.
+- [x] **Audiences v2**: stored membership (live mirror + scheduled recompute via cron / on demand), member
+  lists with join time, include / exclude lists with expiring exclusions, managed audiences fed from the
+  server API, usage references, copy, expression language (`docs/api.md`), `within_last` / `older_than`
+  operators, default audiences.
 - [ ] **Flags v2 / live events v2**: audience-targeted variants with priority, variant diff, override chain,
   explicit join / sticky membership, per-event flag overrides, timeline, QA future-date mode.
 - [ ] **Metrics & experiments v2**: metrics catalog (goal / monitor), phases, control variant, split key,
