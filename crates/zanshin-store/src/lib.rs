@@ -12,6 +12,7 @@ pub mod flags;
 pub mod identities;
 pub mod live_events;
 pub mod messages;
+pub mod metrics;
 pub mod push;
 pub mod sessions;
 pub mod taxonomy;

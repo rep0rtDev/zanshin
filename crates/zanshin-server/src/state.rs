@@ -1,5 +1,7 @@
 use crate::services::taxonomy::TaxonomyService;
-use crate::services::{audit::AuditService, limits::RateLimiter, oidc::OidcService};
+use crate::services::{
+    audit::AuditService, limits::RateLimiter, metrics::MetricService, oidc::OidcService,
+};
 use std::sync::Arc;
 use zanshin_store::taxonomy::TaxonomyRepo;
 
@@ -8,7 +10,7 @@ use zanshin_store::audit::AuditRepo;
 use zanshin_store::{
     api_keys::ApiKeyRepo, audiences::AudienceRepo, experiments::ExperimentRepo, flags::FlagRepo,
     identities::IdentityRepo, live_events::LiveEventRepo, messages::MessageRepo,
-    push::PushTokenRepo, sessions::SessionRepo, Stores,
+    metrics::MetricRepo, push::PushTokenRepo, sessions::SessionRepo, Stores,
 };
 
 use crate::{
@@ -41,6 +43,7 @@ pub struct AppState {
     pub flags: FlagService,
     pub audiences: AudienceService,
     pub experiments: ExperimentService,
+    pub metrics: MetricService,
     pub events: EventService,
     pub live_events: LiveEventService,
     pub messages: MessageService,
@@ -158,6 +161,7 @@ impl AppState {
             stores.cache.clone(),
             cfg.taxonomy.clone(),
         );
+        let metrics = MetricService::new(MetricRepo::new(stores.pg.clone()), events.clone());
         let eval = Evaluator::new(
             flags.clone(),
             audiences.clone(),
@@ -185,6 +189,7 @@ impl AppState {
             push,
             eval,
             taxonomy,
+            metrics,
             started_at: chrono::Utc::now(),
         })
     }

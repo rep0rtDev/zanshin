@@ -94,9 +94,40 @@ pub struct Experiment {
     pub ends_at: Option<chrono::DateTime<chrono::Utc>>,
     #[serde(default)]
     pub tags: Vec<String>,
+    /// What the bucket hash is keyed on: `identity` or `property:<flat path>` (e.g. `custom.clan_id`).
+    #[serde(default = "default_split_key")]
+    pub split_key: String,
+    /// Stop enrolling once this many players are assigned.
+    #[serde(default)]
+    pub max_participants: Option<i64>,
+    /// Stop enrolling after this instant (assigned players keep being served).
+    #[serde(default)]
+    pub enrol_until: Option<chrono::DateTime<chrono::Utc>>,
+    /// Locked experiments only accept status / lock changes.
+    #[serde(default)]
+    pub locked: bool,
+    /// Keys from the metrics catalog (goal + monitor) evaluated in results.
+    #[serde(default)]
+    pub metrics: Vec<String>,
+    #[serde(default)]
+    pub copied_from: Option<String>,
+    /// Previous experiment in a phased sequence.
+    #[serde(default)]
+    pub phase_of: Option<String>,
+    #[serde(default)]
+    pub interrupted_at: Option<chrono::DateTime<chrono::Utc>>,
+    #[serde(default)]
+    pub interrupt_reason: String,
+    /// Variant declared the winner when the experiment was concluded.
+    #[serde(default)]
+    pub winner: Option<String>,
     pub version: i64,
     pub created_at: chrono::DateTime<chrono::Utc>,
     pub updated_at: chrono::DateTime<chrono::Utc>,
+}
+
+pub fn default_split_key() -> String {
+    "identity".into()
 }
 
 fn default_percentage() -> f64 {
@@ -150,7 +181,44 @@ impl Experiment {
                 return Err(Error::invalid("ends_at must be after starts_at"));
             }
         }
+        if self.split_key != "identity"
+            && !self
+                .split_key
+                .strip_prefix("property:")
+                .is_some_and(|p| !p.is_empty() && p.len() <= 128)
+        {
+            return Err(Error::invalid(
+                "split_key must be \"identity\" or \"property:<path>\"",
+            ));
+        }
+        if self.max_participants.is_some_and(|m| m <= 0) {
+            return Err(Error::invalid("max_participants must be positive"));
+        }
+        if let Some(w) = &self.winner {
+            if !keys.contains(w) {
+                return Err(Error::invalid(format!("winner {w:?} is not a variant")));
+            }
+        }
+        for m in &self.metrics {
+            validate_key(m)?;
+        }
         Ok(())
+    }
+
+    /// The string the bucket hash is keyed on for this player.
+    pub fn split_subject<'a>(
+        &self,
+        external_id: &'a str,
+        props: &'a PropertyMap,
+    ) -> std::borrow::Cow<'a, str> {
+        match self.split_key.strip_prefix("property:") {
+            Some(path) => match props.get(path) {
+                Some(Value::String(s)) if !s.is_empty() => std::borrow::Cow::Borrowed(s.as_str()),
+                Some(Value::Null) | None => std::borrow::Cow::Borrowed(external_id),
+                Some(v) => std::borrow::Cow::Owned(v.to_string()),
+            },
+            None => std::borrow::Cow::Borrowed(external_id),
+        }
     }
 
     /// Is the experiment serving assignments right now?
@@ -160,7 +228,9 @@ impl Experiment {
 
     /// May new identities be enrolled right now?
     pub fn is_enrolling(&self, now: chrono::DateTime<chrono::Utc>) -> bool {
-        self.status == Status::Running && self.in_window(now)
+        self.status == Status::Running
+            && self.in_window(now)
+            && self.enrol_until.is_none_or(|u| now < u)
     }
 
     fn in_window(&self, now: chrono::DateTime<chrono::Utc>) -> bool {
@@ -184,6 +254,8 @@ impl Experiment {
         if !self.audiences.iter().all(|a| audiences(a)) {
             return None;
         }
+        let subject = self.split_subject(subject, props);
+        let subject = subject.as_ref();
         let ns = format!("experiment:{}", self.key);
         if !hash::in_rollout(&ns, &self.salt, subject, self.percentage) {
             return None;
@@ -240,6 +312,16 @@ mod tests {
             control: Some("control".into()),
             flag_key: None,
             salt: String::new(),
+            split_key: default_split_key(),
+            max_participants: None,
+            enrol_until: None,
+            locked: false,
+            metrics: vec![],
+            copied_from: None,
+            phase_of: None,
+            interrupted_at: None,
+            interrupt_reason: String::new(),
+            winner: None,
             starts_at: None,
             ends_at: None,
             tags: vec![],

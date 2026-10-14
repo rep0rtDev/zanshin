@@ -70,8 +70,9 @@ console comes last once the model is stable.
   operators, default audiences.
 - [ ] **Flags v2 / live events v2**: audience-targeted variants with priority, variant diff, override chain,
   explicit join / sticky membership, per-event flag overrides, timeline, QA future-date mode.
-- [ ] **Metrics & experiments v2**: metrics catalog (goal / monitor), phases, control variant, split key,
-  caps / deadline / lock, per-variant time series, participants, CSV export.
+- [x] **Metrics + experiments v2**: metrics catalog (goal/monitor, count/unique/sum/avg/conversion), per-variant
+  metric results with lift, copy / phases, lock, interrupt with winner → flag, participant caps + enrolment deadline,
+  split key, enrolment + metric series, participants list and CSV.
 - [ ] **Messaging v2**: reusable templates (plaintext / HTML / JSON, translations, test send), schedules
   (cron and live-event relative), per-channel delivery status, inbox deletion.
 - [ ] **Webhooks**: HMAC-signed deliveries, event subscriptions, batching, retries, delivery log.

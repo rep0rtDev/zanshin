@@ -40,6 +40,15 @@ pub struct VariantMetric {
 }
 
 #[derive(Debug, Clone, Serialize)]
+pub struct VariantDayMetric {
+    pub variant: String,
+    pub day: String,
+    pub count: i64,
+    pub identities: i64,
+    pub sum: f64,
+}
+
+#[derive(Debug, Clone, Serialize)]
 pub struct StoredEvent {
     pub id: Uuid,
     pub event_time: DateTime<Utc>,
@@ -85,6 +94,15 @@ struct ChName {
 #[derive(Row, Deserialize)]
 struct ChVariant {
     variant: String,
+    count: u64,
+    identities: u64,
+    sum: f64,
+}
+
+#[derive(Row, Deserialize)]
+struct ChVariantDay {
+    variant: String,
+    day: String,
     count: u64,
     identities: u64,
     sum: f64,
@@ -312,16 +330,34 @@ impl EventStore {
         from: DateTime<Utc>,
         to: DateTime<Utc>,
     ) -> Result<Vec<VariantMetric>> {
+        self.experiment_metric_field(experiment, metric, None, from, to)
+            .await
+    }
+
+    /// Like [`experiment_metric`](Self::experiment_metric) but summing a metadata key instead of
+    /// the event value when `field` is given.
+    pub async fn experiment_metric_field(
+        &self,
+        experiment: &str,
+        metric: &str,
+        field: Option<&str>,
+        from: DateTime<Utc>,
+        to: DateTime<Utc>,
+    ) -> Result<Vec<VariantMetric>> {
         validate_name(metric)?;
+        let field = field.unwrap_or("");
         match self {
             EventStore::ClickHouse(ch) => {
                 let rows: Vec<ChVariant> = ch
                     .client
                     .query(
-                        "SELECT experiments[?] AS variant, count() AS count, uniqExact(identity_id) AS identities, sum(toFloat64OrZero(value)) AS sum
+                        "SELECT experiments[?] AS variant, count() AS count, uniqExact(identity_id) AS identities,
+                                sum(if(? = '', toFloat64OrZero(value), toFloat64OrZero(JSONExtractRaw(metadata, ?)))) AS sum
                          FROM events WHERE name = ? AND mapContains(experiments, ?) AND event_time >= ? AND event_time < ? GROUP BY variant ORDER BY variant",
                     )
                     .bind(experiment)
+                    .bind(field)
+                    .bind(field)
                     .bind(metric)
                     .bind(experiment)
                     .bind(from.timestamp_millis() as f64 / 1000.0)
@@ -342,13 +378,15 @@ impl EventStore {
             EventStore::Postgres(pg) => {
                 let rows: Vec<(String, i64, i64, f64)> = sqlx::query_as(
                     "SELECT experiments->>$1 AS variant, count(*)::bigint, count(DISTINCT identity_id)::bigint,
-                            COALESCE(sum(CASE WHEN value ~ '^-?[0-9]+(\\.[0-9]+)?$' THEN value::float8 ELSE 0 END), 0)::float8
+                            COALESCE(sum(CASE WHEN (CASE WHEN $5 = '' THEN value ELSE metadata->>$5 END) ~ '^-?[0-9]+(\\.[0-9]+)?$'
+                                              THEN (CASE WHEN $5 = '' THEN value ELSE metadata->>$5 END)::float8 ELSE 0 END), 0)::float8
                      FROM events WHERE name = $2 AND experiments ? $1 AND event_time >= $3 AND event_time < $4 GROUP BY 1 ORDER BY 1",
                 )
                 .bind(experiment)
                 .bind(metric)
                 .bind(from)
                 .bind(to)
+                .bind(field)
                 .fetch_all(pg)
                 .await
                 .map_err(map_sqlx)?;
@@ -356,6 +394,76 @@ impl EventStore {
                     .into_iter()
                     .map(|(variant, count, identities, sum)| VariantMetric {
                         variant,
+                        count,
+                        identities,
+                        sum,
+                    })
+                    .collect())
+            }
+        }
+    }
+
+    /// Per-variant, per-day (UTC) totals of `metric` events tagged with `experiment`.
+    pub async fn experiment_metric_series(
+        &self,
+        experiment: &str,
+        metric: &str,
+        field: Option<&str>,
+        from: DateTime<Utc>,
+        to: DateTime<Utc>,
+    ) -> Result<Vec<VariantDayMetric>> {
+        validate_name(metric)?;
+        let field = field.unwrap_or("");
+        match self {
+            EventStore::ClickHouse(ch) => {
+                let rows: Vec<ChVariantDay> = ch
+                    .client
+                    .query(
+                        "SELECT experiments[?] AS variant, toString(toDate(event_time)) AS day, count() AS count, uniqExact(identity_id) AS identities,
+                                sum(if(? = '', toFloat64OrZero(value), toFloat64OrZero(JSONExtractRaw(metadata, ?)))) AS sum
+                         FROM events WHERE name = ? AND mapContains(experiments, ?) AND event_time >= ? AND event_time < ? GROUP BY variant, day ORDER BY day, variant",
+                    )
+                    .bind(experiment)
+                    .bind(field)
+                    .bind(field)
+                    .bind(metric)
+                    .bind(experiment)
+                    .bind(from.timestamp_millis() as f64 / 1000.0)
+                    .bind(to.timestamp_millis() as f64 / 1000.0)
+                    .fetch_all()
+                    .await
+                    .map_err(ch_err)?;
+                Ok(rows
+                    .into_iter()
+                    .map(|r| VariantDayMetric {
+                        variant: r.variant,
+                        day: r.day,
+                        count: r.count as i64,
+                        identities: r.identities as i64,
+                        sum: r.sum,
+                    })
+                    .collect())
+            }
+            EventStore::Postgres(pg) => {
+                let rows: Vec<(String, String, i64, i64, f64)> = sqlx::query_as(
+                    "SELECT experiments->>$1 AS variant, to_char(date_trunc('day', event_time), 'YYYY-MM-DD') AS day, count(*)::bigint, count(DISTINCT identity_id)::bigint,
+                            COALESCE(sum(CASE WHEN (CASE WHEN $5 = '' THEN value ELSE metadata->>$5 END) ~ '^-?[0-9]+(\\.[0-9]+)?$'
+                                              THEN (CASE WHEN $5 = '' THEN value ELSE metadata->>$5 END)::float8 ELSE 0 END), 0)::float8
+                     FROM events WHERE name = $2 AND experiments ? $1 AND event_time >= $3 AND event_time < $4 GROUP BY 1, 2 ORDER BY 2, 1",
+                )
+                .bind(experiment)
+                .bind(metric)
+                .bind(from)
+                .bind(to)
+                .bind(field)
+                .fetch_all(pg)
+                .await
+                .map_err(map_sqlx)?;
+                Ok(rows
+                    .into_iter()
+                    .map(|(variant, day, count, identities, sum)| VariantDayMetric {
+                        variant,
+                        day,
                         count,
                         identities,
                         sum,

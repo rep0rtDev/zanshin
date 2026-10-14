@@ -193,6 +193,32 @@ impl EventService {
             .await
     }
 
+    pub async fn experiment_metric_field(
+        &self,
+        experiment: &str,
+        metric: &str,
+        field: Option<&str>,
+        from: chrono::DateTime<chrono::Utc>,
+        to: chrono::DateTime<chrono::Utc>,
+    ) -> Result<Vec<zanshin_store::events::VariantMetric>> {
+        self.store
+            .experiment_metric_field(experiment, metric, field, from, to)
+            .await
+    }
+
+    pub async fn experiment_metric_series(
+        &self,
+        experiment: &str,
+        metric: &str,
+        field: Option<&str>,
+        from: chrono::DateTime<chrono::Utc>,
+        to: chrono::DateTime<chrono::Utc>,
+    ) -> Result<Vec<zanshin_store::events::VariantDayMetric>> {
+        self.store
+            .experiment_metric_series(experiment, metric, field, from, to)
+            .await
+    }
+
     pub async fn recent_for_identity(
         &self,
         identity_id: Uuid,

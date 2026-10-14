@@ -741,8 +741,20 @@ async fn experiment_results(
         }
         None => None,
     };
+    let catalog_metrics = state
+        .metrics
+        .for_experiment(
+            &exp,
+            &stats,
+            q.from.unwrap_or(exp.created_at),
+            q.to.unwrap_or_else(chrono::Utc::now),
+        )
+        .await;
     Ok(Json(serde_json::json!({
         "experiment": exp.key, "status": exp.status, "control": exp.control, "total_assigned": total,
+        "winner": exp.winner, "interrupted_at": exp.interrupted_at, "interrupt_reason": exp.interrupt_reason,
+        "locked": exp.locked, "max_participants": exp.max_participants, "enrol_until": exp.enrol_until,
+        "metrics": catalog_metrics,
         "metric": metric.as_ref().map(|(m, _)| m.clone()),
         "variants": exp.variants.iter().map(|v| {
             let s = stats.iter().find(|s| s.variant == v.key);
