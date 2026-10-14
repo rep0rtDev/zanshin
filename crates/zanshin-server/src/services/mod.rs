@@ -9,6 +9,7 @@ pub mod experiments;
 pub mod flags;
 pub mod identity;
 pub mod integrations;
+pub mod journeys;
 pub mod limits;
 pub mod live_events;
 pub mod messages;

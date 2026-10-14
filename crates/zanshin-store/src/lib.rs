@@ -11,6 +11,7 @@ pub mod experiments;
 pub mod flags;
 pub mod identities;
 pub mod integrations;
+pub mod journeys;
 pub mod live_events;
 pub mod messages;
 pub mod metrics;

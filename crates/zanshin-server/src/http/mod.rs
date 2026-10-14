@@ -7,6 +7,7 @@ pub mod auth;
 pub mod console;
 pub mod error;
 pub mod experiments_v2;
+pub mod journeys;
 pub mod limits;
 pub mod liveops;
 pub mod messaging_v2;
@@ -113,7 +114,8 @@ pub fn router(state: AppState) -> Router {
                 .merge(liveops::router())
                 .merge(experiments_v2::router())
                 .merge(messaging_v2::router())
-                .merge(webhooks::router()),
+                .merge(webhooks::router())
+                .merge(journeys::router()),
         )
         .merge(console::router())
         .layer(axum::middleware::from_fn_with_state(

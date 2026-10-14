@@ -43,6 +43,11 @@ pub async fn run(state: AppState, mut shutdown: watch::Receiver<bool>) {
                     Ok(_) => {}
                     Err(e) => tracing::warn!(error = %e, "audit prune failed"),
                 }
+                match state.journeys.purge(chrono::Duration::days(90)).await {
+                    Ok(n) if n > 0 => tracing::info!(purged = n, "old journey runs purged"),
+                    Ok(_) => {}
+                    Err(e) => tracing::warn!(error = %e, "journey run purge failed"),
+                }
                 match state.webhooks.purge(chrono::Duration::days(14)).await {
                     Ok(n) if n > 0 => tracing::info!(purged = n, "old webhook deliveries purged"),
                     Ok(_) => {}
