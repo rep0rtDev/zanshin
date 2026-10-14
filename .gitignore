@@ -10,3 +10,4 @@ sdk/unity/**/obj/
 console/node_modules/
 console/dist/*
 !console/dist/.gitkeep
+sdk/cpp/build/

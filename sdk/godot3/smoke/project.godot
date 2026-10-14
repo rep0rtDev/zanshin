@@ -1,0 +1,14 @@
+; Smoke project for the Godot 3 addon (CI parses + runs smoke.gd headless).
+config_version=4
+
+[application]
+
+config/name="zanshin-godot3-smoke"
+
+[autoload]
+
+Zanshin="*res://addons/zanshin/zanshin.gd"
+
+[editor_plugins]
+
+enabled=PoolStringArray( "res://addons/zanshin/plugin.cfg" )

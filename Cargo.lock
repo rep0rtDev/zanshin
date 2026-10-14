@@ -4601,6 +4601,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "zanshin-cli"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "clap",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "tokio",
+]
+
+[[package]]
 name = "zanshin-core"
 version = "0.1.0"
 dependencies = [

@@ -92,7 +92,7 @@ jobs:
           ZANSHIN_BUILD_COMMIT: ${{ github.sha }}
         run: |
           export ZANSHIN_BUILD_TIME="$(date -u +%s)"
-          cargo build --release --locked -p zanshin-server --target ${{ matrix.target }}
+          cargo build --release --locked -p zanshin-server -p zanshin-cli --target ${{ matrix.target }}
       - name: package
         shell: bash
         run: |
@@ -100,6 +100,7 @@ jobs:
           name="zanshin-${v}-${{ matrix.name }}"
           mkdir -p "dist/$name" "dist/linux-${{ matrix.name }}"
           cp "target/${{ matrix.target }}/release/zanshin${{ matrix.ext }}" "dist/$name/"
+          cp "target/${{ matrix.target }}/release/zanshinctl${{ matrix.ext }}" "dist/$name/"
           cp README.md LICENSE config/zanshin.example.yml "dist/$name/"
           cd dist
           if [ "${{ matrix.ext }}" = ".exe" ]; then 7z a -tzip "$name.zip" "$name" >/dev/null; f="$name.zip"; else tar czf "$name.tar.gz" "$name"; f="$name.tar.gz"; fi
@@ -227,6 +228,9 @@ jobs:
         run: |
           v="${{ needs.meta.outputs.version }}"
           (cd sdk && zip -qr "../dist/zanshin-unreal-plugin-${v}.zip" unreal -x '*/bin/*' '*/obj/*')
+          (cd sdk && zip -qr "../dist/zanshin-godot3-addon-${v}.zip" godot3/addons godot3/README.md)
+          (cd sdk && zip -qr "../dist/zanshin-defold-${v}.zip" defold/zanshin defold/README.md)
+          (cd sdk && zip -qr "../dist/zanshin-cpp-${v}.zip" cpp/include cpp/CMakeLists.txt cpp/README.md)
           (cd sdk/godot && zip -qr "../../dist/zanshin-godot-addon-${v}.zip" addons README.md)
           (cd sdk && zip -qr "../dist/zanshin-unity-upm-${v}.zip" unity -x 'unity/bin/*' 'unity/obj/*' 'unity/Tests~/*')
       - name: source sbom (spdx)

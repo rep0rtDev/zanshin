@@ -1,5 +1,7 @@
 # API reference
 
+Machine-readable version: `docs/openapi.yaml` (served at `/openapi.yaml` and `/openapi.json`) with Swagger UI at `/docs` — client and server APIs are fully typed, admin endpoints are listed with their permission model.
+
 Base URL: `http://host:7550`. All bodies are JSON. Errors are
 `{"code": "<invalid_argument|unauthenticated|permission_denied|not_found|conflict|unavailable|internal>", "message": "…"}`
 with the matching HTTP status (400 / 401 / 403 / 404 / 409 / 503 / 500).

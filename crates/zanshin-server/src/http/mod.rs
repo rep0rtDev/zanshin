@@ -7,6 +7,7 @@ pub mod audit;
 pub mod auth;
 pub mod console;
 pub mod data;
+pub mod docs;
 pub mod error;
 pub mod experiments_v2;
 pub mod http_metrics;
@@ -132,6 +133,7 @@ pub fn router(state: AppState) -> Router {
                 .merge(users::router()),
         )
         .merge(console::router())
+        .merge(docs::router())
         .layer(axum::middleware::from_fn_with_state(
             state.clone(),
             audit::audit,
