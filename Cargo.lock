@@ -4329,6 +4329,7 @@ dependencies = [
  "cron",
  "figment",
  "futures",
+ "hmac",
  "http",
  "humantime",
  "humantime-serde",

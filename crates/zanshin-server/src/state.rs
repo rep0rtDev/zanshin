@@ -1,6 +1,7 @@
 use crate::services::taxonomy::TaxonomyService;
 use crate::services::{
-    audit::AuditService, limits::RateLimiter, metrics::MetricService, oidc::OidcService,
+    audit::AuditService, integrations::IntegrationService, limits::RateLimiter,
+    metrics::MetricService, oidc::OidcService, templates::TemplateService,
 };
 use std::sync::Arc;
 use zanshin_store::taxonomy::TaxonomyRepo;
@@ -9,8 +10,9 @@ use zanshin_core::token::TokenIssuer;
 use zanshin_store::audit::AuditRepo;
 use zanshin_store::{
     api_keys::ApiKeyRepo, audiences::AudienceRepo, experiments::ExperimentRepo, flags::FlagRepo,
-    identities::IdentityRepo, live_events::LiveEventRepo, messages::MessageRepo,
-    metrics::MetricRepo, push::PushTokenRepo, sessions::SessionRepo, Stores,
+    identities::IdentityRepo, integrations::IntegrationRepo, live_events::LiveEventRepo,
+    messages::MessageRepo, metrics::MetricRepo, push::PushTokenRepo, sessions::SessionRepo,
+    templates::TemplateRepo, Stores,
 };
 
 use crate::{
@@ -47,6 +49,8 @@ pub struct AppState {
     pub events: EventService,
     pub live_events: LiveEventService,
     pub messages: MessageService,
+    pub templates: TemplateService,
+    pub integrations: IntegrationService,
     pub push: PushService,
     pub eval: Evaluator,
     pub taxonomy: TaxonomyService,
@@ -151,10 +155,16 @@ impl AppState {
         );
         let live_events = LiveEventService::new(LiveEventRepo::new(stores.pg.clone()), bus.clone());
         let push = PushService::new(PushTokenRepo::new(stores.pg.clone()), &cfg.push)?;
+        let templates = TemplateService::new(TemplateRepo::new(stores.pg.clone()));
+        let integrations =
+            IntegrationService::new(IntegrationRepo::new(stores.pg.clone()), push.clone());
         let messages = MessageService::new(
             MessageRepo::new(stores.pg.clone()),
             bus.clone(),
             push.clone(),
+            TemplateRepo::new(stores.pg.clone()),
+            integrations.clone(),
+            LiveEventRepo::new(stores.pg.clone()),
         );
         let taxonomy = TaxonomyService::new(
             TaxonomyRepo::new(stores.pg.clone()),
@@ -186,6 +196,8 @@ impl AppState {
             events,
             live_events,
             messages,
+            templates,
+            integrations,
             push,
             eval,
             taxonomy,

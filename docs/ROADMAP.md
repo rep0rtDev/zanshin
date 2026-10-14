@@ -20,8 +20,9 @@ console comes last once the model is stable.
 - [x] **Live events**: one-shot windows and cron recurrence (UTC) with per-occurrence duration,
       targeting by rules and audiences, free-form payload, current and next occurrence exposed to
       clients, live push on change
-- [ ] **Messages / inbox**: scheduled or triggered in-app messages, per-identity read /
-      consumed state, templating with identity properties
+- [x] **Messaging v2**: templates (plaintext/HTML/JSON, per-locale translations, preview + test send), schedules
+  (cron and live-event relative, once per occurrence), delivery integrations (webhook with HMAC, OneSignal, Facebook,
+  FCM/APNs) with per-channel delivery log, inbox delete.
 - [x] **Analytics**: `POST /v1/events` (client) and `/server/v1/events` (trusted), batched writer
       into ClickHouse or PostgreSQL, events tagged with the identity's live experiment
       assignments, admin timeseries / top names / per-identity log, experiment results by metric

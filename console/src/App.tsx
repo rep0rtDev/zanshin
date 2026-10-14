@@ -11,6 +11,8 @@ import Identities from './pages/Identities';
 import Analytics from './pages/Analytics';
 import Taxonomy from './pages/Taxonomy';
 import Metrics from './pages/Metrics';
+import Templates from './pages/Templates';
+import Integrations from './pages/Integrations';
 import ApiKeys from './pages/ApiKeys';
 import Audit from './pages/Audit';
 
@@ -65,6 +67,8 @@ const NAV: [string, string][] = [
   ['/analytics', 'Analytics'],
   ['/taxonomy', 'Taxonomy'],
   ['/metrics', 'Metrics'],
+  ['/templates', 'Templates'],
+  ['/integrations', 'Integrations'],
   ['/api-keys', 'API keys'],
   ['/audit', 'Audit log'],
 ];
@@ -135,6 +139,8 @@ export default function App() {
           <Route path="/analytics" element={<Analytics />} />
           <Route path="/taxonomy/*" element={<Taxonomy />} />
           <Route path="/metrics/*" element={<Metrics />} />
+          <Route path="/templates/*" element={<Templates />} />
+          <Route path="/integrations/*" element={<Integrations />} />
           {me.role === 'admin' && <Route path="/api-keys" element={<ApiKeys />} />}
           <Route path="/audit" element={<Audit />} />
           <Route path="*" element={<Navigate to="/" replace />} />

@@ -6,14 +6,20 @@ use async_trait::async_trait;
 use serde::Deserialize;
 use serde_json::Value;
 use uuid::Uuid;
+use zanshin_core::templates::Template;
 use zanshin_core::{
     flags::validate_key,
+    messages::{default_channels, Schedule},
     messages::{InboxMessage, MessageCampaign},
     properties::PropertyMap,
     rules::Condition,
     Error, Identity, Result,
 };
-use zanshin_store::messages::{Delivery, MessageRepo};
+use zanshin_store::{
+    live_events::LiveEventRepo,
+    messages::{Delivery, MessageRepo},
+    templates::TemplateRepo,
+};
 
 use super::{
     bus::{ChangeBus, ChangeKind},
@@ -80,6 +86,12 @@ pub struct MessagePatch {
     pub push: Option<bool>,
     #[serde(default)]
     pub tags: Option<Vec<String>>,
+    #[serde(default, deserialize_with = "double_option")]
+    pub template_key: Option<Option<String>>,
+    #[serde(default)]
+    pub schedule: Option<Schedule>,
+    #[serde(default)]
+    pub channels: Option<Vec<String>>,
 }
 
 /// A direct (server-sent) message.
@@ -106,16 +118,29 @@ pub struct MessageService {
     repo: MessageRepo,
     bus: ChangeBus,
     push: super::push::PushService,
+    templates: TemplateRepo,
+    integrations: super::integrations::IntegrationService,
+    live_events: LiveEventRepo,
     pub catalog: Arc<Catalog<MessageCampaign>>,
 }
 
 impl MessageService {
-    pub fn new(repo: MessageRepo, bus: ChangeBus, push: super::push::PushService) -> Self {
+    pub fn new(
+        repo: MessageRepo,
+        bus: ChangeBus,
+        push: super::push::PushService,
+        templates: TemplateRepo,
+        integrations: super::integrations::IntegrationService,
+        live_events: LiveEventRepo,
+    ) -> Self {
         let catalog = Catalog::new(ChangeKind::Message, "message", Arc::new(repo.clone()));
         Self {
             repo,
             bus,
             push,
+            templates,
+            integrations,
+            live_events,
             catalog,
         }
     }
@@ -154,7 +179,58 @@ impl MessageService {
         }
     }
 
-    /// Deliver one campaign to one identity if it targets it and was not delivered yet.
+    /// Delivery occurrence of a campaign at `now`: `Some(None)` for one-shot campaigns, the fire
+    /// time for cron / live-event schedules, `None` when nothing is due.
+    async fn occurrence_of(
+        &self,
+        m: &MessageCampaign,
+        now: chrono::DateTime<chrono::Utc>,
+    ) -> Option<Option<chrono::DateTime<chrono::Utc>>> {
+        match m.schedule.live_event_key() {
+            None => m.occurrence(now),
+            Some(key) => {
+                let ev = self.live_events.get(key).await.ok()?;
+                let occ = ev.current(now).or_else(|| {
+                    // The end-anchored window of the previous occurrence may still be open.
+                    ev.previous(now)
+                })?;
+                m.schedule
+                    .event_occurrence(occ.start, occ.end, now)
+                    .map(Some)
+            }
+        }
+    }
+
+    /// Campaigns from `live` that still have an undelivered occurrence for this identity.
+    async fn pending<'a>(
+        &self,
+        live: &'a [Arc<MessageCampaign>],
+        identity_id: Uuid,
+        now: chrono::DateTime<chrono::Utc>,
+    ) -> Result<
+        Vec<(
+            &'a Arc<MessageCampaign>,
+            Option<chrono::DateTime<chrono::Utc>>,
+        )>,
+    > {
+        let done: HashSet<(Uuid, Option<chrono::DateTime<chrono::Utc>>)> = self
+            .repo
+            .delivered_occurrences(identity_id)
+            .await?
+            .into_iter()
+            .collect();
+        let mut out = Vec::new();
+        for m in live {
+            if let Some(occ) = self.occurrence_of(m, now).await {
+                if !done.contains(&(m.id, occ)) {
+                    out.push((m, occ));
+                }
+            }
+        }
+        Ok(out)
+    }
+
+    /// Deliver one campaign occurrence to one identity if it targets it and was not delivered yet.
     /// Returns the new inbox id.
     async fn deliver_campaign(
         &self,
@@ -163,13 +239,48 @@ impl MessageService {
         flat: &PropertyMap,
         audiences: &HashSet<String>,
         now: chrono::DateTime<chrono::Utc>,
+        occurrence: Option<chrono::DateTime<chrono::Utc>>,
     ) -> Result<Option<Uuid>> {
         let member = |k: &str| audiences.contains(k);
         if !m.targets(&identity.external_id, flat, &member) {
             return Ok(None);
         }
-        let title = MessageCampaign::render(&m.title, flat);
-        let body = MessageCampaign::render(&m.body, flat);
+        let locale_pref = Template::locale_of(flat);
+        let (title, body, image_url, payload, locale) = match &m.template_key {
+            Some(tk) => match self.templates.get(tk).await {
+                Ok(t) => {
+                    let r = t.render(locale_pref.as_deref(), flat);
+                    let payload = if m.payload.is_null() {
+                        t.payload.clone()
+                    } else {
+                        m.payload.clone()
+                    };
+                    let image = if m.image_url.is_empty() {
+                        t.image_url.clone()
+                    } else {
+                        m.image_url.clone()
+                    };
+                    (r.title, r.body, image, payload, r.locale)
+                }
+                Err(e) => {
+                    tracing::warn!(message = %m.key, template = %tk, error = %e, "template missing; using inline copy");
+                    (
+                        MessageCampaign::render(&m.title, flat),
+                        MessageCampaign::render(&m.body, flat),
+                        m.image_url.clone(),
+                        m.payload.clone(),
+                        locale_pref.clone().unwrap_or_default(),
+                    )
+                }
+            },
+            None => (
+                MessageCampaign::render(&m.title, flat),
+                MessageCampaign::render(&m.body, flat),
+                m.image_url.clone(),
+                m.payload.clone(),
+                locale_pref.clone().unwrap_or_default(),
+            ),
+        };
         let expires_at = m.ttl_secs.map(|t| now + chrono::Duration::seconds(t));
         let inserted = self
             .repo
@@ -180,26 +291,198 @@ impl MessageService {
                     key: Some(&m.key),
                     title: &title,
                     body: &body,
-                    image_url: &m.image_url,
-                    payload: &m.payload,
+                    image_url: &image_url,
+                    payload: &payload,
                     priority: m.priority,
                     expires_at,
+                    occurrence,
                 },
             )
             .await?;
         if let Some(id) = inserted {
             metrics::counter!("zanshin_messages_delivered_total", "message" => m.key.clone())
                 .increment(1);
+            let _ = self
+                .repo
+                .record_delivery(m.id, identity.id, occurrence, "inbox", "sent", "")
+                .await;
             if m.push {
                 self.push_copy(
                     identity.id,
                     id,
-                    &Self::notification(&title, &body, &m.image_url, id, Some(&m.key)),
+                    &Self::notification(&title, &body, &image_url, id, Some(&m.key)),
                 )
                 .await;
             }
+            let out = super::integrations::Outbound {
+                message_key: &m.key,
+                identity_id: identity.id,
+                external_id: &identity.external_id,
+                occurrence,
+                locale: &locale,
+                title: &title,
+                body: &body,
+                image_url: &image_url,
+                payload: &payload,
+                props: flat,
+            };
+            for channel in m.channels.iter().filter(|c| c.as_str() != "inbox") {
+                let o = self.integrations.deliver(channel, &out).await;
+                metrics::counter!("zanshin_messages_channel_total", "channel" => channel.clone(), "status" => o.status)
+                    .increment(1);
+                let _ = self
+                    .repo
+                    .record_delivery(m.id, identity.id, occurrence, channel, o.status, &o.detail)
+                    .await;
+            }
         }
         Ok(inserted)
+    }
+
+    /// Deliver due cron / live-event campaigns to every identity (housekeeping, once a minute).
+    pub async fn sweep_scheduled(
+        &self,
+        eval: &super::eval::Evaluator,
+        identities: &zanshin_store::identities::IdentityRepo,
+    ) -> Result<usize> {
+        let now = chrono::Utc::now();
+        let campaigns: Vec<_> = self
+            .catalog
+            .list()
+            .await
+            .into_iter()
+            .filter(|m| m.schedule != Schedule::Once && m.is_live(now))
+            .collect();
+        if campaigns.is_empty() {
+            return Ok(0);
+        }
+        let mut due = Vec::new();
+        for m in campaigns {
+            if self.occurrence_of(&m, now).await.is_some() {
+                due.push(m);
+            }
+        }
+        if due.is_empty() {
+            return Ok(0);
+        }
+        let mut delivered = 0;
+        let mut after = None;
+        loop {
+            let page = identities.list(after, 500).await?;
+            let Some(last) = page.last().map(|i| i.id) else {
+                break;
+            };
+            for identity in &page {
+                let flat = super::eval::flatten_with_identity(identity, &identity.properties);
+                let audiences = eval.audiences.memberships(identity, &flat).await;
+                for (m, occ) in self.pending(&due, identity.id, now).await? {
+                    if self
+                        .deliver_campaign(m, identity, &flat, &audiences, now, occ)
+                        .await?
+                        .is_some()
+                    {
+                        delivered += 1;
+                    }
+                }
+            }
+            after = Some(last);
+        }
+        if delivered > 0 {
+            tracing::info!(delivered, "scheduled campaigns swept");
+        }
+        Ok(delivered)
+    }
+
+    async fn check_refs(&self, m: &MessageCampaign) -> Result<()> {
+        if let Some(t) = &m.template_key {
+            self.templates
+                .get(t)
+                .await
+                .map_err(|_| Error::invalid(format!("template {t:?} does not exist")))?;
+        }
+        for c in m.channels.iter().filter(|c| c.as_str() != "inbox") {
+            self.integrations
+                .exists(c)
+                .await
+                .map_err(|_| Error::invalid(format!("integration {c:?} does not exist")))?;
+        }
+        if let Some(k) = m.schedule.live_event_key() {
+            self.live_events
+                .get(k)
+                .await
+                .map_err(|_| Error::invalid(format!("live event {k:?} does not exist")))?;
+        }
+        Ok(())
+    }
+
+    pub async fn delete_inbox(&self, identity: &Identity, id: Uuid) -> Result<()> {
+        if !self.repo.delete_inbox(identity.id, id).await? {
+            return Err(Error::not_found("inbox message not found"));
+        }
+        Ok(())
+    }
+
+    pub async fn deliveries(
+        &self,
+        key: &str,
+        status: Option<&str>,
+        channel: Option<&str>,
+        after: Option<Uuid>,
+        limit: i64,
+    ) -> Result<(
+        Vec<zanshin_store::messages::DeliveryRecord>,
+        Vec<(String, String, i64)>,
+    )> {
+        let m = self.get(key).await?;
+        let items = self
+            .repo
+            .deliveries(m.id, status, channel, after, limit.clamp(1, 500))
+            .await?;
+        let stats = self.repo.delivery_stats(m.id).await?;
+        Ok((items, stats))
+    }
+
+    /// Render a template for a player and drop it straight into their inbox (template test send).
+    pub async fn send_template(
+        &self,
+        identity: &Identity,
+        flat: &PropertyMap,
+        template_key: &str,
+        locale: Option<&str>,
+        push: bool,
+    ) -> Result<(zanshin_core::templates::Rendered, Uuid)> {
+        let t = self.templates.get(template_key).await?;
+        let locale = locale
+            .map(str::to_string)
+            .or_else(|| Template::locale_of(flat));
+        let r = t.render(locale.as_deref(), flat);
+        let id = self
+            .repo
+            .deliver(
+                identity.id,
+                Delivery {
+                    message_id: None,
+                    key: Some(&format!("template:{template_key}")),
+                    title: &r.title,
+                    body: &r.body,
+                    image_url: &t.image_url,
+                    payload: &t.payload,
+                    priority: 0,
+                    expires_at: None,
+                    occurrence: None,
+                },
+            )
+            .await?
+            .ok_or_else(|| Error::internal(anyhow::anyhow!("inbox insert returned nothing")))?;
+        if push {
+            self.push_copy(
+                identity.id,
+                id,
+                &Self::notification(&r.title, &r.body, &t.image_url, id, None),
+            )
+            .await;
+        }
+        Ok((r, id))
     }
 
     /// Proactively deliver live push campaigns to every identity with a registered device, so the
@@ -233,15 +516,9 @@ impl MessageService {
                 };
                 let flat = super::eval::flatten_with_identity(&identity, &identity.properties);
                 let audiences = eval.audiences.memberships(&identity, &flat).await;
-                let done: HashSet<Uuid> = self
-                    .repo
-                    .delivered_campaigns(identity.id)
-                    .await?
-                    .into_iter()
-                    .collect();
-                for m in campaigns.iter().filter(|m| !done.contains(&m.id)) {
+                for (m, occ) in self.pending(&campaigns, identity.id, now).await? {
                     if self
-                        .deliver_campaign(m, &identity, &flat, &audiences, now)
+                        .deliver_campaign(m, &identity, &flat, &audiences, now, occ)
                         .await?
                         .is_some()
                     {
@@ -283,14 +560,8 @@ impl MessageService {
             .filter(|m| m.is_live(now))
             .collect();
         if !live.is_empty() {
-            let delivered: HashSet<Uuid> = self
-                .repo
-                .delivered_campaigns(identity.id)
-                .await?
-                .into_iter()
-                .collect();
-            for m in live.iter().filter(|m| !delivered.contains(&m.id)) {
-                self.deliver_campaign(m, identity, flat, audiences, now)
+            for (m, occ) in self.pending(&live, identity.id, now).await? {
+                self.deliver_campaign(m, identity, flat, audiences, now, occ)
                     .await?;
             }
         }
@@ -334,6 +605,7 @@ impl MessageService {
                     payload: &msg.payload,
                     priority: msg.priority,
                     expires_at,
+                    occurrence: None,
                 },
             )
             .await?
@@ -379,12 +651,16 @@ impl MessageService {
             ttl_secs: p.ttl_secs.flatten(),
             priority: p.priority.unwrap_or(0),
             push: p.push.unwrap_or(false),
+            template_key: p.template_key.flatten(),
+            schedule: p.schedule.unwrap_or_default(),
+            channels: p.channels.unwrap_or_else(default_channels),
             tags: normalize_tags(p.tags.unwrap_or_default())?,
             version: 1,
             created_at: now,
             updated_at: now,
         };
         m.validate()?;
+        self.check_refs(&m).await?;
         let created = self.repo.create(&m).await?;
         self.bus
             .publish(
@@ -439,10 +715,20 @@ impl MessageService {
         if let Some(v) = p.push {
             m.push = v;
         }
+        if let Some(v) = p.template_key {
+            m.template_key = v;
+        }
+        if let Some(v) = p.schedule {
+            m.schedule = v;
+        }
+        if let Some(v) = p.channels {
+            m.channels = v;
+        }
         if let Some(v) = p.tags {
             m.tags = normalize_tags(v)?;
         }
         m.validate()?;
+        self.check_refs(&m).await?;
         let updated = self.repo.update(&m).await?;
         self.bus
             .publish(

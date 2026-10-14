@@ -41,6 +41,7 @@ pub fn router() -> Router<AppState> {
             "/messages/{id}",
             axum::routing::put(update_message).delete(delete_message),
         )
+        .route("/inbox/{id}", axum::routing::delete(delete_inbox_message))
         .route(
             "/push-tokens",
             get(list_push_tokens).put(register_push_token),
@@ -539,6 +540,17 @@ async fn update_message(
     let identity = state.identity.get(ctx.identity_id()).await?;
     let _ = body;
     Ok(Json(state.messages.mark_read(&identity, id).await?))
+}
+
+/// Remove a message from the inbox entirely (unlike DELETE /messages/{id}, which marks it consumed).
+async fn delete_inbox_message(
+    State(state): State<AppState>,
+    SessionAuth(ctx): SessionAuth,
+    Path(id): Path<uuid::Uuid>,
+) -> ApiResult<Json<serde_json::Value>> {
+    let identity = state.identity.get(ctx.identity_id()).await?;
+    state.messages.delete_inbox(&identity, id).await?;
+    Ok(Json(serde_json::json!({ "deleted": id })))
 }
 
 async fn delete_message(

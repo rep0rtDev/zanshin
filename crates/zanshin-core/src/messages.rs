@@ -48,6 +48,14 @@ pub struct MessageCampaign {
     /// Also send a push notification to the identity's registered devices on delivery.
     #[serde(default)]
     pub push: bool,
+    /// Render title/body/payload from this template (per player locale) instead of the inline fields.
+    #[serde(default)]
+    pub template_key: Option<String>,
+    #[serde(default)]
+    pub schedule: Schedule,
+    /// Delivery channels: `inbox` plus integration keys.
+    #[serde(default = "default_channels")]
+    pub channels: Vec<String>,
     #[serde(default)]
     pub tags: Vec<String>,
     pub version: i64,
@@ -59,8 +67,130 @@ fn default_percentage() -> f64 {
     100.0
 }
 
+pub fn default_channels() -> Vec<String> {
+    vec!["inbox".into()]
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Anchor {
+    #[default]
+    Start,
+    End,
+}
+
+/// When a campaign is delivered. `once` = on first eligible inbox fetch while live; `cron` = once per
+/// cron occurrence (UTC); `live_event` = once per occurrence of a live event, offset from its start/end.
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum Schedule {
+    #[default]
+    Once,
+    Cron {
+        cron: String,
+        /// How long after the fire time the occurrence is still delivered (default 24h).
+        #[serde(default)]
+        window_secs: Option<i64>,
+    },
+    LiveEvent {
+        live_event: String,
+        #[serde(default)]
+        anchor: Anchor,
+        #[serde(default)]
+        offset_secs: i64,
+        #[serde(default)]
+        window_secs: Option<i64>,
+    },
+}
+
+pub const DEFAULT_WINDOW_SECS: i64 = 86_400;
+
+impl Schedule {
+    pub fn validate(&self) -> Result<()> {
+        match self {
+            Schedule::Once => Ok(()),
+            Schedule::Cron { cron, window_secs } => {
+                cron.parse::<cron::Schedule>()
+                    .map_err(|e| Error::invalid(format!("bad cron {cron:?}: {e}")))?;
+                if window_secs.is_some_and(|w| w <= 0) {
+                    return Err(Error::invalid("window_secs must be positive"));
+                }
+                Ok(())
+            }
+            Schedule::LiveEvent {
+                live_event,
+                window_secs,
+                ..
+            } => {
+                validate_key(live_event)?;
+                if window_secs.is_some_and(|w| w <= 0) {
+                    return Err(Error::invalid("window_secs must be positive"));
+                }
+                Ok(())
+            }
+        }
+    }
+
+    pub fn live_event_key(&self) -> Option<&str> {
+        match self {
+            Schedule::LiveEvent { live_event, .. } => Some(live_event),
+            _ => None,
+        }
+    }
+
+    /// For cron schedules: the most recent fire time at or before `now` that is still inside the window.
+    pub fn cron_occurrence(&self, now: DateTime<Utc>) -> Option<DateTime<Utc>> {
+        let Schedule::Cron { cron, window_secs } = self else {
+            return None;
+        };
+        let window = window_secs.unwrap_or(DEFAULT_WINDOW_SECS);
+        let sched = cron.parse::<cron::Schedule>().ok()?;
+        sched
+            .after(&(now - chrono::Duration::seconds(window)))
+            .take_while(|t| *t <= now)
+            .last()
+    }
+
+    /// For live-event schedules: the delivery instant derived from one event occurrence, if `now` is inside its window.
+    pub fn event_occurrence(
+        &self,
+        starts_at: DateTime<Utc>,
+        ends_at: DateTime<Utc>,
+        now: DateTime<Utc>,
+    ) -> Option<DateTime<Utc>> {
+        let Schedule::LiveEvent {
+            anchor,
+            offset_secs,
+            window_secs,
+            ..
+        } = self
+        else {
+            return None;
+        };
+        let base = match anchor {
+            Anchor::Start => starts_at,
+            Anchor::End => ends_at,
+        };
+        let at = base + chrono::Duration::seconds(*offset_secs);
+        let window = window_secs.unwrap_or(DEFAULT_WINDOW_SECS);
+        (now >= at && now < at + chrono::Duration::seconds(window)).then_some(at)
+    }
+}
+
 impl MessageCampaign {
     pub fn validate(&self) -> Result<()> {
+        self.schedule.validate()?;
+        if self.channels.is_empty() {
+            return Err(Error::invalid("channels must not be empty"));
+        }
+        for c in &self.channels {
+            if c != "inbox" {
+                validate_key(c)?;
+            }
+        }
+        if let Some(t) = &self.template_key {
+            validate_key(t)?;
+        }
         validate_key(&self.key)?;
         self.condition.validate()?;
         if self.title.trim().is_empty() || self.title.len() > 512 {
@@ -81,6 +211,15 @@ impl MessageCampaign {
             return Err(Error::invalid("ttl_secs must be positive"));
         }
         Ok(())
+    }
+
+    /// Delivery occurrence for a plain / cron campaign at `now` (`Some(None)` = once, no occurrence key).
+    pub fn occurrence(&self, now: DateTime<Utc>) -> Option<Option<DateTime<Utc>>> {
+        match &self.schedule {
+            Schedule::Once => Some(None),
+            Schedule::Cron { .. } => self.schedule.cron_occurrence(now).map(Some),
+            Schedule::LiveEvent { .. } => None,
+        }
     }
 
     pub fn is_live(&self, now: DateTime<Utc>) -> bool {

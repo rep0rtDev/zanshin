@@ -199,6 +199,23 @@ impl LiveEvent {
     }
 
     /// Next occurrence starting after `now`, if any.
+    /// The most recent occurrence that already ended before `now` (within the last 7 days).
+    pub fn previous(&self, now: DateTime<Utc>) -> Option<Occurrence> {
+        let mut best: Option<Occurrence> = None;
+        let mut t = now - chrono::Duration::days(7);
+        for _ in 0..512 {
+            let Some(o) = self.view(t).current.or_else(|| self.next(t)) else {
+                break;
+            };
+            if o.end > now {
+                break;
+            }
+            best = Some(o.clone());
+            t = o.end;
+        }
+        best
+    }
+
     pub fn next(&self, now: DateTime<Utc>) -> Option<Occurrence> {
         match &self.recurrence {
             None => (now < self.starts_at)
