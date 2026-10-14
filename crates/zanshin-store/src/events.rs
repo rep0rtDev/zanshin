@@ -3,6 +3,7 @@
 use chrono::{DateTime, Utc};
 use clickhouse::Row;
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 use sqlx::PgPool;
 use uuid::Uuid;
 use zanshin_core::{events::Event, Error, Result};
@@ -473,6 +474,178 @@ impl EventStore {
         }
     }
 
+    /// Distinct active identities per UTC day.
+    pub async fn active_per_day(
+        &self,
+        from: DateTime<Utc>,
+        to: DateTime<Utc>,
+    ) -> Result<Vec<(String, i64)>> {
+        match self {
+            EventStore::ClickHouse(ch) => {
+                let rows: Vec<ChDay> = ch
+                    .client
+                    .query("SELECT toString(toDate(event_time)) AS day, uniqExact(identity_id) AS n FROM events WHERE event_time >= ? AND event_time < ? GROUP BY day ORDER BY day")
+                    .bind(from.timestamp_millis() as f64 / 1000.0)
+                    .bind(to.timestamp_millis() as f64 / 1000.0)
+                    .fetch_all()
+                    .await
+                    .map_err(ch_err)?;
+                Ok(rows.into_iter().map(|r| (r.day, r.n as i64)).collect())
+            }
+            EventStore::Postgres(pg) => sqlx::query_as(
+                "SELECT to_char(date_trunc('day', event_time), 'YYYY-MM-DD'), count(DISTINCT identity_id)::bigint
+                 FROM events WHERE event_time >= $1 AND event_time < $2 GROUP BY 1 ORDER BY 1",
+            )
+            .bind(from)
+            .bind(to)
+            .fetch_all(pg)
+            .await
+            .map_err(map_sqlx),
+        }
+    }
+
+    /// Distinct identities active over the whole range (WAU / MAU).
+    pub async fn active_in_range(&self, from: DateTime<Utc>, to: DateTime<Utc>) -> Result<i64> {
+        match self {
+            EventStore::ClickHouse(ch) => {
+                let n: u64 = ch
+                    .client
+                    .query("SELECT uniqExact(identity_id) FROM events WHERE event_time >= ? AND event_time < ?")
+                    .bind(from.timestamp_millis() as f64 / 1000.0)
+                    .bind(to.timestamp_millis() as f64 / 1000.0)
+                    .fetch_one()
+                    .await
+                    .map_err(ch_err)?;
+                Ok(n as i64)
+            }
+            EventStore::Postgres(pg) => {
+                let (n,): (i64,) = sqlx::query_as("SELECT count(DISTINCT identity_id)::bigint FROM events WHERE event_time >= $1 AND event_time < $2")
+                    .bind(from)
+                    .bind(to)
+                    .fetch_one(pg)
+                    .await
+                    .map_err(map_sqlx)?;
+                Ok(n)
+            }
+        }
+    }
+
+    /// Revenue per UTC day over the given event names: sum(metadata.amount), paying identities, purchases.
+    pub async fn revenue_per_day(
+        &self,
+        names: &[String],
+        from: DateTime<Utc>,
+        to: DateTime<Utc>,
+    ) -> Result<Vec<(String, f64, i64, i64)>> {
+        if names.is_empty() {
+            return Ok(vec![]);
+        }
+        match self {
+            EventStore::ClickHouse(ch) => {
+                let rows: Vec<ChRevenue> = ch
+                    .client
+                    .query("SELECT toString(toDate(event_time)) AS day, sum(toFloat64OrZero(JSONExtractRaw(metadata, 'amount'))) AS amount, uniqExact(identity_id) AS payers, count() AS purchases
+                            FROM events WHERE name IN ? AND event_time >= ? AND event_time < ? GROUP BY day ORDER BY day")
+                    .bind(names)
+                    .bind(from.timestamp_millis() as f64 / 1000.0)
+                    .bind(to.timestamp_millis() as f64 / 1000.0)
+                    .fetch_all()
+                    .await
+                    .map_err(ch_err)?;
+                Ok(rows.into_iter().map(|r| (r.day, r.amount, r.payers as i64, r.purchases as i64)).collect())
+            }
+            EventStore::Postgres(pg) => sqlx::query_as(
+                "SELECT to_char(date_trunc('day', event_time), 'YYYY-MM-DD'),
+                        COALESCE(sum(CASE WHEN metadata->>'amount' ~ '^-?[0-9]+(\\.[0-9]+)?$' THEN (metadata->>'amount')::float8 ELSE 0 END), 0)::float8,
+                        count(DISTINCT identity_id)::bigint, count(*)::bigint
+                 FROM events WHERE name = ANY($1) AND event_time >= $2 AND event_time < $3 GROUP BY 1 ORDER BY 1",
+            )
+            .bind(names)
+            .bind(from)
+            .bind(to)
+            .fetch_all(pg)
+            .await
+            .map_err(map_sqlx),
+        }
+    }
+
+    /// Raw rows for funnel folding: (identity, name, time, metadata), oldest first, capped.
+    pub async fn funnel_rows(
+        &self,
+        names: &[String],
+        from: DateTime<Utc>,
+        to: DateTime<Utc>,
+        limit: i64,
+    ) -> Result<Vec<(Uuid, String, DateTime<Utc>, Value)>> {
+        match self {
+            EventStore::ClickHouse(ch) => {
+                let rows: Vec<ChFunnelRow> = ch
+                    .client
+                    .query("SELECT identity_id, name, toUnixTimestamp64Milli(event_time) AS ts, metadata FROM events WHERE name IN ? AND event_time >= ? AND event_time < ? ORDER BY identity_id, event_time LIMIT ?")
+                    .bind(names)
+                    .bind(from.timestamp_millis() as f64 / 1000.0)
+                    .bind(to.timestamp_millis() as f64 / 1000.0)
+                    .bind(limit)
+                    .fetch_all()
+                    .await
+                    .map_err(ch_err)?;
+                Ok(rows
+                    .into_iter()
+                    .map(|r| {
+                        let at = DateTime::<Utc>::from_timestamp_millis(r.ts).unwrap_or(from);
+                        (r.identity_id, r.name, at, serde_json::from_str(&r.metadata).unwrap_or(Value::Null))
+                    })
+                    .collect())
+            }
+            EventStore::Postgres(pg) => sqlx::query_as(
+                "SELECT identity_id, name, event_time, metadata FROM events WHERE name = ANY($1) AND event_time >= $2 AND event_time < $3 ORDER BY identity_id, event_time LIMIT $4",
+            )
+            .bind(names)
+            .bind(from)
+            .bind(to)
+            .bind(limit)
+            .fetch_all(pg)
+            .await
+            .map_err(map_sqlx),
+        }
+    }
+
+    /// Distinct (identity, active day) pairs for the given identities — retention input.
+    pub async fn active_days(
+        &self,
+        identities: &[Uuid],
+        from: DateTime<Utc>,
+        to: DateTime<Utc>,
+    ) -> Result<Vec<(Uuid, String)>> {
+        if identities.is_empty() {
+            return Ok(vec![]);
+        }
+        match self {
+            EventStore::ClickHouse(ch) => {
+                let rows: Vec<ChActiveDay> = ch
+                    .client
+                    .query("SELECT DISTINCT identity_id, toString(toDate(event_time)) AS day FROM events WHERE identity_id IN ? AND event_time >= ? AND event_time < ?")
+                    .bind(identities)
+                    .bind(from.timestamp_millis() as f64 / 1000.0)
+                    .bind(to.timestamp_millis() as f64 / 1000.0)
+                    .fetch_all()
+                    .await
+                    .map_err(ch_err)?;
+                Ok(rows.into_iter().map(|r| (r.identity_id, r.day)).collect())
+            }
+            EventStore::Postgres(pg) => sqlx::query_as(
+                "SELECT DISTINCT identity_id, to_char(date_trunc('day', event_time), 'YYYY-MM-DD') FROM events
+                 WHERE identity_id = ANY($1) AND event_time >= $2 AND event_time < $3",
+            )
+            .bind(identities)
+            .bind(from)
+            .bind(to)
+            .fetch_all(pg)
+            .await
+            .map_err(map_sqlx),
+        }
+    }
+
     /// Most recent events of one identity.
     pub async fn recent_for_identity(
         &self,
@@ -552,4 +725,34 @@ impl EventStore {
             }
         }
     }
+}
+
+#[derive(Row, Deserialize)]
+struct ChDay {
+    day: String,
+    n: u64,
+}
+
+#[derive(Row, Deserialize)]
+struct ChRevenue {
+    day: String,
+    amount: f64,
+    payers: u64,
+    purchases: u64,
+}
+
+#[derive(Row, Deserialize)]
+struct ChFunnelRow {
+    #[serde(with = "clickhouse::serde::uuid")]
+    identity_id: Uuid,
+    name: String,
+    ts: i64,
+    metadata: String,
+}
+
+#[derive(Row, Deserialize)]
+struct ChActiveDay {
+    #[serde(with = "clickhouse::serde::uuid")]
+    identity_id: Uuid,
+    day: String,
 }

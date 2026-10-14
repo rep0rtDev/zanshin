@@ -81,8 +81,9 @@ console comes last once the model is stable.
 - [x] **Journeys**: event / identity-created / audience-enter / live-event-start / manual triggers, steps (message,
   track, flag override, experiment assign, integration, wait, wait-until-local-time, branch, goto, exit), cooldown and
   entry caps, persisted runs with step log, operator exit, console step editor.
-- [ ] **Analytics v2**: status / game-metrics dashboards (DAU / MAU / retention / ARPDAU / revenue),
-  custom dashboards, retention report, RoAS, funnels, annotations.
+- [x] **Analytics v2**: game-metrics overview (DAU/WAU/MAU, new users, sessions, revenue, ARPDAU/ARPPU, paying share,
+  stickiness), retention cohorts, funnels with conversion windows and step filters, chart annotations (automatic from
+  configuration changes + notes), custom dashboards with widgets, Insights console page.
 - [ ] **Data management**: export sinks (S3 / Parquet, BigQuery, HTTP), config export / import with diff,
   data deletion, sample data, audit undo.
 - [ ] **Console redesign** and **SDK / Nakama parity** for every new API.

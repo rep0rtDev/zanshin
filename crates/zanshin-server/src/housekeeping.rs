@@ -43,6 +43,9 @@ pub async fn run(state: AppState, mut shutdown: watch::Receiver<bool>) {
                     Ok(_) => {}
                     Err(e) => tracing::warn!(error = %e, "audit prune failed"),
                 }
+                if let Err(e) = state.analytics.purge_annotations(chrono::Duration::days(400)).await {
+                    tracing::warn!(error = %e, "annotation purge failed");
+                }
                 match state.journeys.purge(chrono::Duration::days(90)).await {
                     Ok(n) if n > 0 => tracing::info!(purged = n, "old journey runs purged"),
                     Ok(_) => {}

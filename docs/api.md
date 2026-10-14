@@ -290,6 +290,17 @@ gRPC: `ServerGetFlags`, `ServerGetAudiences`, `ServerGetExperiments`, `ServerGet
 | `GET` | `/analytics/events/names?from=&to=&limit=` | — | event names by volume with unique identities |
 | `GET` | `/identities/{identity_id}/events?limit=` | — | most recent events of one identity (with `experiments` tags) |
 
+### Analytics v2
+
+| Route | Purpose |
+|-------|---------|
+| `GET /admin/v1/analytics/overview?from&to` | Game metrics: `totals` (dau, dau_avg, wau, mau, total_players, new_users, sessions, avg_session_secs, revenue, purchases, paying_player_days, arpdau, arppu, paying_share, stickiness) and a per-day `series`. Revenue sums `metadata.amount` of events whose taxonomy definition is typed `revenue` plus `purchase` / `revenue` / `iap`. |
+| `GET /admin/v1/analytics/retention?from&to&days=1,3,7,14,30` | Cohorts by sign-up day with `retained.dN = { count, rate }` (`null` while the day is in the future). |
+| `POST /admin/v1/analytics/funnel` `{ steps: [{ name, field?, op?, value? }], window_secs?, from?, to? }` | Ordered conversion per player within the window; step filters on metadata (`eq`, `neq`, `exists`, `gt/gte/lt/lte`, `contains`). Returns `entered`, per-step `count` / `conversion` / `step_conversion` / `drop`. |
+| `GET/POST /admin/v1/analytics/annotations`, `DELETE …/{id}` | Chart markers. Configuration changes (flags, audiences, experiments, live events, messages) are recorded automatically; `POST { title, body?, at? }` adds an operator note. |
+| `GET/POST /admin/v1/dashboards`, `GET/PUT/DELETE /admin/v1/dashboards/{key}` | Custom dashboards: `widgets: [{ id, kind, title, width 1–4, config }]` with kinds `timeseries { event }`, `number { metric \| event_count + event }`, `funnel { steps, window_secs }`, `retention { days }`, `top_events { limit }`. |
+| `GET /admin/v1/dashboards/{key}/data?from&to` | Evaluates every widget for the window. |
+
 ### Journeys
 
 Per-player automations under `/admin/v1/journeys` and the **Journeys** console page.
