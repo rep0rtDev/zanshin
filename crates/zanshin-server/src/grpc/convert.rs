@@ -201,7 +201,7 @@ pub fn push_token_to_proto(t: zanshin_core::push::PushToken) -> PushToken {
         device_id: t.device_id,
         created_at: Some(timestamp(t.created_at)),
         updated_at: Some(timestamp(t.updated_at)),
-        failures: t.failures as i32,
+        failures: t.failures,
     }
 }
 
