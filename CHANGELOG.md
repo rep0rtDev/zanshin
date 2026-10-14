@@ -7,6 +7,14 @@ Release automation reads the section whose heading contains the tagged version.
 ## [Unreleased]
 
 ### Added
+- Multi-project: several isolated games / environments in one deployment. Every non-default project
+  gets its own PostgreSQL schema (`zanshin_<slug>`, migrated on creation), Redis namespace and
+  ClickHouse database, with its own configuration, players, events, API keys and housekeeping;
+  console users and SSO are shared. Requests are routed by the `x-zanshin-project` header,
+  `?project=`, or the `prj` claim stamped into session tokens (bare tokens keep working), default
+  otherwise. `GET/POST /admin/v1/projects`, `GET/PUT /admin/v1/projects/{slug}` (archive / resume),
+  project switcher in the console top bar and Settings → Projects, `zanshinctl --project` /
+  `config promote --to-project`. Existing data stays in the `default` project (public schema).
 - SDK wave 3 + tooling: Godot 3.5+ addon (`sdk/godot3`), Defold Lua SDK (`sdk/defold`), header-only
   C++17 SDK with libcurl adapter (`sdk/cpp`), OpenAPI 3 document (`docs/openapi.yaml`, served at
   `/openapi.yaml` / `/openapi.json`) with Swagger UI on `/docs`, and the `zanshinctl` CLI

@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { NavLink, Route, Routes } from 'react-router-dom';
-import { get, put, useLoad } from '../api';
+import { get, post, project, put, useLoad } from '../api';
 import { useMe } from '../me';
 import { toast } from '../toast';
 import { Badge, ErrorBox, Field, Page, fmtDate, fmtNum } from '../ui';
@@ -77,6 +77,47 @@ function Players() {
   );
 }
 
+type ProjectRow = { slug: string; name: string; description: string; archived: boolean; running: boolean; created_at: string };
+
+function Projects() {
+  const q = useLoad(() => get<{ items: ProjectRow[]; current: string }>('/projects'), []);
+  const [slug, setSlug] = useState('');
+  const [name, setName] = useState('');
+  const [err, setErr] = useState<Error | null>(null);
+  const cur = project.get();
+  const create = () =>
+    post('/projects', { slug, name }).then(() => { toast(`Project ${slug} created`); setSlug(''); setName(''); q.reload(); }, setErr);
+  const archive = (p: ProjectRow) =>
+    put(`/projects/${p.slug}`, { archived: !p.archived }).then(() => { toast(p.archived ? 'Project resumed' : 'Project archived'); q.reload(); }, setErr);
+  if (cur !== 'default') {
+    return <div className="card" style={{ maxWidth: 640 }}><p className="hint">Projects are managed from the <b>default</b> project — switch to it in the top bar.</p></div>;
+  }
+  return (
+    <div className="card" style={{ maxWidth: 760 }}>
+      <ErrorBox error={err ?? q.error} />
+      <p className="hint">Each project is an isolated game / environment inside this deployment: its own configuration, players, events, keys and analytics (own PostgreSQL schema, Redis namespace and ClickHouse database). Console users and SSO are shared. SDKs and `zanshinctl` address a project with the <code>x-zanshin-project</code> header; session tokens carry it automatically.</p>
+      <table className="table">
+        <thead><tr><th>Slug</th><th>Name</th><th>Status</th><th>Created</th><th /></tr></thead>
+        <tbody>
+          {(q.data?.items ?? []).map((p) => (
+            <tr key={p.slug}>
+              <td><code>{p.slug}</code>{p.slug === cur && <Badge>current</Badge>}</td>
+              <td>{p.name}</td>
+              <td>{p.archived ? <Badge>archived</Badge> : p.running ? <Badge>running</Badge> : <Badge>stopped</Badge>}</td>
+              <td>{fmtDate(p.created_at)}</td>
+              <td>{p.slug !== 'default' && <button className="btn small" onClick={() => archive(p)}>{p.archived ? 'Resume' : 'Archive'}</button>}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      <h3>New project</h3>
+      <Field label="Slug" hint="2–32 chars, [a-z0-9_], starts with a letter; becomes the schema / database suffix"><input value={slug} onChange={(e) => setSlug(e.target.value)} placeholder="staging" /></Field>
+      <Field label="Name"><input value={name} onChange={(e) => setName(e.target.value)} placeholder="Staging" /></Field>
+      <button className="btn" onClick={create} disabled={!slug}>Create project</button>
+    </div>
+  );
+}
+
 export default function Settings() {
   const me = useMe();
   return (
@@ -84,6 +125,7 @@ export default function Settings() {
       <div className="tabs">
         <NavLink to="" end>General</NavLink>
         <NavLink to="players">Players & events</NavLink>
+        <NavLink to="projects">Projects</NavLink>
         <NavLink to="/taxonomy">Taxonomy →</NavLink>
         {me?.role === 'admin' && <NavLink to="/api-keys">API keys →</NavLink>}
         <NavLink to="/data">Data & backups →</NavLink>
@@ -91,6 +133,7 @@ export default function Settings() {
       <Routes>
         <Route index element={<General />} />
         <Route path="players" element={<Players />} />
+        <Route path="projects" element={<Projects />} />
       </Routes>
     </Page>
   );

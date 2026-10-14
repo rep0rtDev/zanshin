@@ -60,6 +60,8 @@ use crate::{
 #[derive(Clone)]
 pub struct AppState {
     pub cfg: Arc<Config>,
+    /// Project slug (`default` = original single-tenant layout in the public schema).
+    pub project: String,
     pub stores: Stores,
     pub identity: IdentityService,
     pub api_keys: ApiKeyService,
@@ -97,8 +99,28 @@ pub struct AppState {
 
 impl AppState {
     pub async fn build(cfg: Arc<Config>) -> anyhow::Result<Self> {
-        let stores = Stores::connect(&cfg.database, &cfg.redis, &cfg.clickhouse).await?;
-        let state = Self::with_stores(cfg, stores)?;
+        Self::build_project(cfg, zanshin_store::projects::DEFAULT_SLUG, None).await
+    }
+
+    /// Build the state of one project. Non-default projects get their own schema / Redis prefix /
+    /// ClickHouse database; console users and OIDC are shared with the default project when given.
+    pub async fn build_project(
+        cfg: Arc<Config>,
+        project: &str,
+        shared: Option<(ConsoleUserService, OidcService)>,
+    ) -> anyhow::Result<Self> {
+        let slug = if project.is_empty() {
+            zanshin_store::projects::DEFAULT_SLUG
+        } else {
+            project
+        };
+        let stores =
+            Stores::connect_project(&cfg.database, &cfg.redis, &cfg.clickhouse, Some(slug)).await?;
+        let mut state = Self::with_stores(cfg, stores, slug)?;
+        if let Some((users, oidc)) = shared {
+            state.console_users = users;
+            state.oidc = oidc;
+        }
         state
             .bus
             .register(ChangeKind::Flag, state.flags.catalog.clone())
@@ -150,13 +172,14 @@ impl AppState {
         self.draining.load(std::sync::atomic::Ordering::Relaxed)
     }
 
-    pub fn with_stores(cfg: Arc<Config>, stores: Stores) -> anyhow::Result<Self> {
+    pub fn with_stores(cfg: Arc<Config>, stores: Stores, project: &str) -> anyhow::Result<Self> {
         let tokens = TokenIssuer::new(
             cfg.auth.jwt_secret.as_bytes(),
             cfg.auth.issuer.clone(),
             cfg.auth.access_ttl,
             cfg.auth.refresh_ttl,
-        )?;
+        )?
+        .with_project(Some(project.to_string()));
         let identities = IdentityRepo::new(stores.pg.clone());
         let identity = IdentityService::new(
             identities.clone(),
@@ -307,6 +330,7 @@ impl AppState {
         let locks = zanshin_store::locks::JobLock::new(stores.pg.clone());
         Ok(Self {
             cfg,
+            project: project.to_string(),
             stores,
             identity,
             api_keys,

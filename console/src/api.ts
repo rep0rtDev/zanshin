@@ -7,6 +7,16 @@ export const auth = {
   clear: () => localStorage.removeItem(KEY),
 };
 
+const PROJECT_KEY = 'zanshin.project';
+/** Current project (multi-project deployments); `default` is the original single-tenant project. */
+export const project = {
+  get: () => localStorage.getItem(PROJECT_KEY) || 'default',
+  set: (slug: string) => {
+    localStorage.setItem(PROJECT_KEY, slug);
+    window.dispatchEvent(new Event('zanshin:project'));
+  },
+};
+
 export class ApiError extends Error {
   status: number;
   code: string;
@@ -18,7 +28,7 @@ export class ApiError extends Error {
 }
 
 export async function api<T = unknown>(method: string, path: string, body?: unknown): Promise<T> {
-  const headers: Record<string, string> = { accept: 'application/json' };
+  const headers: Record<string, string> = { accept: 'application/json', 'x-zanshin-project': project.get() };
   const k = auth.key();
   if (k) headers['x-api-key'] = k;
   if (body !== undefined) headers['content-type'] = 'application/json';
@@ -40,7 +50,7 @@ export async function api<T = unknown>(method: string, path: string, body?: unkn
 
 /// Fetch a non-JSON admin resource (e.g. CSV) and save it through the browser.
 export async function download(path: string, filename: string): Promise<void> {
-  const headers: Record<string, string> = {};
+  const headers: Record<string, string> = { 'x-zanshin-project': project.get() };
   const k = auth.key();
   if (k) headers['x-api-key'] = k;
   const res = await fetch('/admin/v1' + path, { headers, credentials: 'same-origin' });

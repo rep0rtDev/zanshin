@@ -54,6 +54,12 @@ impl Cache {
         })
     }
 
+    /// Same connection, keys under another prefix (one Redis namespace per project).
+    pub fn with_prefix(mut self, prefix: String) -> Self {
+        self.prefix = prefix;
+        self
+    }
+
     pub fn key(&self, parts: &[&str]) -> String {
         let mut k = self.prefix.clone();
         for p in parts {

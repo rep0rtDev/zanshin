@@ -22,6 +22,9 @@ struct Cli {
     /// Admin API key (env ZANSHIN_ADMIN_KEY)
     #[arg(long, env = "ZANSHIN_ADMIN_KEY", global = true, hide_env_values = true)]
     key: Option<String>,
+    /// Project slug for multi-project deployments (env ZANSHIN_PROJECT; default = `default`)
+    #[arg(long, env = "ZANSHIN_PROJECT", global = true)]
+    project: Option<String>,
     /// Compact JSON output (default: pretty)
     #[arg(long, global = true)]
     compact: bool,
@@ -123,6 +126,9 @@ enum ConfigCmd {
         /// Target server URL
         #[arg(long)]
         to: String,
+        /// Target project slug (default: same as --project)
+        #[arg(long)]
+        to_project: Option<String>,
         /// Target admin key (env ZANSHIN_TO_KEY)
         #[arg(long, env = "ZANSHIN_TO_KEY", hide_env_values = true)]
         to_key: String,
@@ -245,14 +251,16 @@ enum SinksCmd {
 struct Api {
     base: String,
     key: String,
+    project: Option<String>,
     http: reqwest::Client,
 }
 
 impl Api {
-    fn new(url: &str, key: &str) -> Result<Self> {
+    fn new(url: &str, key: &str, project: Option<String>) -> Result<Self> {
         Ok(Self {
             base: url.trim_end_matches('/').to_string(),
             key: key.to_string(),
+            project: project.filter(|p| !p.is_empty()),
             http: reqwest::Client::builder()
                 .timeout(Duration::from_secs(120))
                 .user_agent(concat!("zanshinctl/", env!("CARGO_PKG_VERSION")))
@@ -267,6 +275,9 @@ impl Api {
             .request(m, format!("{}{}", self.base, path))
             .bearer_auth(&self.key)
             .header("accept", "application/json");
+        if let Some(p) = &self.project {
+            req = req.header("x-zanshin-project", p);
+        }
         if let Some(b) = body {
             req = req.json(&b);
         }
@@ -380,7 +391,7 @@ async fn main() -> Result<()> {
         .key
         .clone()
         .context("admin key missing: --key or ZANSHIN_ADMIN_KEY")?;
-    let api = Api::new(&url, &key)?;
+    let api = Api::new(&url, &key, cli.project.clone())?;
     let out = match cli.cmd {
         Cmd::System => api.get("/admin/v1/system").await?,
         Cmd::Api { method, path, body } => {
@@ -422,6 +433,7 @@ async fn main() -> Result<()> {
             }
             ConfigCmd::Promote {
                 to,
+                to_project,
                 to_key,
                 mode,
                 kinds,
@@ -430,7 +442,7 @@ async fn main() -> Result<()> {
                 let bundle = api
                     .get(&format!("/admin/v1/config/export{}", kinds_q(&kinds)))
                     .await?;
-                let target = Api::new(&to, &to_key)?;
+                let target = Api::new(&to, &to_key, to_project.or_else(|| cli.project.clone()))?;
                 let v = target
                     .post(
                         "/admin/v1/config/import",

@@ -22,6 +22,7 @@ pub mod messages;
 pub mod metrics;
 pub mod notifications;
 pub mod oidc;
+pub mod projects;
 pub mod push;
 pub mod refs;
 pub mod taxonomy;
