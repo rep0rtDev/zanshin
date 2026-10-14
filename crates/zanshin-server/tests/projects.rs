@@ -1,10 +1,12 @@
 //! Multi-project: isolated configuration / players per project, routing by header, query and
-//! the `prj` token claim, archive / resume. Run only with ZANSHIN_TEST_DATABASE_URL / _REDIS_URL.
+//! the `prj` token claim (HTTP and gRPC), archive / resume. Run only with ZANSHIN_TEST_DATABASE_URL / _REDIS_URL.
 
 use std::{net::SocketAddr, sync::Arc};
 
 use serde_json::{json, Value};
-use zanshin_server::{config::Config, services::projects::Projects};
+use tonic::{metadata::MetadataValue, Code, Request};
+use zanshin_proto::api::v1::{zanshin_client::ZanshinClient, AuthenticateRequest, GetFlagsRequest};
+use zanshin_server::{config::Config, grpc, services::projects::Projects};
 
 #[test]
 fn projects_isolation_and_routing() {
@@ -43,9 +45,21 @@ async fn run() {
     );
     std::env::set_var("ZANSHIN__SERVER__HTTP_ADDR", "127.0.0.1:0");
     std::env::set_var("ZANSHIN__PUSH__PROVIDER", "log");
-    let cfg = Config::load(None).expect("config");
+    let cfg = Arc::new(Config::load(None).expect("config"));
     let (_tx, rx) = tokio::sync::watch::channel(false);
-    let projects = Projects::start(Arc::new(cfg), rx).await.expect("projects");
+    let projects = Projects::start(cfg.clone(), rx.clone())
+        .await
+        .expect("projects");
+    let grpc_addr: SocketAddr = {
+        let l = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        l.local_addr().unwrap()
+    };
+    tokio::spawn(grpc::serve_with(
+        projects.clone().grpc_dispatch(),
+        cfg.clone(),
+        grpc_addr,
+        rx,
+    ));
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr: SocketAddr = listener.local_addr().unwrap();
     let app = projects.clone().router();
@@ -166,6 +180,65 @@ async fn run() {
         .unwrap()
         .iter()
         .any(|f| f["key"] == fkey));
+    // gRPC: the same routing — metadata key, else the token's `prj` claim
+    for _ in 0..50 {
+        if tokio::net::TcpStream::connect(grpc_addr).await.is_ok() {
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+    }
+    let mut g = ZanshinClient::connect(format!("http://{grpc_addr}"))
+        .await
+        .expect("grpc connect");
+    let auth_req = |project: Option<&str>| {
+        let mut r = Request::new(AuthenticateRequest {
+            id: format!("g_{sfx}"),
+            default: Default::default(),
+            custom: Default::default(),
+        });
+        r.metadata_mut()
+            .insert("x-api-key", MetadataValue::try_from(&ck).unwrap());
+        if let Some(p) = project {
+            r.metadata_mut()
+                .insert("x-zanshin-project", MetadataValue::try_from(p).unwrap());
+        }
+        r
+    };
+    let gs = g
+        .authenticate(auth_req(Some(&slug)))
+        .await
+        .expect("grpc authenticate in project")
+        .into_inner();
+    assert_eq!(
+        zanshin_core::token::peek_project(&gs.token).as_deref(),
+        Some(slug.as_str())
+    );
+    assert_eq!(
+        g.authenticate(auth_req(None)).await.unwrap_err().code(),
+        Code::Unauthenticated,
+        "project key must not work on the default project"
+    );
+    assert_eq!(
+        g.authenticate(auth_req(Some("nope")))
+            .await
+            .unwrap_err()
+            .code(),
+        Code::NotFound
+    );
+    let mut fr = Request::new(GetFlagsRequest {
+        names: vec![fkey.clone()],
+    });
+    fr.metadata_mut().insert(
+        "authorization",
+        MetadataValue::try_from(format!("Bearer {}", gs.token)).unwrap(),
+    );
+    let gf = g
+        .get_flags(fr)
+        .await
+        .expect("grpc flags by prj claim")
+        .into_inner();
+    assert!(gf.flags.iter().any(|f| f.name == fkey));
+
     // the same client key is unknown to the default project
     let wrong = c
         .post(format!("{base}/v1/authenticate"))

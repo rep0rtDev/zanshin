@@ -78,7 +78,12 @@ async fn main() -> anyhow::Result<()> {
         http_addr,
         stop_rx.clone(),
     ));
-    let grpc_task = tokio::spawn(grpc::serve(state.clone(), grpc_addr, stop_rx.clone()));
+    let grpc_task = tokio::spawn(grpc::serve_with(
+        projects.clone().grpc_dispatch(),
+        state.cfg.clone(),
+        grpc_addr,
+        stop_rx.clone(),
+    ));
     let housekeeping = tokio::spawn(zanshin_server::housekeeping::run(state.clone(), stop_rx));
 
     let mut stop = state.shutdown.subscribe();

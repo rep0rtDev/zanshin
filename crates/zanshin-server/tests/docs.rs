@@ -62,4 +62,14 @@ async fn openapi_and_swagger_ui() {
     assert_eq!(ui.status(), 200);
     let html = ui.text().await.unwrap();
     assert!(html.contains("swagger-ui") && html.contains("/openapi.json"));
+    // assets are vendored: nothing is loaded from a CDN
+    assert!(!html.contains("unpkg") && !html.contains("cdn."));
+    for (path, needle) in [
+        ("/docs/swagger-ui-bundle.js", "SwaggerUIBundle"),
+        ("/docs/swagger-ui.css", ".swagger-ui"),
+    ] {
+        let r = c.get(format!("http://{addr}{path}")).send().await.unwrap();
+        assert_eq!(r.status(), 200, "{path}");
+        assert!(r.text().await.unwrap().contains(needle), "{path}");
+    }
 }

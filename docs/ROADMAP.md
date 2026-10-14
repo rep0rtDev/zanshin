@@ -94,4 +94,3 @@ remaining feature and production distance. Everything below is checked against `
   hosts, not on devices.
 - FCM / APNs / OneSignal / Facebook / BigQuery providers are exercised against local fakes only.
 - OIDC is tested against a mock provider; no SAML / SCIM.
-- Single project per server (no multi-tenant isolation inside one deployment).

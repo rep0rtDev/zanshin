@@ -1245,11 +1245,42 @@ where
     tokio_stream::wrappers::ReceiverStream::new(rx)
 }
 
+/// One project's gRPC server with the configured message size limits.
+pub fn service(state: AppState) -> ZanshinServer<ZanshinGrpc> {
+    let max_msg = state.cfg.server.grpc_max_message_bytes;
+    ZanshinServer::new(ZanshinGrpc::new(state))
+        .max_decoding_message_size(max_msg)
+        .max_encoding_message_size(max_msg)
+}
+
+/// Serve a single project (tests / embedded use).
 pub async fn serve(
     state: AppState,
     addr: SocketAddr,
-    mut shutdown: watch::Receiver<bool>,
+    shutdown: watch::Receiver<bool>,
 ) -> anyhow::Result<()> {
+    let cfg = state.cfg.clone();
+    serve_with(service(state), cfg, addr, shutdown).await
+}
+
+/// Serve every project: `svc` is the per-project dispatcher (`Projects::grpc_dispatch`).
+pub async fn serve_with<S>(
+    svc: S,
+    cfg: std::sync::Arc<crate::config::Config>,
+    addr: SocketAddr,
+    mut shutdown: watch::Receiver<bool>,
+) -> anyhow::Result<()>
+where
+    S: tower::Service<
+            http::Request<tonic::body::BoxBody>,
+            Response = http::Response<tonic::body::BoxBody>,
+            Error = std::convert::Infallible,
+        > + tonic::server::NamedService
+        + Clone
+        + Send
+        + 'static,
+    S::Future: Send + 'static,
+{
     let (mut health_reporter, health_service) = tonic_health::server::health_reporter();
     health_reporter
         .set_serving::<ZanshinServer<ZanshinGrpc>>()
@@ -1259,7 +1290,7 @@ pub async fn serve(
         .register_encoded_file_descriptor_set(tonic_health::pb::FILE_DESCRIPTOR_SET)
         .build_v1()?;
 
-    let cfg = &state.cfg.server;
+    let cfg = &cfg.server;
     let max_msg = cfg.grpc_max_message_bytes;
     let concurrency = if cfg.grpc_concurrency == 0 {
         usize::MAX
@@ -1279,11 +1310,7 @@ pub async fn serve(
         .layer(layer)
         .add_service(health_service)
         .add_service(reflection)
-        .add_service(
-            ZanshinServer::new(ZanshinGrpc::new(state.clone()))
-                .max_decoding_message_size(max_msg)
-                .max_encoding_message_size(max_msg),
-        )
+        .add_service(svc)
         .serve_with_shutdown(addr, async move {
             let _ = shutdown.wait_for(|v| *v).await;
         })

@@ -1,28 +1,32 @@
 //! Multi-project: one `AppState` (schema / Redis prefix / ClickHouse database / housekeeping) per
 //! project, plus the HTTP dispatcher that routes a request to its project by the
 //! `x-zanshin-project` header, `?project=` query, the `prj` claim of a bearer / `?token=` session
-//! token, or the default project.
+//! token, or the default project. gRPC goes through the same selection (`GrpcDispatch`): the
+//! `x-zanshin-project` metadata key, then the `prj` claim of the bearer session token.
 
 use std::{collections::HashMap, sync::Arc};
 
 use axum::{
     body::Body,
-    http::{Request, StatusCode},
+    http::{HeaderMap, Request, StatusCode},
     response::{IntoResponse, Response},
     Router,
 };
 use tokio::sync::RwLock;
+use tonic::server::NamedService;
 use tower::ServiceExt;
 use zanshin_core::{Error, Result};
+use zanshin_proto::api::v1::zanshin_server::ZanshinServer;
 use zanshin_store::projects::{Project, ProjectRepo, DEFAULT_SLUG};
 
-use crate::{config::Config, state::AppState};
+use crate::{config::Config, grpc::ZanshinGrpc, state::AppState};
 
 pub const HEADER: &str = "x-zanshin-project";
 
 struct Entry {
     state: AppState,
     router: Router,
+    grpc: ZanshinServer<ZanshinGrpc>,
 }
 
 #[derive(Clone)]
@@ -79,10 +83,15 @@ impl Projects {
                 self.shutdown.clone(),
             ));
         }
-        self.entries
-            .write()
-            .await
-            .insert(state.project.clone(), Arc::new(Entry { state, router }));
+        let grpc = crate::grpc::service(state.clone());
+        self.entries.write().await.insert(
+            state.project.clone(),
+            Arc::new(Entry {
+                state,
+                router,
+                grpc,
+            }),
+        );
     }
 
     /// Connect and start a project that is registered but not running yet.
@@ -176,13 +185,17 @@ impl Projects {
 
     /// Which project a request addresses.
     pub fn slug_of(req: &Request<Body>) -> String {
-        if let Some(h) = req.headers().get(HEADER).and_then(|v| v.to_str().ok()) {
+        Self::slug_from(req.headers(), req.uri().query().unwrap_or(""))
+    }
+
+    /// Project selection shared by HTTP and gRPC: header, `?project=`, then the `prj` claim.
+    pub fn slug_from(headers: &HeaderMap, query: &str) -> String {
+        if let Some(h) = headers.get(HEADER).and_then(|v| v.to_str().ok()) {
             let h = h.trim();
             if !h.is_empty() {
                 return h.to_string();
             }
         }
-        let query = req.uri().query().unwrap_or("");
         for pair in query.split('&') {
             if let Some(v) = pair.strip_prefix("project=") {
                 if !v.is_empty() {
@@ -190,8 +203,7 @@ impl Projects {
                 }
             }
         }
-        let bearer = req
-            .headers()
+        let bearer = headers
             .get(axum::http::header::AUTHORIZATION)
             .and_then(|v| v.to_str().ok())
             .and_then(|a| {
@@ -214,6 +226,11 @@ impl Projects {
             return prj;
         }
         DEFAULT_SLUG.to_string()
+    }
+
+    /// gRPC service routing every call to its project's `ZanshinServer`.
+    pub fn grpc_dispatch(self) -> GrpcDispatch {
+        GrpcDispatch { projects: self }
     }
 
     /// Route one request to its project's router.
@@ -239,5 +256,51 @@ impl Projects {
             let me = self.clone();
             Box::pin(async move { Ok::<_, std::convert::Infallible>(me.dispatch(req).await) })
         }))
+    }
+}
+
+/// Tower service in front of the per-project gRPC servers: picks the project from the request
+/// metadata (`x-zanshin-project`, else the session token's `prj` claim) and forwards the call.
+#[derive(Clone)]
+pub struct GrpcDispatch {
+    projects: Projects,
+}
+
+impl NamedService for GrpcDispatch {
+    const NAME: &'static str = <ZanshinServer<ZanshinGrpc> as NamedService>::NAME;
+}
+
+impl tower::Service<Request<tonic::body::BoxBody>> for GrpcDispatch {
+    type Response = axum::http::Response<tonic::body::BoxBody>;
+    type Error = std::convert::Infallible;
+    type Future = std::pin::Pin<
+        Box<
+            dyn std::future::Future<Output = std::result::Result<Self::Response, Self::Error>>
+                + Send,
+        >,
+    >;
+
+    fn poll_ready(
+        &mut self,
+        _cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<std::result::Result<(), Self::Error>> {
+        std::task::Poll::Ready(Ok(()))
+    }
+
+    fn call(&mut self, req: Request<tonic::body::BoxBody>) -> Self::Future {
+        let projects = self.projects.clone();
+        Box::pin(async move {
+            let slug = Projects::slug_from(req.headers(), "");
+            let entry = projects.entries.read().await.get(&slug).cloned();
+            match entry {
+                Some(e) => {
+                    let mut svc = e.grpc.clone();
+                    Ok(svc.call(req).await.unwrap_or_else(|e| match e {}))
+                }
+                None => {
+                    Ok(tonic::Status::not_found(format!("unknown project {slug:?}")).into_http())
+                }
+            }
+        })
     }
 }

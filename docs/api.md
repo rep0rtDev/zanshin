@@ -271,7 +271,8 @@ its own PostgreSQL schema, Redis namespace and ClickHouse database — configura
 keys and analytics never cross projects; console users and SSO are shared. Pick the project with the
 `x-zanshin-project: <slug>` header (or `?project=<slug>`); session tokens issued inside a project carry a
 `prj` claim, so client calls with a bearer token or `?token=` need no header. Unknown slugs → 404.
-Management lives on the default project and needs `settings:*`:
+gRPC uses the same selection: the `x-zanshin-project` metadata key, else the `prj` claim of the
+`authorization` bearer token (unknown slugs → `NOT_FOUND`). Management lives on the default project and needs `settings:*`:
 
 | Method | Path | Notes |
 | --- | --- | --- |
