@@ -1,5 +1,7 @@
 # Every key can be overridden with an environment variable:
 #   ZANSHIN__SERVER__HTTP_ADDR=0.0.0.0:7550  ZANSHIN__AUTH__JWT_SECRET=...
+# Secrets can be read from files (Docker/Kubernetes secrets) with the ZANSHIN_FILE__ prefix:
+#   ZANSHIN_FILE__AUTH__JWT_SECRET=/run/secrets/jwt_secret
 server:
   http_addr: 0.0.0.0:7550
   grpc_addr: 0.0.0.0:7549
@@ -8,6 +10,11 @@ server:
   request_timeout: 30s
   trust_proxy: false        # honour X-Forwarded-For / X-Real-IP from the peer (behind a reverse proxy)
   hsts: false               # add Strict-Transport-Security (TLS terminated in front of Zanshin)
+  production: false         # refuse to start with placeholder secrets, open CORS or anonymous auth
+  shutdown_grace: 5s        # after SIGTERM: /readyz -> 503 while listeners stay open (LB drain)
+  shutdown_timeout: 30s     # then wait at most this long for in-flight requests / streams
+  grpc_max_message_bytes: 4194304
+  grpc_concurrency: 1024    # in-flight gRPC calls per process (0 = unlimited)
 
 database:
   url: postgres://zanshin:zanshin@localhost:5432/zanshin
@@ -24,6 +31,7 @@ clickhouse:
   user: default
   password: ""
   database: zanshin
+  retention_days: 400       # ClickHouse table TTL for events (0 = keep forever)
 
 auth:
   jwt_secret: change-me-to-a-random-string-of-at-least-32-chars
@@ -53,7 +61,22 @@ admin:
 
 log:
   level: info,sqlx=warn,hyper=warn,tower_http=info
-  json: false
+  json: false               # true in production (one JSON object per line, request_id included)
+
+telemetry:                  # Prometheus is always on at /metrics; traces are opt-in
+  otlp_endpoint: null       # e.g. http://tempo:4317 — OTLP/gRPC span export
+  service_name: zanshin
+  sample_ratio: 1.0         # head sampling for traces
+  resource: {}              # extra resource attributes, e.g. deployment.environment: prod
+
+retention:                  # housekeeping purges (0s disables one); runs once per 10 minutes under a cluster lock
+  events: 400d              # PostgreSQL fallback event store (ClickHouse: clickhouse.retention_days)
+  export_runs: 30d
+  config_history: 400d
+  annotations: 400d
+  journey_runs: 90d
+  webhook_deliveries: 14d
+  purge_batch: 10000        # rows per DELETE statement
 
 push:
   provider: none            # none | log (record only, see /admin/v1/push/outbox) | live

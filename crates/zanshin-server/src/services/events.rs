@@ -13,6 +13,7 @@ use zanshin_core::{
     Error, Identity, Result,
 };
 use zanshin_store::{
+    cache::Cache,
     events::{Bucket, EventStore, Granularity, NameCount, StoredEvent, VariantMetric},
     experiments::ExperimentRepo,
     identities::IdentityRepo,
@@ -21,6 +22,8 @@ use zanshin_store::{
 const QUEUE_CAPACITY: usize = 50_000;
 const FLUSH_EVERY: Duration = Duration::from_millis(500);
 const FLUSH_ROWS: usize = 2_000;
+/// Client-supplied event ids are remembered this long so retried batches are not double counted.
+const DEDUPE_TTL: Duration = Duration::from_secs(24 * 3600);
 
 #[derive(Clone)]
 pub struct EventService {
@@ -29,6 +32,7 @@ pub struct EventService {
     identities: IdentityRepo,
     experiments: ExperimentRepo,
     hooks: WebhookBus,
+    cache: Option<Cache>,
     inner: Arc<Inner>,
 }
 
@@ -50,14 +54,48 @@ impl EventService {
             store,
             identities,
             experiments,
+            cache: None,
             inner: Arc::new(Inner {
                 rx: std::sync::Mutex::new(Some(rx)),
             }),
         }
     }
 
+    /// Enable cross-replica idempotency for client-supplied event ids.
+    pub fn with_cache(mut self, cache: Cache) -> Self {
+        self.cache = Some(cache);
+        self
+    }
+
+    /// True when `id` was already accepted (by any replica) within the dedupe window.
+    async fn is_duplicate(&self, id: Uuid) -> bool {
+        let Some(cache) = &self.cache else {
+            return false;
+        };
+        let key = cache.key(&["ev", "dedupe", &id.to_string()]);
+        match cache.set_nx(&key, DEDUPE_TTL).await {
+            Ok(created) => !created,
+            // Redis trouble must not reject events; the store's primary key is the backstop.
+            Err(_) => false,
+        }
+    }
+
     pub fn backend(&self) -> &'static str {
         self.store.backend()
+    }
+
+    /// Events accepted but not yet flushed to the store.
+    pub fn queue_depth(&self) -> usize {
+        QUEUE_CAPACITY - self.tx.capacity()
+    }
+
+    /// Retention purge (see `retention.events`); returns rows removed in this batch.
+    pub async fn purge_before(
+        &self,
+        before: chrono::DateTime<chrono::Utc>,
+        batch: u32,
+    ) -> Result<u64> {
+        self.store.purge_before(before, batch).await
     }
 
     /// Start the batching writer. Call once per process.
@@ -122,7 +160,8 @@ impl EventService {
         let mut n = 0;
         for input in inputs {
             if let Some(id) = input.id {
-                if !seen.insert(id) {
+                if !seen.insert(id) || self.is_duplicate(id).await {
+                    metrics::counter!("zanshin_events_deduplicated_total").increment(1);
                     continue;
                 }
             }

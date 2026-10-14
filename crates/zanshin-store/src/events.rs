@@ -863,6 +863,22 @@ impl EventStore {
         }
     }
 
+    /// Retention purge in bounded batches (PostgreSQL only; ClickHouse expires rows by table TTL).
+    pub async fn purge_before(&self, before: DateTime<Utc>, limit: u32) -> Result<u64> {
+        match self {
+            EventStore::ClickHouse(_) => Ok(0),
+            EventStore::Postgres(pg) => Ok(sqlx::query(
+                "DELETE FROM events WHERE id IN (SELECT id FROM events WHERE event_time < $1 ORDER BY event_time LIMIT $2)",
+            )
+            .bind(before)
+            .bind(limit as i64)
+            .execute(pg)
+            .await
+            .map_err(map_sqlx)?
+            .rows_affected()),
+        }
+    }
+
     pub async fn delete_identity(&self, identity_id: Uuid) -> Result<()> {
         match self {
             EventStore::ClickHouse(ch) => ch

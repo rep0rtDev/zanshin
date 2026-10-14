@@ -46,6 +46,19 @@ impl ClickHouse {
                 .await
                 .context("applying clickhouse schema")?;
         }
+        let ttl = if cfg.retention_days == 0 {
+            "ALTER TABLE events REMOVE TTL".to_string()
+        } else {
+            format!(
+                "ALTER TABLE events MODIFY TTL toDateTime(event_time) + INTERVAL {} DAY",
+                cfg.retention_days
+            )
+        };
+        client
+            .query(&ttl)
+            .execute()
+            .await
+            .context("applying clickhouse retention")?;
         Ok(Self { client })
     }
 

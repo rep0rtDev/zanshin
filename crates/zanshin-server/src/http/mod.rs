@@ -9,6 +9,7 @@ pub mod console;
 pub mod data;
 pub mod error;
 pub mod experiments_v2;
+pub mod http_metrics;
 pub mod journeys;
 pub mod limits;
 pub mod liveops;
@@ -102,6 +103,9 @@ pub fn router(state: AppState) -> Router {
             )));
     }
 
+    // Install the recorder before the first request so early samples are not dropped.
+    let _ = telemetry::prometheus();
+
     Router::new()
         .route("/", get(root))
         .route("/healthz", get(healthz))
@@ -131,6 +135,7 @@ pub fn router(state: AppState) -> Router {
             state.clone(),
             limits::limit,
         ))
+        .layer(axum::middleware::from_fn(http_metrics::record))
         .layer(security)
         .layer(DefaultBodyLimit::max(state.cfg.server.body_limit))
         .layer(TimeoutLayer::with_status_code(
@@ -140,7 +145,21 @@ pub fn router(state: AppState) -> Router {
         .layer(CompressionLayer::new())
         .layer(cors)
         .layer(PropagateRequestIdLayer::x_request_id())
-        .layer(TraceLayer::new_for_http())
+        .layer(
+            TraceLayer::new_for_http().make_span_with(|req: &axum::http::Request<_>| {
+                let request_id = req
+                    .headers()
+                    .get("x-request-id")
+                    .and_then(|v| v.to_str().ok())
+                    .unwrap_or("-");
+                tracing::info_span!(
+                    "http",
+                    method = %req.method(),
+                    path = %req.uri().path(),
+                    request_id = %request_id,
+                )
+            }),
+        )
         .layer(SetRequestIdLayer::x_request_id(MakeRequestUuid))
         .with_state(state)
 }
@@ -160,6 +179,7 @@ pub async fn serve(
         let _ = shutdown.wait_for(|v| *v).await;
     })
     .await?;
+    tracing::info!("http listener closed");
     Ok(())
 }
 
@@ -176,9 +196,30 @@ async fn healthz() -> impl IntoResponse {
     Json(serde_json::json!({ "status": "ok" }))
 }
 
-async fn readyz(State(state): State<AppState>) -> error::ApiResult<Json<serde_json::Value>> {
-    state.stores.ping().await?;
-    Ok(Json(serde_json::json!({ "status": "ready" })))
+/// Deep readiness: every backend is probed and reported; 503 while draining or when any
+/// configured backend fails (the body says which one).
+async fn readyz(State(state): State<AppState>) -> impl IntoResponse {
+    if state.is_draining() {
+        return (
+            axum::http::StatusCode::SERVICE_UNAVAILABLE,
+            Json(serde_json::json!({ "status": "draining" })),
+        );
+    }
+    let health = state.stores.ping_timeout().await;
+    let status = if health.ok {
+        axum::http::StatusCode::OK
+    } else {
+        axum::http::StatusCode::SERVICE_UNAVAILABLE
+    };
+    (
+        status,
+        Json(serde_json::json!({
+            "status": if health.ok { "ready" } else { "degraded" },
+            "version": env!("CARGO_PKG_VERSION"),
+            "event_sink": state.events.backend(),
+            "components": health,
+        })),
+    )
 }
 
 async fn metrics() -> impl IntoResponse {

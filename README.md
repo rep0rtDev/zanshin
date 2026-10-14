@@ -141,6 +141,31 @@ Full reference: [docs/api.md](docs/api.md). Design: [docs/ARCHITECTURE.md](docs/
   HSTS (`server.hsts`), a strict CSP on the console; `server.trust_proxy` controls whether
   `X-Forwarded-For` is believed.
 
+## Running in production
+
+* **Replicas**: run as many `zanshin` processes as you like behind a load balancer. Catalogs replicate
+  through Redis pub/sub; housekeeping jobs (sweeps, recomputes, purges, exports) take a cluster-wide
+  Postgres advisory lock, so each job runs once per tick and fails over when a replica dies.
+* **Rollouts**: `zanshin --migrate` applies migrations and exits (init container / release step);
+  `SIGTERM` starts a drain (`/readyz` → 503 for `server.shutdown_grace`, listeners stay open), then
+  listeners close and in-flight requests / WebSocket streams get `server.shutdown_timeout` to finish.
+* **Probes**: `/healthz` is liveness; `/readyz` probes PostgreSQL, Redis and ClickHouse with latency
+  and pool stats in the body and answers 503 (with the failing component) when any is down.
+* **Metrics**: Prometheus at `/metrics` — per-route `zanshin_http_request_seconds` / `_requests_total`,
+  per-method `zanshin_grpc_*`, `zanshin_db_pool_connections`, `zanshin_event_queue_depth`,
+  `zanshin_job_seconds` plus every domain counter.
+* **Traces**: set `telemetry.otlp_endpoint` (OTLP/gRPC: Tempo, Jaeger, Honeycomb, Datadog agent…).
+  Logs carry the `request_id` of every span; `log.json: true` for one JSON object per line.
+* **Secrets**: any key can come from a file with the `ZANSHIN_FILE__` prefix
+  (`ZANSHIN_FILE__AUTH__JWT_SECRET=/run/secrets/jwt`). `server.production: true` refuses to start
+  with placeholder secrets, open CORS, anonymous authenticate or a non-TLS database URL.
+* **Limits**: HTTP and gRPC share the same token buckets (`limits.*`), body/message size caps and
+  request timeouts; gRPC adds a per-process concurrency cap and HTTP/2 keepalives.
+* **Retention**: `retention.*` controls every purge (events, export runs, config history, journey
+  runs, webhook deliveries, batched deletes); `clickhouse.retention_days` sets the ClickHouse TTL.
+* **Idempotency**: client event ids are remembered for 24h across replicas, so SDK retries never
+  double count.
+
 ## Admin console
 
 Open `http://localhost:7550/console/` and sign in with the bootstrap admin key (or any admin

@@ -204,6 +204,43 @@ impl MessageService {
         }
     }
 
+    /// Currently due occurrences of `live` campaigns; identity-independent, computed once per sweep.
+    async fn due_occurrences<'a>(
+        &self,
+        live: &'a [Arc<MessageCampaign>],
+        now: chrono::DateTime<chrono::Utc>,
+    ) -> Vec<(
+        &'a Arc<MessageCampaign>,
+        Option<chrono::DateTime<chrono::Utc>>,
+    )> {
+        let mut out = Vec::new();
+        for m in live {
+            if let Some(occ) = self.occurrence_of(m, now).await {
+                out.push((m, occ));
+            }
+        }
+        out
+    }
+
+    /// Every `(identity, campaign, occurrence)` already delivered for the due occurrences.
+    async fn delivered_set(
+        &self,
+        due: &[(&Arc<MessageCampaign>, Option<chrono::DateTime<chrono::Utc>>)],
+    ) -> Result<HashSet<(Uuid, Uuid, Option<chrono::DateTime<chrono::Utc>>)>> {
+        let ids: Vec<Uuid> = due.iter().map(|(m, _)| m.id).collect();
+        let since = due
+            .iter()
+            .filter_map(|(_, occ)| *occ)
+            .min()
+            .unwrap_or(chrono::DateTime::<chrono::Utc>::MAX_UTC);
+        Ok(self
+            .repo
+            .delivered_for_messages(&ids, since)
+            .await?
+            .into_iter()
+            .collect())
+    }
+
     /// Campaigns from `live` that still have an undelivered occurrence for this identity.
     async fn pending<'a>(
         &self,
@@ -366,15 +403,11 @@ impl MessageService {
         if campaigns.is_empty() {
             return Ok(0);
         }
-        let mut due = Vec::new();
-        for m in campaigns {
-            if self.occurrence_of(&m, now).await.is_some() {
-                due.push(m);
-            }
-        }
+        let due = self.due_occurrences(&campaigns, now).await;
         if due.is_empty() {
             return Ok(0);
         }
+        let done = self.delivered_set(&due).await?;
         let mut delivered = 0;
         let mut after = None;
         loop {
@@ -383,11 +416,18 @@ impl MessageService {
                 break;
             };
             for identity in &page {
+                let pending: Vec<_> = due
+                    .iter()
+                    .filter(|(m, occ)| !done.contains(&(identity.id, m.id, *occ)))
+                    .collect();
+                if pending.is_empty() {
+                    continue;
+                }
                 let flat = super::eval::flatten_with_identity(identity, &identity.properties);
                 let audiences = eval.audiences.memberships(identity, &flat).await;
-                for (m, occ) in self.pending(&due, identity.id, now).await? {
+                for (m, occ) in pending {
                     if self
-                        .deliver_campaign(m, identity, &flat, &audiences, now, occ)
+                        .deliver_campaign(m, identity, &flat, &audiences, now, *occ)
                         .await?
                         .is_some()
                     {
@@ -513,6 +553,11 @@ impl MessageService {
         if campaigns.is_empty() || !self.push.enabled() {
             return Ok(0);
         }
+        let due = self.due_occurrences(&campaigns, now).await;
+        if due.is_empty() {
+            return Ok(0);
+        }
+        let done = self.delivered_set(&due).await?;
         let mut delivered = 0;
         let mut after = None;
         loop {
@@ -521,14 +566,21 @@ impl MessageService {
                 break;
             };
             for id in ids {
+                let pending: Vec<_> = due
+                    .iter()
+                    .filter(|(m, occ)| !done.contains(&(id, m.id, *occ)))
+                    .collect();
+                if pending.is_empty() {
+                    continue;
+                }
                 let Ok(identity) = identities.get(id).await else {
                     continue;
                 };
                 let flat = super::eval::flatten_with_identity(&identity, &identity.properties);
                 let audiences = eval.audiences.memberships(&identity, &flat).await;
-                for (m, occ) in self.pending(&campaigns, identity.id, now).await? {
+                for (m, occ) in pending {
                     if self
-                        .deliver_campaign(m, &identity, &flat, &audiences, now, occ)
+                        .deliver_campaign(m, &identity, &flat, &audiences, now, *occ)
                         .await?
                         .is_some()
                     {

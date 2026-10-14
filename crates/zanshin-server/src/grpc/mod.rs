@@ -3,6 +3,7 @@
 //! gRPC surface (tonic) mirroring the REST API.
 
 mod convert;
+mod metrics;
 
 use std::{net::SocketAddr, pin::Pin};
 
@@ -22,7 +23,10 @@ use zanshin_proto::api::v1::{
     ServerSendMessageRequest, Session, UpdateMessageRequest, UpdatePropertiesRequest,
 };
 
-use crate::{services::identity::SessionContext, state::AppState};
+use crate::{
+    services::{apikeys::Principal, identity::SessionContext, limits::Scope},
+    state::AppState,
+};
 
 pub use convert::*;
 
@@ -58,15 +62,46 @@ impl ZanshinGrpc {
         None
     }
 
+    /// Same token buckets as HTTP (`limits.*`), keyed by key id / identity.
+    async fn admit(&self, scope: Scope, id: &str, per_minute: Option<u32>) -> Result<(), Status> {
+        let d = self.state.limits.check(scope, id, per_minute).await;
+        if d.allowed {
+            return Ok(());
+        }
+        let retry = d.retry_after.ceil().max(1.0) as u64;
+        let mut st = Status::resource_exhausted(format!(
+            "rate limit exceeded for {} scope, retry in {retry}s",
+            scope.as_str()
+        ));
+        if let Ok(v) = retry.to_string().parse() {
+            st.metadata_mut().insert("retry-after", v);
+        }
+        Err(st)
+    }
+
+    async fn admit_principal(&self, p: &Principal) -> Result<(), Status> {
+        let scope = match p.kind {
+            zanshin_core::apikey::ApiKeyKind::Client => Scope::Client,
+            zanshin_core::apikey::ApiKeyKind::Server => Scope::Server,
+            zanshin_core::apikey::ApiKeyKind::Admin => Scope::Admin,
+        };
+        let id = p
+            .key_id
+            .map(|u| u.to_string())
+            .unwrap_or_else(|| "bootstrap".into());
+        self.admit(scope, &id, p.rate_limit_per_minute).await
+    }
+
     async fn require_client_key(&self, meta: &MetadataMap) -> Result<(), Status> {
         match Self::api_key(meta) {
             Some(k) => {
-                self.state
+                let p = self
+                    .state
                     .api_keys
                     .authenticate(&k)
                     .await
                     .map_err(to_status)?;
-                Ok(())
+                self.admit_principal(&p).await
             }
             None if self.state.cfg.auth.allow_anonymous_authenticate => Ok(()),
             None => Err(Status::unauthenticated("api key required")),
@@ -85,7 +120,7 @@ impl ZanshinGrpc {
         if !p.is_server() {
             return Err(Status::permission_denied("server api key required"));
         }
-        Ok(())
+        self.admit_principal(&p).await
     }
 
     async fn require_session(&self, meta: &MetadataMap) -> Result<SessionContext, Status> {
@@ -96,11 +131,15 @@ impl ZanshinGrpc {
         let token = auth
             .strip_prefix("Bearer ")
             .ok_or_else(|| Status::unauthenticated("session token required"))?;
-        self.state
+        let ctx = self
+            .state
             .identity
             .verify_access(token.trim())
             .await
-            .map_err(to_status)
+            .map_err(to_status)?;
+        self.admit(Scope::Session, &ctx.identity_id().to_string(), None)
+            .await?;
+        Ok(ctx)
     }
 }
 
@@ -703,14 +742,35 @@ pub async fn serve(
         .register_encoded_file_descriptor_set(tonic_health::pb::FILE_DESCRIPTOR_SET)
         .build_v1()?;
 
-    tracing::info!(%addr, "grpc listening");
+    let cfg = &state.cfg.server;
+    let max_msg = cfg.grpc_max_message_bytes;
+    let concurrency = if cfg.grpc_concurrency == 0 {
+        usize::MAX
+    } else {
+        cfg.grpc_concurrency
+    };
+    let layer = tower::ServiceBuilder::new()
+        .layer(metrics::GrpcMetricsLayer)
+        .concurrency_limit(concurrency)
+        .into_inner();
+    tracing::info!(%addr, max_message_bytes = max_msg, concurrency, "grpc listening");
     tonic::transport::Server::builder()
+        .timeout(cfg.request_timeout)
+        .tcp_keepalive(Some(std::time::Duration::from_secs(60)))
+        .http2_keepalive_interval(Some(std::time::Duration::from_secs(30)))
+        .http2_keepalive_timeout(Some(std::time::Duration::from_secs(20)))
+        .layer(layer)
         .add_service(health_service)
         .add_service(reflection)
-        .add_service(ZanshinServer::new(ZanshinGrpc::new(state)))
+        .add_service(
+            ZanshinServer::new(ZanshinGrpc::new(state.clone()))
+                .max_decoding_message_size(max_msg)
+                .max_encoding_message_size(max_msg),
+        )
         .serve_with_shutdown(addr, async move {
             let _ = shutdown.wait_for(|v| *v).await;
         })
         .await?;
+    tracing::info!("grpc listener closed");
     Ok(())
 }
