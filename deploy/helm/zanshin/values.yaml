@@ -1,0 +1,159 @@
+# Default values for the Zanshin chart. PostgreSQL, Redis and ClickHouse are NOT bundled: point the
+# chart at managed services or at in-cluster operators (CloudNativePG, Redis operator, Altinity).
+
+image:
+  repository: ghcr.io/rep0rtdev/zanshin
+  tag: ""            # defaults to .Chart.AppVersion
+  pullPolicy: IfNotPresent
+imagePullSecrets: []
+
+replicaCount: 2
+
+# Public origin of the deployment (console + CORS). Required when production=true.
+publicUrl: https://liveops.example.com
+
+# Non-secret configuration rendered into a ConfigMap as ZANSHIN__* env vars.
+config:
+  server:
+    production: "true"
+    trust_proxy: "true"
+    hsts: "true"
+    shutdown_grace: 5s
+    shutdown_timeout: 30s
+    body_limit: "1048576"
+  database:
+    max_connections: "32"
+    migrate: "false"            # migrations run in the pre-upgrade Job, not on every pod start
+  redis:
+    key_prefix: zanshin
+  clickhouse:
+    enabled: "true"
+    url: http://clickhouse:8123
+    user: zanshin
+    database: zanshin
+    retention_days: "400"
+  log:
+    level: info,sqlx=warn,hyper=warn,tower_http=info
+    json: "true"
+  telemetry:
+    service_name: zanshin
+    sample_ratio: "0.1"
+    otlp_endpoint: ""           # e.g. http://otel-collector.observability:4317
+  retention:
+    events: 400d
+    webhook_deliveries: 14d
+    journey_runs: 90d
+  limits:
+    enabled: "true"
+# Free-form extra env vars (ZANSHIN__SECTION__KEY: value).
+extraEnv: {}
+
+# Secrets. Either let the chart create a Secret from these values (fine for dev / sealed-secrets
+# pipelines) or set existingSecret to a Secret that carries the same keys.
+secrets:
+  existingSecret: ""
+  # Keys of the Secret (names below are also the defaults when the chart creates it):
+  keys:
+    databaseUrl: database-url           # postgres://user:pass@host:5432/zanshin?sslmode=require
+    redisUrl: redis-url                 # redis://:pass@host:6379/0
+    clickhousePassword: clickhouse-password
+    jwtSecret: jwt-secret
+    adminBootstrapKey: admin-bootstrap-key
+  values:
+    databaseUrl: ""
+    redisUrl: ""
+    clickhousePassword: ""
+    jwtSecret: ""
+    adminBootstrapKey: ""
+
+service:
+  type: ClusterIP
+  httpPort: 7550
+  grpcPort: 7549
+  annotations: {}
+
+ingress:
+  enabled: true
+  className: nginx
+  annotations:
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"   # WebSocket streams
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
+    nginx.ingress.kubernetes.io/proxy-body-size: "2m"
+    cert-manager.io/cluster-issuer: letsencrypt
+  host: liveops.example.com
+  tls: true
+  tlsSecretName: zanshin-tls
+  # Restrict /admin and /console to these CIDRs (nginx whitelist annotation on a second Ingress).
+  adminAllowCidrs: []
+  # gRPC through the same host on a dedicated Ingress (needs an ingress class with gRPC support).
+  grpc:
+    enabled: false
+    host: grpc.liveops.example.com
+    tlsSecretName: zanshin-grpc-tls
+
+resources:
+  requests: { cpu: 250m, memory: 256Mi }
+  limits: { cpu: "2", memory: 1Gi }
+
+autoscaling:
+  enabled: true
+  minReplicas: 2
+  maxReplicas: 10
+  targetCPUUtilizationPercentage: 65
+  targetMemoryUtilizationPercentage: null
+
+podDisruptionBudget:
+  enabled: true
+  minAvailable: 1
+
+migrations:
+  enabled: true              # pre-install/pre-upgrade Job running `zanshin --migrate`
+  backoffLimit: 3
+  ttlSecondsAfterFinished: 3600
+
+probes:
+  liveness: { path: /healthz, initialDelaySeconds: 5, periodSeconds: 10, timeoutSeconds: 2, failureThreshold: 3 }
+  readiness: { path: /readyz, initialDelaySeconds: 5, periodSeconds: 5, timeoutSeconds: 3, failureThreshold: 2 }
+  startup: { path: /healthz, periodSeconds: 2, failureThreshold: 30 }
+terminationGracePeriodSeconds: 45
+
+metrics:
+  serviceMonitor:
+    enabled: false
+    interval: 15s
+    labels: {}
+  prometheusRule:
+    enabled: false
+    labels: {}
+
+podAnnotations: {}
+podLabels: {}
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 10001
+  runAsGroup: 10001
+  fsGroup: 10001
+  seccompProfile: { type: RuntimeDefault }
+securityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  capabilities: { drop: [ALL] }
+nodeSelector: {}
+tolerations: []
+affinity: {}
+topologySpreadConstraints:
+  - maxSkew: 1
+    topologyKey: kubernetes.io/hostname
+    whenUnsatisfiable: ScheduleAnyway
+    labelSelector:
+      matchLabels:
+        app.kubernetes.io/name: zanshin
+priorityClassName: ""
+serviceAccount:
+  create: true
+  annotations: {}
+  name: ""
+networkPolicy:
+  enabled: false
+  # Namespaces/pods allowed to reach the HTTP/gRPC ports (ingress controller, nakama, …).
+  ingressFrom: []

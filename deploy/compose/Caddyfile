@@ -1,0 +1,59 @@
+{
+	email {$ACME_EMAIL}
+	servers {
+		protocols h1 h2 h3
+	}
+}
+
+{$ZANSHIN_DOMAIN} {
+	encode zstd gzip
+
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
+		X-Content-Type-Options nosniff
+		Referrer-Policy strict-origin-when-cross-origin
+		-Server
+	}
+
+	# Only expose the admin API and console to trusted networks (ADMIN_ALLOW_CIDR in .env).
+	@admin {
+		path /admin/* /console /console/*
+		not remote_ip {$ADMIN_ALLOW_CIDR}
+	}
+	respond @admin 403
+
+	# Prometheus scrape endpoint is never public.
+	@metrics path /metrics
+	respond @metrics 404
+
+	handle_path /grafana/* {
+		reverse_proxy grafana:3000
+	}
+
+	reverse_proxy zanshin-1:7550 zanshin-2:7550 {
+		lb_policy least_conn
+		lb_try_duration 5s
+		health_uri /readyz
+		health_interval 5s
+		health_timeout 2s
+		fail_duration 10s
+		# WebSocket upgrades pass through; keep long streams alive.
+		transport http {
+			read_timeout 0
+			write_timeout 0
+			dial_timeout 3s
+		}
+	}
+}
+
+# gRPC on a dedicated port (h2 with TLS); clients dial {$ZANSHIN_DOMAIN}:7549.
+{$ZANSHIN_DOMAIN}:7549 {
+	reverse_proxy h2c://zanshin-1:7549 h2c://zanshin-2:7549 {
+		lb_policy least_conn
+		transport http {
+			versions h2c
+			read_timeout 0
+			write_timeout 0
+		}
+	}
+}

@@ -1,0 +1,78 @@
+{{- if .Values.ingress.enabled }}
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ include "zanshin.fullname" . }}
+  labels: {{- include "zanshin.labels" . | nindent 4 }}
+  {{- with .Values.ingress.annotations }}
+  annotations: {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  ingressClassName: {{ .Values.ingress.className }}
+  {{- if .Values.ingress.tls }}
+  tls:
+    - hosts: [{{ .Values.ingress.host | quote }}]
+      secretName: {{ .Values.ingress.tlsSecretName }}
+  {{- end }}
+  rules:
+    - host: {{ .Values.ingress.host | quote }}
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service: { name: {{ include "zanshin.fullname" . }}, port: { name: http } }
+{{- if .Values.ingress.adminAllowCidrs }}
+---
+# Second Ingress with a source allow-list for the admin API and the console.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ include "zanshin.fullname" . }}-admin
+  labels: {{- include "zanshin.labels" . | nindent 4 }}
+  annotations:
+    nginx.ingress.kubernetes.io/whitelist-source-range: {{ join "," .Values.ingress.adminAllowCidrs | quote }}
+    {{- with .Values.ingress.annotations }}{{ toYaml . | nindent 4 }}{{ end }}
+spec:
+  ingressClassName: {{ .Values.ingress.className }}
+  {{- if .Values.ingress.tls }}
+  tls:
+    - hosts: [{{ .Values.ingress.host | quote }}]
+      secretName: {{ .Values.ingress.tlsSecretName }}
+  {{- end }}
+  rules:
+    - host: {{ .Values.ingress.host | quote }}
+      http:
+        paths:
+          {{- range list "/admin" "/console" }}
+          - path: {{ . }}
+            pathType: Prefix
+            backend:
+              service: { name: {{ include "zanshin.fullname" $ }}, port: { name: http } }
+          {{- end }}
+{{- end }}
+{{- if .Values.ingress.grpc.enabled }}
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ include "zanshin.fullname" . }}-grpc
+  labels: {{- include "zanshin.labels" . | nindent 4 }}
+  annotations:
+    nginx.ingress.kubernetes.io/backend-protocol: GRPC
+    {{- with .Values.ingress.annotations }}{{ toYaml . | nindent 4 }}{{ end }}
+spec:
+  ingressClassName: {{ .Values.ingress.className }}
+  tls:
+    - hosts: [{{ .Values.ingress.grpc.host | quote }}]
+      secretName: {{ .Values.ingress.grpc.tlsSecretName }}
+  rules:
+    - host: {{ .Values.ingress.grpc.host | quote }}
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service: { name: {{ include "zanshin.fullname" . }}, port: { name: grpc } }
+{{- end }}
+{{- end }}

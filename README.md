@@ -151,6 +151,9 @@ Full reference: [docs/api.md](docs/api.md). Design: [docs/ARCHITECTURE.md](docs/
   runtime module into the official Nakama image.
 - `zanshin --version` and `GET /admin/v1/system` (`build`) report the exact commit, build time
   and toolchain of a running server.
+- **Deploy**: `deploy/compose` (single host, Caddy TLS, backups) and `deploy/helm/zanshin`
+  (Kubernetes); dashboards, alerts and k6 load tests under `deploy/`. Operator guide:
+  [docs/production.md](docs/production.md).
 
 ## Running in production
 

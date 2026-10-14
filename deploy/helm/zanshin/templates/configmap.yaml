@@ -1,0 +1,16 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "zanshin.fullname" . }}
+  labels: {{- include "zanshin.labels" . | nindent 4 }}
+data:
+  {{- range $section, $keys := .Values.config }}
+  {{- range $key, $value := $keys }}
+  {{- if ne (toString $value) "" }}
+  ZANSHIN__{{ upper $section }}__{{ upper $key }}: {{ toString $value | quote }}
+  {{- end }}
+  {{- end }}
+  {{- end }}
+  {{- range $name, $value := .Values.extraEnv }}
+  {{ $name }}: {{ toString $value | quote }}
+  {{- end }}

@@ -14,6 +14,7 @@ pub mod journeys;
 pub mod limits;
 pub mod liveops;
 pub mod messaging_v2;
+pub mod overload;
 pub mod server_api;
 pub mod taxonomy;
 pub mod v1;
@@ -134,6 +135,10 @@ pub fn router(state: AppState) -> Router {
         .layer(axum::middleware::from_fn_with_state(
             state.clone(),
             limits::limit,
+        ))
+        .layer(axum::middleware::from_fn_with_state(
+            overload::Shed::new(state.cfg.server.http_concurrency),
+            overload::shed,
         ))
         .layer(axum::middleware::from_fn(http_metrics::record))
         .layer(security)

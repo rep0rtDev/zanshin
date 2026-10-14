@@ -95,6 +95,20 @@ impl IdentityRepo {
             .ok_or_else(|| Error::not_found("identity not found"))
     }
 
+    /// Fetch many identities in one round trip; ids that no longer exist are simply absent.
+    pub async fn get_many(&self, ids: &[Uuid]) -> Result<Vec<Identity>> {
+        if ids.is_empty() {
+            return Ok(Vec::new());
+        }
+        let rows: Vec<IdentityRow> =
+            sqlx::query_as(&format!("SELECT {COLS} FROM identities WHERE id = ANY($1)"))
+                .bind(ids)
+                .fetch_all(&self.pg)
+                .await
+                .map_err(map_sqlx)?;
+        Ok(rows.into_iter().map(Into::into).collect())
+    }
+
     pub async fn get_by_external_id(&self, external_id: &str) -> Result<Identity> {
         let row: Option<IdentityRow> = sqlx::query_as(&format!(
             "SELECT {COLS} FROM identities WHERE external_id = $1"
@@ -162,6 +176,32 @@ impl IdentityRepo {
         )
         .bind(id)
         .bind(Value::Object(patch.clone()))
+        .execute(&self.pg)
+        .await
+        .map_err(map_sqlx)?;
+        Ok(())
+    }
+
+    /// `merge_computed` for a whole batch in a single statement (event flushes touch hundreds of
+    /// identities per batch; one UPDATE per identity made the writer fall behind under load).
+    pub async fn merge_computed_many(&self, patches: &[(Uuid, PropertyMap)]) -> Result<()> {
+        let (ids, values): (Vec<Uuid>, Vec<Value>) = patches
+            .iter()
+            .filter(|(_, p)| !p.is_empty())
+            .map(|(id, p)| (*id, Value::Object(p.clone())))
+            .unzip();
+        if ids.is_empty() {
+            return Ok(());
+        }
+        sqlx::query(
+            "UPDATE identities AS i
+             SET computed_properties = jsonb_strip_nulls(i.computed_properties || p.patch),
+                 updated_at = now()
+             FROM unnest($1::uuid[], $2::jsonb[]) AS p(id, patch)
+             WHERE i.id = p.id",
+        )
+        .bind(&ids)
+        .bind(&values)
         .execute(&self.pg)
         .await
         .map_err(map_sqlx)?;

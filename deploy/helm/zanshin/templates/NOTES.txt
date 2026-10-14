@@ -1,0 +1,8 @@
+Zanshin {{ .Chart.AppVersion }} is rolling out as {{ include "zanshin.fullname" . }} in {{ .Release.Namespace }}.
+
+  Console:   {{ .Values.publicUrl }}/console   (log in with the admin bootstrap key, then mint personal keys)
+  Readiness: kubectl -n {{ .Release.Namespace }} get pods -l app.kubernetes.io/instance={{ .Release.Name }}
+  Build:     kubectl -n {{ .Release.Namespace }} exec deploy/{{ include "zanshin.fullname" . }} -- zanshin --version
+
+Migrations ran in the pre-upgrade Job {{ include "zanshin.fullname" . }}-migrate-{{ .Release.Revision }}.
+Alerts and the Grafana dashboard live in deploy/observability/ (enable metrics.serviceMonitor / prometheusRule).

@@ -10,7 +10,7 @@ use uuid::Uuid;
 use zanshin_core::{
     events::{fold_computed, Event, EventInput, MAX_BATCH},
     webhooks::{type_for_event, WebhookEvent},
-    Error, Identity, Result,
+    Error, Identity, PropertyMap, Result,
 };
 use zanshin_store::{
     cache::Cache,
@@ -22,6 +22,8 @@ use zanshin_store::{
 const QUEUE_CAPACITY: usize = 50_000;
 const FLUSH_EVERY: Duration = Duration::from_millis(500);
 const FLUSH_ROWS: usize = 2_000;
+/// How long an ingest request waits for queue space before answering 503.
+const ENQUEUE_WAIT: Duration = Duration::from_millis(250);
 /// Client-supplied event ids are remembered this long so retried batches are not double counted.
 const DEDUPE_TTL: Duration = Duration::from_secs(24 * 3600);
 
@@ -182,16 +184,15 @@ impl EventService {
                     }),
                 ));
             }
-            match self.tx.try_send(ev) {
-                Ok(()) => n += 1,
-                Err(mpsc::error::TrySendError::Full(_)) => {
+            // Brief backpressure instead of an immediate 503 when the writer is momentarily behind.
+            match tokio::time::timeout(ENQUEUE_WAIT, self.tx.send(ev)).await {
+                Ok(Ok(())) => n += 1,
+                Err(_) => {
                     metrics::counter!("zanshin_events_dropped_total", "reason" => "queue_full")
                         .increment(1);
                     return Err(Error::unavailable("event queue is full, retry later"));
                 }
-                Err(mpsc::error::TrySendError::Closed(_)) => {
-                    return Err(Error::internal(anyhow::anyhow!("event writer stopped")))
-                }
+                Ok(Err(_)) => return Err(Error::internal(anyhow::anyhow!("event writer stopped"))),
             }
         }
         metrics::counter!("zanshin_events_ingested_total").increment(n as u64);
@@ -361,8 +362,21 @@ async fn flush(store: &EventStore, identities: &IdentityRepo, batch: &[Event]) {
             .1
             .push(e.clone());
     }
-    for (id, slot) in by_identity.iter_mut() {
-        slot.0 = identities.get(*id).await.ok();
+    let ids: Vec<Uuid> = by_identity.keys().copied().collect();
+    match identities.get_many(&ids).await {
+        Ok(found) => {
+            for identity in found {
+                if let Some(slot) = by_identity.get_mut(&identity.id) {
+                    slot.0 = Some(identity);
+                }
+            }
+        }
+        Err(e) => {
+            metrics::counter!("zanshin_events_dropped_total", "reason" => "identity_lookup_failed")
+                .increment(batch.len() as u64);
+            tracing::warn!(error = %e, rows = batch.len(), "event batch dropped: identity lookup failed");
+            return;
+        }
     }
     let rows: Vec<Event> = by_identity
         .values()
@@ -386,11 +400,13 @@ async fn flush(store: &EventStore, identities: &IdentityRepo, batch: &[Event]) {
     metrics::counter!("zanshin_events_stored_total").increment(rows.len() as u64);
     metrics::histogram!("zanshin_events_flush_seconds").record(started.elapsed().as_secs_f64());
 
-    for (id, (identity, evs)) in by_identity {
-        let Some(identity) = identity else { continue };
-        let patch = fold_computed(&identity.properties.computed, &evs);
-        if let Err(e) = identities.merge_computed(id, &patch).await {
-            tracing::warn!(error = %e, identity = %id, "computed properties not updated");
-        }
+    let patches: Vec<(Uuid, PropertyMap)> = by_identity
+        .into_iter()
+        .filter_map(|(id, (identity, evs))| {
+            identity.map(|i| (id, fold_computed(&i.properties.computed, &evs)))
+        })
+        .collect();
+    if let Err(e) = identities.merge_computed_many(&patches).await {
+        tracing::warn!(error = %e, identities = patches.len(), "computed properties not updated");
     }
 }

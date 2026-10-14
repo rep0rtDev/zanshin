@@ -1,0 +1,13 @@
+<clickhouse>
+    <!-- Single-node production defaults for the Zanshin event store. -->
+    <max_server_memory_usage_to_ram_ratio>0.8</max_server_memory_usage_to_ram_ratio>
+    <mark_cache_size>536870912</mark_cache_size>
+    <logger><level>warning</level></logger>
+    <query_log><ttl>event_date + INTERVAL 7 DAY DELETE</ttl></query_log>
+    <merge_tree>
+        <ttl_only_drop_parts>1</ttl_only_drop_parts>
+    </merge_tree>
+    <backups>
+        <allowed_path>/var/lib/clickhouse/backups/</allowed_path>
+    </backups>
+</clickhouse>
