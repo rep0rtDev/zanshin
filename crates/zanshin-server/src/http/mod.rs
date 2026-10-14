@@ -2,6 +2,7 @@
 
 pub mod admin;
 pub mod auth;
+pub mod console;
 pub mod error;
 pub mod server_api;
 pub mod v1;
@@ -62,6 +63,7 @@ pub fn router(state: AppState) -> Router {
         .nest("/v1", v1::router())
         .nest("/server/v1", server_api::router())
         .nest("/admin/v1", admin::router())
+        .merge(console::router())
         .layer(DefaultBodyLimit::max(state.cfg.server.body_limit))
         .layer(TimeoutLayer::with_status_code(
             axum::http::StatusCode::REQUEST_TIMEOUT,

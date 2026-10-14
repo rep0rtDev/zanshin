@@ -1,7 +1,15 @@
 # syntax=docker/dockerfile:1.7
+FROM node:20-bookworm-slim AS console
+WORKDIR /console
+COPY console/package.json console/package-lock.json ./
+RUN npm ci
+COPY console/ .
+RUN npm run build
+
 FROM rust:1-bookworm AS build
 WORKDIR /src
 COPY . .
+COPY --from=console /console/dist ./console/dist
 RUN --mount=type=cache,target=/usr/local/cargo/registry \
     --mount=type=cache,target=/src/target \
     cargo build --release -p zanshin-server && cp target/release/zanshin /zanshin

@@ -10,6 +10,8 @@ repository = "https://github.com/rep0rtDev/zanshin"
 rust-version = "1.82"
 
 [workspace.dependencies]
+rust-embed = { version = "8", features = ["include-exclude"] }
+mime_guess = "2"
 zanshin-core = { path = "crates/zanshin-core" }
 zanshin-proto = { path = "crates/zanshin-proto" }
 zanshin-store = { path = "crates/zanshin-store" }
