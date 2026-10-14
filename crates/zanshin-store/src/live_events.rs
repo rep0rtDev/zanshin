@@ -26,6 +26,8 @@ struct Row {
     sticky: bool,
     participation_secs: Option<i64>,
     flag_overrides: Value,
+    variants: Value,
+    metrics: Vec<String>,
     tags: Vec<String>,
     version: i64,
     created_at: DateTime<Utc>,
@@ -56,6 +58,8 @@ impl TryFrom<Row> for LiveEvent {
                 Value::Object(m) => m,
                 _ => Default::default(),
             },
+            variants: serde_json::from_value(r.variants).map_err(Error::internal)?,
+            metrics: r.metrics,
             tags: r.tags,
             version: r.version,
             created_at: r.created_at,
@@ -64,7 +68,7 @@ impl TryFrom<Row> for LiveEvent {
     }
 }
 
-const COLS: &str = "id, key, name, description, enabled, condition, audiences, starts_at, ends_at, duration_secs, recurrence, payload, join_mode, sticky, participation_secs, flag_overrides, tags, version, created_at, updated_at";
+const COLS: &str = "id, key, name, description, enabled, condition, audiences, starts_at, ends_at, duration_secs, recurrence, payload, join_mode, sticky, participation_secs, flag_overrides, variants, metrics, tags, version, created_at, updated_at";
 
 #[derive(Clone)]
 pub struct LiveEventRepo {
@@ -100,8 +104,8 @@ impl LiveEventRepo {
     pub async fn create(&self, e: &LiveEvent) -> Result<LiveEvent> {
         let row: Row = sqlx::query_as(&format!(
             "INSERT INTO live_events (id, key, name, description, enabled, condition, audiences, starts_at, ends_at, duration_secs, recurrence, payload, tags,
-                                      join_mode, sticky, participation_secs, flag_overrides)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17) RETURNING {COLS}"
+                                      join_mode, sticky, participation_secs, flag_overrides, variants, metrics)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19) RETURNING {COLS}"
         ))
         .bind(e.id)
         .bind(&e.key)
@@ -120,6 +124,8 @@ impl LiveEventRepo {
         .bind(e.sticky)
         .bind(e.participation_secs)
         .bind(Value::Object(e.flag_overrides.clone()))
+        .bind(serde_json::to_value(&e.variants).unwrap_or(Value::Array(vec![])))
+        .bind(&e.metrics)
         .fetch_one(&self.pg)
         .await
         .map_err(|err| match map_sqlx(err) {
@@ -134,6 +140,7 @@ impl LiveEventRepo {
             "UPDATE live_events SET name = $2, description = $3, enabled = $4, condition = $5, audiences = $6, starts_at = $7, ends_at = $8,
                                     duration_secs = $9, recurrence = $10, payload = $11, tags = $12,
                                     join_mode = $13, sticky = $14, participation_secs = $15, flag_overrides = $16,
+                                    variants = $17, metrics = $18,
                                     version = version + 1, updated_at = now()
              WHERE key = $1 RETURNING {COLS}"
         ))
@@ -153,6 +160,8 @@ impl LiveEventRepo {
         .bind(e.sticky)
         .bind(e.participation_secs)
         .bind(Value::Object(e.flag_overrides.clone()))
+        .bind(serde_json::to_value(&e.variants).unwrap_or(Value::Array(vec![])))
+        .bind(&e.metrics)
         .fetch_optional(&self.pg)
         .await
         .map_err(map_sqlx)?;

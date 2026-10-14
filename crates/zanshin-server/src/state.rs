@@ -260,6 +260,7 @@ impl AppState {
             identities,
             stores.cache.clone(),
         );
+        events.attach_evaluator(eval.clone());
         let journeys = JourneyService::new(
             JourneyRepo::new(stores.pg.clone()),
             JourneyDeps {

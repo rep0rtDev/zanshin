@@ -20,6 +20,7 @@ pub mod permissions;
 pub mod properties;
 pub mod push;
 pub mod rules;
+pub mod stats;
 pub mod templates;
 pub mod token;
 pub mod webhooks;

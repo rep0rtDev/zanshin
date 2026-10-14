@@ -127,6 +127,13 @@ pub fn router() -> Router<AppState> {
         )
         .route("/experiments/{key}/results", get(experiment_results))
         .route(
+            "/experiments/{key}/results.csv",
+            get(experiment_results_csv),
+        )
+        .route("/experiments/{key}/phases", get(experiment_phases))
+        .route("/live-events/{key}/metrics", get(live_event_metrics))
+        .route("/live-events/{key}/runs", get(live_event_runs))
+        .route(
             "/experiments/{key}/assignments/{identity_id}",
             get(get_assignment)
                 .put(force_assignment)
@@ -878,10 +885,26 @@ async fn experiment_results(
             q.to.unwrap_or_else(chrono::Utc::now),
         )
         .await;
+    let srm = zanshin_core::stats::srm(
+        &exp.variants
+            .iter()
+            .map(|v| {
+                (
+                    v.weight,
+                    stats
+                        .iter()
+                        .find(|s| s.variant == v.key)
+                        .map(|s| s.assigned)
+                        .unwrap_or(0),
+                )
+            })
+            .collect::<Vec<_>>(),
+    );
     Ok(Json(serde_json::json!({
         "experiment": exp.key, "status": exp.status, "control": exp.control, "total_assigned": total,
         "winner": exp.winner, "interrupted_at": exp.interrupted_at, "interrupt_reason": exp.interrupt_reason,
         "locked": exp.locked, "max_participants": exp.max_participants, "enrol_until": exp.enrol_until,
+        "srm": srm,
         "metrics": catalog_metrics,
         "metric": metric.as_ref().map(|(m, _)| m.clone()),
         "variants": exp.variants.iter().map(|v| {
@@ -906,6 +929,188 @@ async fn experiment_results(
             row
         }).collect::<Vec<_>>()
     })))
+}
+
+async fn experiment_phases(
+    State(state): State<AppState>,
+    AdminAuth(_): AdminAuth,
+    Path(key): Path<String>,
+) -> ApiResult<Json<serde_json::Value>> {
+    let phases = state.experiments.phases(&key).await?;
+    let items: Vec<serde_json::Value> = phases
+        .iter()
+        .enumerate()
+        .map(|(i, e)| {
+            serde_json::json!({
+                "phase": i + 1, "key": e.key, "name": e.name, "status": e.status, "phase_of": e.phase_of,
+                "starts_at": e.starts_at, "ends_at": e.ends_at, "audiences": e.audiences,
+                "variants": e.variants.iter().map(|v| &v.key).collect::<Vec<_>>(),
+                "winner": e.winner, "created_at": e.created_at,
+            })
+        })
+        .collect();
+    Ok(Json(serde_json::json!({ "items": items })))
+}
+
+fn csv_cell(v: &serde_json::Value) -> String {
+    let s = match v {
+        serde_json::Value::String(s) => s.clone(),
+        serde_json::Value::Null => String::new(),
+        other => other.to_string(),
+    };
+    if s.contains([',', '"', '\n']) {
+        format!("\"{}\"", s.replace('"', "\"\""))
+    } else {
+        s
+    }
+}
+
+/// Results as CSV: one row per (metric, variant) plus assignment rows.
+async fn experiment_results_csv(
+    State(state): State<AppState>,
+    AdminAuth(_): AdminAuth,
+    Path(key): Path<String>,
+    Query(q): Query<ResultsQuery>,
+) -> ApiResult<impl axum::response::IntoResponse> {
+    let (exp, stats) = state.experiments.results(&key).await?;
+    let metrics = state
+        .metrics
+        .for_experiment(
+            &exp,
+            &stats,
+            q.from.unwrap_or(exp.created_at),
+            q.to.unwrap_or_else(chrono::Utc::now),
+        )
+        .await;
+    let mut out = String::from(
+        "experiment,metric,aggregation,kind,variant,is_control,assigned,exposed,exposures,value,lift,ci_low,ci_high,prob_beats_control\n",
+    );
+    for v in &exp.variants {
+        let s = stats.iter().find(|s| s.variant == v.key);
+        let base = [
+            exp.key.clone(),
+            String::new(),
+            String::new(),
+            String::new(),
+            v.key.clone(),
+            (exp.control.as_deref() == Some(&v.key)).to_string(),
+            s.map(|s| s.assigned).unwrap_or(0).to_string(),
+            s.map(|s| s.exposed).unwrap_or(0).to_string(),
+            s.map(|s| s.exposures).unwrap_or(0).to_string(),
+        ];
+        out.push_str(&base.join(","));
+        out.push_str(",,,,,\n");
+        for m in &metrics {
+            let Some(row) = m["variants"]
+                .as_array()
+                .and_then(|a| a.iter().find(|r| r["variant"] == v.key))
+            else {
+                continue;
+            };
+            let cells = [
+                csv_cell(&serde_json::json!(exp.key)),
+                csv_cell(&m["metric"]),
+                csv_cell(&m["aggregation"]),
+                csv_cell(&m["kind"]),
+                csv_cell(&serde_json::json!(v.key)),
+                (exp.control.as_deref() == Some(&v.key)).to_string(),
+                s.map(|s| s.assigned).unwrap_or(0).to_string(),
+                s.map(|s| s.exposed).unwrap_or(0).to_string(),
+                s.map(|s| s.exposures).unwrap_or(0).to_string(),
+                csv_cell(&row["value"]),
+                csv_cell(&row["lift"]),
+                csv_cell(&row["stats"]["ci_low"]),
+                csv_cell(&row["stats"]["ci_high"]),
+                csv_cell(&row["stats"]["prob_beats_control"]),
+            ];
+            out.push_str(&cells.join(","));
+            out.push('\n');
+        }
+    }
+    Ok((
+        [
+            (
+                axum::http::header::CONTENT_TYPE,
+                "text/csv; charset=utf-8".to_string(),
+            ),
+            (
+                axum::http::header::CONTENT_DISPOSITION,
+                format!("attachment; filename=\"{}-results.csv\"", exp.key),
+            ),
+        ],
+        out,
+    ))
+}
+
+#[derive(Debug, Default, serde::Deserialize)]
+struct LiveMetricsQuery {
+    #[serde(default)]
+    from: Option<chrono::DateTime<chrono::Utc>>,
+    #[serde(default)]
+    to: Option<chrono::DateTime<chrono::Utc>>,
+    #[serde(default)]
+    metric: Option<String>,
+    #[serde(default)]
+    limit: Option<usize>,
+}
+
+/// Monitor metrics of a live event (per variant) over a window, plus a daily series for `metric`.
+async fn live_event_metrics(
+    State(state): State<AppState>,
+    AdminAuth(_): AdminAuth,
+    Path(key): Path<String>,
+    Query(q): Query<LiveMetricsQuery>,
+) -> ApiResult<Json<serde_json::Value>> {
+    let ev = state.live_events.get(&key).await?;
+    let to = q.to.unwrap_or_else(chrono::Utc::now);
+    let from = q.from.unwrap_or(ev.starts_at.min(to));
+    let metrics = state.metrics.for_live_event(&ev, from, to).await;
+    let series = match q
+        .metric
+        .as_deref()
+        .or(ev.metrics.first().map(|s| s.as_str()))
+    {
+        Some(m) => Some(state.metrics.live_series(&ev, m, from, to).await?),
+        None => None,
+    };
+    Ok(Json(serde_json::json!({
+        "live_event": ev.key, "from": from, "to": to, "variants": ev.variants.iter().map(|v| &v.key).collect::<Vec<_>>(),
+        "metrics": metrics, "series": series,
+    })))
+}
+
+/// Run report: every past / current occurrence with its monitor metrics, newest first.
+async fn live_event_runs(
+    State(state): State<AppState>,
+    AdminAuth(_): AdminAuth,
+    Path(key): Path<String>,
+    Query(q): Query<LiveMetricsQuery>,
+) -> ApiResult<Json<serde_json::Value>> {
+    let ev = state.live_events.get(&key).await?;
+    let now = chrono::Utc::now();
+    let mut occurrences = Vec::new();
+    let mut cursor = ev.starts_at - chrono::Duration::seconds(1);
+    while let Some(o) = ev.current(cursor).or_else(|| ev.next(cursor)) {
+        if o.start > now || occurrences.len() >= 500 {
+            break;
+        }
+        cursor = o.end + chrono::Duration::seconds(1);
+        occurrences.push(o);
+    }
+    occurrences.reverse();
+    occurrences.truncate(q.limit.unwrap_or(12).clamp(1, 100));
+    let mut runs = Vec::new();
+    for (i, o) in occurrences.iter().enumerate() {
+        let to = o.end.min(now);
+        let metrics = state.metrics.for_live_event(&ev, o.start, to).await;
+        runs.push(serde_json::json!({
+            "run": occurrences.len() - i, "start": o.start, "end": o.end, "live": o.start <= now && now < o.end,
+            "metrics": metrics,
+        }));
+    }
+    Ok(Json(
+        serde_json::json!({ "live_event": ev.key, "runs": runs }),
+    ))
 }
 
 async fn get_assignment(

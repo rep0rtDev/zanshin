@@ -7,6 +7,17 @@ Release automation reads the section whose heading contains the tagged version.
 ## [Unreleased]
 
 ### Added
+- Live events v3: variants inside a live event (deterministic per-player assignment by weight,
+  per-variant payload and flag overrides on top of the event's), monitor metrics attached to an
+  event (`metrics`), analytics events tagged `live:<key>` → variant while the player is in the
+  event, `GET /admin/v1/live-events/{key}/metrics` (per-variant values + daily series) and
+  `GET /admin/v1/live-events/{key}/runs` (run report: every occurrence with its metrics, side by
+  side), Monitor / Run report panels and a variants editor in the console.
+- Experiments v3: phase families (`GET /admin/v1/experiments/{key}/phases`, Phases panel), results
+  as CSV (`GET /admin/v1/experiments/{key}/results.csv`), Bayesian conversion statistics per
+  variant (posterior rate, 95% credible interval, probability to beat control, expected uplift)
+  and a sample-ratio-mismatch check (`srm`: chi-square p-value, flagged below 0.001) on
+  `GET /admin/v1/experiments/{key}/results`, both shown in the console.
 - Journeys v2: derived lifecycle `status` (disabled / scheduled / running / terminated), `time_window`
   steps (a date, or the next slot of a cron schedule resolved in UTC, a fixed zone or the player's own
   timezone), `live_event` steps that start a live event on the player's own timeline (personal
