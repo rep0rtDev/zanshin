@@ -11,7 +11,7 @@ use serde_json::Value;
 use uuid::Uuid;
 use zanshin_core::{
     flags::validate_key,
-    live_events::{ActiveEvent, JoinMode, LiveEvent},
+    live_events::{ActiveEvent, Join, JoinMode, LiveEvent},
     properties::PropertyMap,
     rules::Condition,
     Error, Result,
@@ -135,7 +135,7 @@ impl LiveEventService {
         names: &[String],
         active_only: bool,
         now: chrono::DateTime<chrono::Utc>,
-        joins: &HashMap<Uuid, chrono::DateTime<chrono::Utc>>,
+        joins: &HashMap<Uuid, Join>,
     ) -> Vec<ActiveEvent> {
         let member = |k: &str| audiences.contains(k);
         self.catalog
@@ -143,8 +143,13 @@ impl LiveEventService {
             .await
             .iter()
             .filter(|e| names.is_empty() || names.contains(&e.key))
-            .filter(|e| e.targets(flat, &member) || (e.sticky && joins.contains_key(&e.id)))
-            .map(|e| e.view_for(now, joins.get(&e.id).copied()))
+            .filter(|e| {
+                e.targets(flat, &member)
+                    || joins
+                        .get(&e.id)
+                        .is_some_and(|j| e.sticky || j.window_open(now))
+            })
+            .map(|e| e.view_join(now, joins.get(&e.id)))
             .filter(|v| !active_only || v.active)
             .collect()
     }
@@ -197,15 +202,43 @@ impl LiveEventService {
         Ok(ev.view_for(now, Some(joined_at)))
     }
 
+    /// Grant the event on the player's own timeline (journeys): it starts now for them and runs
+    /// `duration_secs` (default: the event's duration, else until its end), whatever the schedule.
+    pub async fn join_personal(
+        &self,
+        identity_id: Uuid,
+        key: &str,
+        now: chrono::DateTime<chrono::Utc>,
+        duration_secs: Option<i64>,
+    ) -> Result<ActiveEvent> {
+        let ev = self.get(key).await?;
+        if !ev.enabled {
+            return Err(Error::invalid(format!("live event {key:?} is disabled")));
+        }
+        let dur = duration_secs
+            .map(chrono::Duration::seconds)
+            .or_else(|| ev.duration())
+            .or_else(|| ev.ends_at.map(|e| e - now))
+            .filter(|d| *d > chrono::Duration::zero())
+            .ok_or_else(|| {
+                Error::invalid(format!(
+                    "live event {key:?} has neither a duration nor an end; set duration_secs"
+                ))
+            })?;
+        let join = self
+            .repo
+            .join_window(ev.id, identity_id, now, now + dur)
+            .await?;
+        metrics::counter!("zanshin_live_event_joins_total").increment(1);
+        Ok(ev.view_join(now, Some(&join)))
+    }
+
     pub async fn leave(&self, identity_id: Uuid, key: &str) -> Result<bool> {
         let ev = self.get(key).await?;
         self.repo.leave(ev.id, identity_id).await
     }
 
-    pub async fn joins_for(
-        &self,
-        identity_id: Uuid,
-    ) -> HashMap<Uuid, chrono::DateTime<chrono::Utc>> {
+    pub async fn joins_for(&self, identity_id: Uuid) -> HashMap<Uuid, Join> {
         self.repo.joins_for(identity_id).await.unwrap_or_default()
     }
 

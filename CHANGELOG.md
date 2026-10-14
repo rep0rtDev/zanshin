@@ -7,6 +7,15 @@ Release automation reads the section whose heading contains the tagged version.
 ## [Unreleased]
 
 ### Added
+- Journeys v2: derived lifecycle `status` (disabled / scheduled / running / terminated), `time_window`
+  steps (a date, or the next slot of a cron schedule resolved in UTC, a fixed zone or the player's own
+  timezone), `live_event` steps that start a live event on the player's own timeline (personal
+  window, independent of the event schedule), `revert` steps that undo an earlier flag override /
+  experiment assignment / live event, `enter_journey` steps with cycle protection, per-step
+  "passed" counts and fastest / average / slowest time-to-finish on the runs endpoint, a player's
+  journey history with step logs (`GET /admin/v1/identities/{id}/journeys`, Journeys tab on the
+  player page) and a flow canvas in the console (auto-laid-out graph with branch / goto edges and
+  live player counts per step).
 - SDK wave 2: gRPC parity with REST (`Identify`, `GetFlagOverrides`, `JoinLiveEvent` / `LeaveLiveEvent`,
   `RemoveMessage`, push-token RPCs, and server-key RPCs for single flag / explain / identity upsert /
   identify / properties / live-event join-leave / inbox / managed audience members; gRPC `Authenticate`

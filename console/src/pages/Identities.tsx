@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Route, Routes, useNavigate, useParams } from 'react-router-dom';
+import { Route, Routes, useNavigate, useParams, Link } from 'react-router-dom';
 import { del, get, post, put, qs, useLoad } from '../api';
 import { Badge, Confirm, ErrorBox, Field, JsonField, Page, Table, fmtDate } from '../ui';
 import { DirectSend } from './Messages';
@@ -77,7 +77,7 @@ function QaTime({ id }: { id: string }) {
 function Detail() {
   const { id } = useParams();
   const nav = useNavigate();
-  const [tab, setTab] = useState<'props' | 'events' | 'inbox' | 'push'>('props');
+  const [tab, setTab] = useState<'props' | 'events' | 'inbox' | 'push' | 'journeys'>('props');
   const [err, setErr] = useState<Error | null>(null);
   const q = useLoad(() => get<Identity>(`/identities/${id}`), [id]);
   const i = q.data;
@@ -99,12 +99,13 @@ function Detail() {
           </div>
           <QaTime id={i.id} />
           <div className="tabs">
-            {(['props', 'events', 'inbox', 'push'] as const).map((t) => <button key={t} className={tab === t ? 'active' : ''} onClick={() => setTab(t)}>{{ props: 'Properties', events: 'Events', inbox: 'Inbox', push: 'Push devices' }[t]}</button>)}
+            {(['props', 'events', 'inbox', 'push', 'journeys'] as const).map((t) => <button key={t} className={tab === t ? 'active' : ''} onClick={() => setTab(t)}>{{ props: 'Properties', events: 'Events', inbox: 'Inbox', push: 'Push devices', journeys: 'Journeys' }[t]}</button>)}
           </div>
           {tab === 'props' && <Props i={i} onSaved={(n) => q.setData(n)} />}
           {tab === 'events' && <Events id={i.id} />}
           {tab === 'inbox' && <InboxTab id={i.id} />}
           {tab === 'push' && <PushTab id={i.id} />}
+          {tab === 'journeys' && <JourneysTab id={i.id} />}
         </>
       )}
     </Page>
@@ -151,6 +152,33 @@ function Events({ id }: { id: string }) {
           { h: 'Experiments', c: (e) => e.experiments && Object.keys(e.experiments).length ? Object.entries(e.experiments).map(([k, v]) => <Badge key={k} tone="info">{k}={v}</Badge>) : <span className="muted">—</span> },
         ]}
       />
+    </>
+  );
+}
+
+type JRun = { id: string; step: number; status: 'active' | 'done' | 'exited' | 'failed'; wake_at: string | null; error: string; entered_at: string; updated_at: string; context: Record<string, unknown> };
+type JLog = { step: number; action: string; detail: string; at: string };
+const JTONE: Record<JRun['status'], 'ok' | 'bad' | 'warn' | 'info'> = { done: 'ok', failed: 'bad', exited: 'warn', active: 'info' };
+
+function JourneysTab({ id }: { id: string }) {
+  const q = useLoad(() => get<{ items: { journey: string; run: JRun; log: JLog[] }[] }>(`/identities/${id}/journeys`), [id]);
+  const items = q.data?.items ?? [];
+  return (
+    <>
+      <ErrorBox error={q.error} />
+      {!q.data ? null : items.length === 0 ? <div className="empty">This player has not entered any journey.</div> : items.map(({ journey, run, log }) => (
+        <div key={run.id} className="card">
+          <div className="row" style={{ alignItems: 'center' }}>
+            <Link to={`/journeys/${encodeURIComponent(journey)}`}><strong>{journey}</strong></Link>
+            <Badge tone={JTONE[run.status]}>{run.status}</Badge>
+            <span className="hint">entered {fmtDate(run.entered_at)}{run.context?.parent ? ` · from journey ${String(run.context.parent)}` : ''}{run.status === 'active' && run.wake_at ? ` · wakes ${fmtDate(run.wake_at)}` : ''}{run.error ? ` · ${run.error}` : ''}</span>
+          </div>
+          <table className="table" style={{ marginTop: 8 }}>
+            <thead><tr><th style={{ width: 180 }}>Time</th><th style={{ width: 160 }}>Step</th><th>What happened</th></tr></thead>
+            <tbody>{log.map((l, i) => <tr key={i}><td>{fmtDate(l.at)}</td><td><code>{l.step + 1}. {l.action}</code></td><td className="hint">{l.detail}</td></tr>)}</tbody>
+          </table>
+        </div>
+      ))}
     </>
   );
 }

@@ -89,6 +89,24 @@ pub struct RunView {
     pub updated_at: DateTime<Utc>,
 }
 
+#[derive(FromRow)]
+struct LogRow {
+    run_id: Uuid,
+    step: i32,
+    action: String,
+    detail: String,
+    at: DateTime<Utc>,
+}
+
+/// Time to complete (runs that reached the end), in seconds.
+#[derive(Debug, Clone, Default, Serialize)]
+pub struct Timing {
+    pub completed: i64,
+    pub min_secs: Option<f64>,
+    pub avg_secs: Option<f64>,
+    pub max_secs: Option<f64>,
+}
+
 #[derive(Debug, Clone, Serialize, FromRow)]
 pub struct LogEntry {
     pub step: i32,
@@ -417,6 +435,67 @@ impl JourneyRepo {
         .await
         .map_err(map_sqlx)?;
         Ok((by_status, by_step))
+    }
+
+    /// Min / avg / max time from entry to completion over finished (`done`) runs.
+    pub async fn timing(&self, journey_id: Uuid) -> Result<Timing> {
+        let (min_secs, avg_secs, max_secs, completed): (
+            Option<f64>,
+            Option<f64>,
+            Option<f64>,
+            i64,
+        ) = sqlx::query_as(
+            "SELECT min(x), avg(x), max(x), count(*)::bigint FROM (
+                   SELECT extract(epoch FROM updated_at - entered_at)::float8 AS x
+                   FROM journey_runs WHERE journey_id = $1 AND status = 'done') t",
+        )
+        .bind(journey_id)
+        .fetch_one(&self.pg)
+        .await
+        .map_err(map_sqlx)?;
+        Ok(Timing {
+            completed,
+            min_secs,
+            avg_secs,
+            max_secs,
+        })
+    }
+
+    /// Distinct runs that executed each step index (the per-step counts drawn on the canvas).
+    pub async fn passed(&self, journey_id: Uuid) -> Result<Vec<(i32, i64)>> {
+        sqlx::query_as(
+            "SELECT l.step, count(DISTINCT l.run_id)::bigint FROM journey_run_log l
+             JOIN journey_runs r ON r.id = l.run_id WHERE r.journey_id = $1 GROUP BY 1 ORDER BY 1",
+        )
+        .bind(journey_id)
+        .fetch_all(&self.pg)
+        .await
+        .map_err(map_sqlx)
+    }
+
+    /// Step logs for a set of runs (identity history).
+    pub async fn logs_for_runs(&self, ids: &[Uuid]) -> Result<Vec<(Uuid, LogEntry)>> {
+        let rows: Vec<LogRow> = sqlx::query_as(
+            "SELECT run_id, step, action, detail, at FROM journey_run_log WHERE run_id = ANY($1) ORDER BY at",
+        )
+        .bind(ids)
+        .fetch_all(&self.pg)
+        .await
+        .map_err(map_sqlx)?;
+        Ok(rows
+            .into_iter()
+            .map(|r| {
+                (
+                    r.run_id,
+                    LogEntry {
+                        step: r.step,
+                        action: r.action,
+                        detail: r.detail,
+                        at: r.at,
+                    },
+                )
+            })
+            .collect())
     }
 
     pub async fn purge_runs(&self, older_than: DateTime<Utc>) -> Result<u64> {

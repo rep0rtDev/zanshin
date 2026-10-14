@@ -24,8 +24,16 @@ pub fn router() -> Router<AppState> {
         .route("/identities/{id}/journeys", get(identity_runs))
 }
 
+/// Journey JSON plus its derived lifecycle `status`.
+fn out(j: &Journey) -> Value {
+    let mut v = json!(j);
+    v["status"] = json!(j.status(chrono::Utc::now()));
+    v
+}
+
 async fn list(State(state): State<AppState>, AdminAuth(_): AdminAuth) -> ApiResult<Json<Value>> {
-    Ok(Json(json!({ "items": state.journeys.list().await? })))
+    let items: Vec<Value> = state.journeys.list().await?.iter().map(out).collect();
+    Ok(Json(json!({ "items": items })))
 }
 
 #[derive(Debug, Deserialize)]
@@ -39,17 +47,17 @@ async fn create(
     State(state): State<AppState>,
     AdminAuth(_): AdminAuth,
     Json(b): Json<Create>,
-) -> ApiResult<(axum::http::StatusCode, Json<Journey>)> {
+) -> ApiResult<(axum::http::StatusCode, Json<Value>)> {
     let j = state.journeys.create(&b.key, b.patch).await?;
-    Ok((axum::http::StatusCode::CREATED, Json(j)))
+    Ok((axum::http::StatusCode::CREATED, Json(out(&j))))
 }
 
 async fn get_one(
     State(state): State<AppState>,
     AdminAuth(_): AdminAuth,
     Path(key): Path<String>,
-) -> ApiResult<Json<Journey>> {
-    Ok(Json(state.journeys.get(&key).await?))
+) -> ApiResult<Json<Value>> {
+    Ok(Json(out(&state.journeys.get(&key).await?)))
 }
 
 async fn update(
@@ -57,8 +65,8 @@ async fn update(
     AdminAuth(_): AdminAuth,
     Path(key): Path<String>,
     Json(p): Json<JourneyPatch>,
-) -> ApiResult<Json<Journey>> {
-    Ok(Json(state.journeys.update(&key, p).await?))
+) -> ApiResult<Json<Value>> {
+    Ok(Json(out(&state.journeys.update(&key, p).await?)))
 }
 
 async fn delete(
@@ -108,31 +116,35 @@ async fn runs(
     Path(key): Path<String>,
     Query(q): Query<RunsQuery>,
 ) -> ApiResult<Json<Value>> {
-    let (j, items, by_status, by_step) = state
+    let r = state
         .journeys
         .runs(&key, q.status.as_deref(), q.after, q.limit.unwrap_or(100))
         .await?;
-    let next = items.last().map(|r| r.id);
-    let steps: Vec<Value> = j
+    let next = r.items.last().map(|r| r.id);
+    let count = |v: &[(i32, i64)], i: usize| {
+        v.iter()
+            .find(|(st, _)| *st as usize == i)
+            .map(|(_, n)| *n)
+            .unwrap_or(0)
+    };
+    let steps: Vec<Value> = r
+        .journey
         .steps
         .iter()
         .enumerate()
         .map(|(i, s)| {
-            let active = by_step
-                .iter()
-                .find(|(st, _)| *st as usize == i)
-                .map(|(_, n)| *n)
-                .unwrap_or(0);
-            json!({ "index": i, "id": s.id, "active": active })
+            json!({ "index": i, "id": s.id, "active": count(&r.by_step, i), "passed": count(&r.passed, i) })
         })
         .collect();
-    let by_status: Vec<Value> = by_status
+    let by_status: Vec<Value> = r
+        .by_status
         .into_iter()
         .map(|(s, n)| json!({ "status": s, "count": n }))
         .collect();
-    Ok(Json(
-        json!({ "items": items, "next": next, "stats": by_status, "steps": steps }),
-    ))
+    Ok(Json(json!({
+        "items": r.items, "next": next, "stats": by_status, "steps": steps,
+        "timing": r.timing, "status": r.journey.status(chrono::Utc::now()),
+    })))
 }
 
 async fn run_detail(
@@ -162,7 +174,7 @@ async fn identity_runs(
         .runs_for_identity(id)
         .await?
         .into_iter()
-        .map(|(key, run)| json!({ "journey": key, "run": run }))
+        .map(|(key, run, log)| json!({ "journey": key, "run": run, "log": log }))
         .collect();
     Ok(Json(json!({ "items": items })))
 }

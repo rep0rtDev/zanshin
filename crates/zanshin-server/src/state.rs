@@ -271,6 +271,7 @@ impl AppState {
                 experiments: experiments.clone(),
                 integrations: integrations.clone(),
                 live_events: LiveEventRepo::new(stores.pg.clone()),
+                live_event_svc: live_events.clone(),
             },
             hooks,
         );
