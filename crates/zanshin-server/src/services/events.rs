@@ -3,11 +3,13 @@
 
 use std::{collections::HashMap, sync::Arc, time::Duration};
 
+use super::webhooks::WebhookBus;
 use serde_json::Value;
 use tokio::sync::mpsc;
 use uuid::Uuid;
 use zanshin_core::{
     events::{fold_computed, Event, EventInput, MAX_BATCH},
+    webhooks::{type_for_event, WebhookEvent},
     Error, Identity, Result,
 };
 use zanshin_store::{
@@ -26,6 +28,7 @@ pub struct EventService {
     store: EventStore,
     identities: IdentityRepo,
     experiments: ExperimentRepo,
+    hooks: WebhookBus,
     inner: Arc<Inner>,
 }
 
@@ -34,10 +37,16 @@ struct Inner {
 }
 
 impl EventService {
-    pub fn new(store: EventStore, identities: IdentityRepo, experiments: ExperimentRepo) -> Self {
+    pub fn new(
+        store: EventStore,
+        identities: IdentityRepo,
+        experiments: ExperimentRepo,
+        hooks: WebhookBus,
+    ) -> Self {
         let (tx, rx) = mpsc::channel(QUEUE_CAPACITY);
         Self {
             tx,
+            hooks,
             store,
             identities,
             experiments,
@@ -125,6 +134,15 @@ impl EventService {
                 experiments.clone(),
                 now,
             );
+            if self.hooks.receiver_count() > 0 {
+                let _ = self.hooks.send(WebhookEvent::new(
+                    type_for_event(&ev.name),
+                    serde_json::json!({
+                        "identity_id": ev.identity_id, "external_id": ev.external_id, "name": ev.name,
+                        "value": ev.value, "metadata": ev.metadata, "session_id": ev.session_id, "event_time": ev.event_time,
+                    }),
+                ));
+            }
             match self.tx.try_send(ev) {
                 Ok(()) => n += 1,
                 Err(mpsc::error::TrySendError::Full(_)) => {

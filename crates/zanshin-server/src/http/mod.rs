@@ -13,6 +13,7 @@ pub mod messaging_v2;
 pub mod server_api;
 pub mod taxonomy;
 pub mod v1;
+pub mod webhooks;
 pub mod ws;
 
 use std::net::SocketAddr;
@@ -111,7 +112,8 @@ pub fn router(state: AppState) -> Router {
                 .merge(audiences::router())
                 .merge(liveops::router())
                 .merge(experiments_v2::router())
-                .merge(messaging_v2::router()),
+                .merge(messaging_v2::router())
+                .merge(webhooks::router()),
         )
         .merge(console::router())
         .layer(axum::middleware::from_fn_with_state(

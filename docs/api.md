@@ -290,6 +290,28 @@ gRPC: `ServerGetFlags`, `ServerGetAudiences`, `ServerGetExperiments`, `ServerGet
 | `GET` | `/analytics/events/names?from=&to=&limit=` | — | event names by volume with unique identities |
 | `GET` | `/identities/{identity_id}/events?limit=` | — | most recent events of one identity (with `experiments` tags) |
 
+### Webhooks
+
+Outbound HTTP callbacks for system events, managed under `/admin/v1/webhooks` and the **Webhooks** console page.
+
+| Route | Purpose |
+|-------|---------|
+| `GET/POST /admin/v1/webhooks`, `GET/PUT/DELETE /admin/v1/webhooks/{key}` | Subscriptions: `url`, `secret` (masked on read), `events` patterns (`*`, `flag.*`, `event.purchase`), `batch_size` / `batch_window_secs`, `headers`, `max_attempts`, `enabled`. |
+| `GET /admin/v1/webhooks/event-types` | Known event types. |
+| `POST /admin/v1/webhooks/{key}/test` | Send a `webhook.test` event synchronously; returns the delivery (status, attempts, HTTP status, error). |
+| `GET /admin/v1/webhooks/{key}/deliveries?status&after&limit` | Delivery log (`pending` / `sent` / `failed` / `dead`) with per-status stats. |
+| `POST /admin/v1/webhooks/{key}/deliveries/{id}/retry` | Retry a failed or dead delivery now (fresh attempt budget). |
+
+Event types: `identity.created` / `identity.authenticated` / `identity.identified`, `session.started` / `session.ended`,
+`experiment.joined` / `experiment.exposed`, `live_event.joined`, `message.delivered` / `message.read`, `event.<name>` for every
+analytics event, and `<flag|audience|experiment|live_event|message>.<updated|deleted>` for configuration changes.
+
+Request: `POST url` with JSON `{ "webhook", "delivery_id", "attempt", "sent_at", "events": [ { "id", "type", "at", "data" } ] }` and
+headers `X-Zanshin-Event` (the type, or `batch`), `X-Zanshin-Delivery`, `X-Zanshin-Webhook`, `X-Zanshin-Timestamp`,
+`X-Zanshin-Signature: sha256=HMAC_SHA256(secret, "{timestamp}.{body}")`. Any 2xx counts as delivered; otherwise the
+delivery is retried with exponential backoff (10s, 20s, 40s … capped at 1h) until `max_attempts`, then marked `dead`.
+Deliveries are persisted, so retries survive restarts; sent/dead rows are purged after 14 days.
+
 ### Messaging v2: templates, schedules, integrations, delivery log
 
 | Route | Purpose |
