@@ -34,6 +34,22 @@ auth:
 
 admin:
   bootstrap_key: null       # set once to mint real admin/client/server keys via /admin/v1/api-keys
+  console_session_ttl: 12h  # lifetime of an SSO console login
+  # Single sign-on for the console through any OpenID Connect provider (Keycloak, Auth0, Okta,
+  # Google Workspace, Authentik, ...). Admin API keys keep working alongside it.
+  # oidc:
+  #   issuer: https://auth.example.com/realms/games
+  #   client_id: zanshin-console
+  #   client_secret: null                      # omit for public clients (PKCE is always used)
+  #   redirect_url: https://zanshin.example.com/console/auth/callback
+  #   scopes: [openid, email, profile]
+  #   role_claim: groups                       # ID-token claim: string or array of strings
+  #   role_map:                                # claim value -> role; most privileged match wins
+  #     liveops-admins: admin
+  #     liveops: editor
+  #     analysts: viewer
+  #   default_role: null                       # role when nothing matches; null = reject login
+  #   allowed_domains: [example.com]           # restrict by email domain (empty = any)
 
 log:
   level: info,sqlx=warn,hyper=warn,tower_http=info

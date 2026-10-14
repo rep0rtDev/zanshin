@@ -1,6 +1,6 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { NavLink, Navigate, Route, Routes } from 'react-router-dom';
-import { auth, get } from './api';
+import { auth, authConfig, get, ssoLogout, type Me } from './api';
 import Dashboard from './pages/Dashboard';
 import Flags from './pages/Flags';
 import Experiments from './pages/Experiments';
@@ -12,16 +12,16 @@ import Analytics from './pages/Analytics';
 import ApiKeys from './pages/ApiKeys';
 import Audit from './pages/Audit';
 
-function Login({ onDone }: { onDone: () => void }) {
+function Login({ onDone, sso }: { onDone: () => void; sso: boolean }) {
   const [key, setKey] = useState('');
-  const [err, setErr] = useState<string | null>(null);
+  const [err, setErr] = useState<string | null>(() => new URLSearchParams(window.location.search).get('error'));
   const [busy, setBusy] = useState(false);
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     setBusy(true);
     auth.set(key.trim());
     try {
-      await get('/stats');
+      await get('/me');
       onDone();
     } catch (e) {
       auth.clear();
@@ -34,9 +34,15 @@ function Login({ onDone }: { onDone: () => void }) {
     <div className="login">
       <form className="card" onSubmit={submit}>
         <div className="brand">Zanshin<small>admin console</small></div>
+        {sso && (
+          <>
+            <a className="btn" href="/console/auth/login" style={{ width: '100%', display: 'block', textAlign: 'center', boxSizing: 'border-box' }}>Sign in with SSO</a>
+            <div className="hint" style={{ textAlign: 'center', margin: '12px 0' }}>or use an admin API key</div>
+          </>
+        )}
         <label className="field">
           <span className="label">Admin API key</span>
-          <input type="password" autoFocus value={key} onChange={(e) => setKey(e.target.value)} placeholder="zk_a_…" />
+          <input type="password" autoFocus={!sso} value={key} onChange={(e) => setKey(e.target.value)} placeholder="zk_a_…" />
           <span className="hint">The bootstrap key from config or an admin key minted via /admin/v1/api-keys. Stored in this browser only.</span>
         </label>
         {err && <div className="error">{err}</div>}
@@ -67,26 +73,51 @@ function initialTheme(): 'light' | 'dark' {
 }
 
 export default function App() {
-  const [authed, setAuthed] = useState(!!auth.key());
+  const [me, setMe] = useState<Me | null | undefined>(undefined);
+  const [sso, setSso] = useState(false);
+  const loadMe = useCallback(async () => {
+    try {
+      setMe(await get<Me>('/me'));
+    } catch {
+      setMe(null);
+    }
+  }, []);
+  useEffect(() => {
+    authConfig().then((c) => setSso(c.oidc));
+    if (auth.key() || document.cookie.includes('zanshin_console=') || window.location.pathname.startsWith('/console')) void loadMe();
+    else setMe(null);
+  }, [loadMe]);
   const [theme, setTheme] = useState<'light' | 'dark'>(initialTheme);
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
     localStorage.setItem(THEME_KEY, theme);
   }, [theme]);
   useEffect(() => {
-    const h = () => { auth.clear(); setAuthed(false); };
+    const h = () => { auth.clear(); setMe(null); };
     window.addEventListener('zanshin:unauthorized', h);
     return () => window.removeEventListener('zanshin:unauthorized', h);
   }, []);
-  if (!authed) return <Login onDone={() => setAuthed(true)} />;
+  if (me === undefined) return <div className="login"><div className="card">Loading…</div></div>;
+  if (!me) return <Login sso={sso} onDone={loadMe} />;
+  const nav = NAV.filter(([to]) => to !== '/api-keys' || me.role === 'admin');
+  const signOut = async (e: React.MouseEvent) => {
+    e.preventDefault();
+    auth.clear();
+    if (me.auth === 'oidc') await ssoLogout();
+    setMe(null);
+  };
   return (
     <div className="shell">
       <nav className="side">
         <div className="brand">Zanshin<small>admin console</small></div>
-        {NAV.map(([to, label]) => <NavLink key={to} to={to} end={to === '/'}>{label}</NavLink>)}
+        {nav.map(([to, label]) => <NavLink key={to} to={to} end={to === '/'}>{label}</NavLink>)}
         <div className="spacer" />
+        <div className="whoami" title={me.auth}>
+          <span className="trunc">{me.name}</span>
+          <span className={'role role-' + me.role}>{me.role}</span>
+        </div>
         <button className="theme-btn" onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}>{theme === 'dark' ? 'Light theme' : 'Dark theme'}</button>
-        <a href="#" onClick={(e) => { e.preventDefault(); auth.clear(); setAuthed(false); }}>Sign out</a>
+        <a href="#" onClick={signOut}>Sign out</a>
       </nav>
       <main className="main">
         <Routes>
@@ -98,7 +129,7 @@ export default function App() {
           <Route path="/messages/*" element={<Messages />} />
           <Route path="/identities/*" element={<Identities />} />
           <Route path="/analytics" element={<Analytics />} />
-          <Route path="/api-keys" element={<ApiKeys />} />
+          {me.role === 'admin' && <Route path="/api-keys" element={<ApiKeys />} />}
           <Route path="/audit" element={<Audit />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>

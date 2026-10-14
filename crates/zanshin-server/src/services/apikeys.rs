@@ -5,7 +5,7 @@ use std::time::Duration;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 use zanshin_core::{
-    apikey::{self, ApiKeyKind},
+    apikey::{self, ApiKeyKind, Role},
     Error, Result,
 };
 use zanshin_store::{
@@ -27,6 +27,9 @@ pub struct Principal {
     /// Per-key request budget overriding the scope default.
     #[serde(default)]
     pub rate_limit_per_minute: Option<u32>,
+    /// Admin principals only: what the console / admin API lets them do.
+    #[serde(default)]
+    pub role: Role,
 }
 
 impl Principal {
@@ -65,6 +68,7 @@ impl ApiKeyService {
                     kind: ApiKeyKind::Admin,
                     read_only: false,
                     rate_limit_per_minute: None,
+                    role: Role::Admin,
                 });
             }
         }
@@ -84,8 +88,9 @@ impl ApiKeyService {
             key_id: Some(row.id),
             name: row.name.clone(),
             kind: row.kind(),
-            read_only: row.read_only,
+            read_only: row.role() == Role::Viewer,
             rate_limit_per_minute: row.rate_limit_per_minute.map(|n| n as u32),
+            role: row.role(),
         };
         let _ = self.cache.set_json(&cache_key, &principal, CACHE_TTL).await;
         let repo = self.repo.clone();
@@ -104,8 +109,11 @@ impl ApiKeyService {
         if name.trim().is_empty() || name.len() > 64 {
             return Err(Error::invalid("name must be 1..64 characters"));
         }
-        if opts.read_only && kind != ApiKeyKind::Admin {
-            return Err(Error::invalid("read_only applies to admin keys only"));
+        if (opts.read_only || opts.role.is_some()) && kind != ApiKeyKind::Admin {
+            return Err(Error::invalid("read_only / role apply to admin keys only"));
+        }
+        if opts.read_only && matches!(opts.role, Some(r) if r != Role::Viewer) {
+            return Err(Error::invalid("read_only conflicts with a non-viewer role"));
         }
         if let Some(exp) = opts.expires_at {
             if exp <= chrono::Utc::now() {

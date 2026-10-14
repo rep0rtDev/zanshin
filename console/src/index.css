@@ -107,3 +107,10 @@ input[type=range]{padding:0;height:28px}
 .legend{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:8px}.legend .chip{color:#fff}
 .tooltip{position:absolute;top:8px;transform:translateX(-50%);background:var(--card);border:1px solid var(--line);border-radius:6px;padding:6px 10px;font-size:12px;pointer-events:none;box-shadow:0 2px 8px rgba(0,0,0,.08);white-space:nowrap}
 .trunc{display:block;max-width:420px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+
+.whoami { display: flex; align-items: center; gap: 8px; padding: 6px 0; font-size: 12px; color: var(--muted); }
+.whoami .trunc { max-width: 140px; }
+.role { padding: 1px 6px; border-radius: 4px; border: 1px solid var(--border); text-transform: uppercase; font-size: 10px; letter-spacing: .04em; }
+.role-admin { color: var(--fg); }
+.role-editor { color: #1a5fb4; border-color: #1a5fb4; }
+.role-viewer { color: #b26a00; border-color: #b26a00; }

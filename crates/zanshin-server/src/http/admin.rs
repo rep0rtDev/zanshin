@@ -7,7 +7,11 @@ use axum::{
 };
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
-use zanshin_core::{apikey::ApiKeyKind, properties::PropertyMap, Error};
+use zanshin_core::{
+    apikey::{ApiKeyKind, Role},
+    properties::PropertyMap,
+    Error,
+};
 use zanshin_store::{
     api_keys::{ApiKeyRow, KeyOptions},
     audit::{AuditEntry, AuditFilter},
@@ -141,6 +145,7 @@ pub fn router() -> Router<AppState> {
             get(identity_push_tokens),
         )
         .route("/stats", get(stats))
+        .route("/me", get(me))
         .route("/audit", get(list_audit))
 }
 
@@ -148,9 +153,12 @@ pub fn router() -> Router<AppState> {
 pub struct CreateKeyRequest {
     pub name: String,
     pub kind: ApiKeyKind,
-    /// Admin keys only: GET-only access to `/admin/v1`.
+    /// Admin keys only: GET-only access to `/admin/v1` (same as `role: viewer`).
     #[serde(default)]
     pub read_only: bool,
+    /// Admin keys only: `admin` (default) | `editor` | `viewer`.
+    #[serde(default)]
+    pub role: Option<Role>,
     #[serde(default)]
     pub expires_at: Option<chrono::DateTime<chrono::Utc>>,
     /// Per-key request budget, overrides `limits.*_per_minute` for this key.
@@ -180,6 +188,7 @@ async fn create_key(
                 read_only: req.read_only,
                 expires_at: req.expires_at,
                 rate_limit_per_minute: req.rate_limit_per_minute,
+                role: req.role,
             },
         )
         .await?;
@@ -1174,4 +1183,27 @@ async fn live_event_occurrences(
     Ok(Json(
         serde_json::json!({ "from": from, "to": to, "occurrences": rows }),
     ))
+}
+
+#[derive(Serialize)]
+pub struct Me {
+    pub name: String,
+    /// `api_key`, `bootstrap` or `oidc`.
+    pub auth: &'static str,
+    pub role: Role,
+    pub read_only: bool,
+}
+
+async fn me(AdminAuth(p): AdminAuth) -> Json<Me> {
+    let auth = match (p.key_id, p.name.as_str()) {
+        (Some(_), _) => "api_key",
+        (None, "bootstrap") => "bootstrap",
+        (None, _) => "oidc",
+    };
+    Json(Me {
+        name: p.name,
+        auth,
+        role: p.role,
+        read_only: p.role == Role::Viewer,
+    })
 }

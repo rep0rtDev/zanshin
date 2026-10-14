@@ -93,3 +93,45 @@ mod tests {
         assert_eq!(a.prefix.len(), 12);
     }
 }
+
+/// Console / admin-key role. Ordered from least to most privileged.
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize, Default,
+)]
+#[serde(rename_all = "snake_case")]
+pub enum Role {
+    /// Read everything, change nothing.
+    Viewer,
+    /// Manage flags, experiments, audiences, live events, messages, identities; no API keys.
+    Editor,
+    /// Everything, including API keys and settings.
+    #[default]
+    Admin,
+}
+
+impl Role {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Role::Viewer => "viewer",
+            Role::Editor => "editor",
+            Role::Admin => "admin",
+        }
+    }
+
+    pub fn parse(s: &str) -> Option<Role> {
+        match s {
+            "viewer" => Some(Role::Viewer),
+            "editor" => Some(Role::Editor),
+            "admin" => Some(Role::Admin),
+            _ => None,
+        }
+    }
+
+    pub fn can_write(self) -> bool {
+        self >= Role::Editor
+    }
+
+    pub fn can_manage_keys(self) -> bool {
+        self == Role::Admin
+    }
+}

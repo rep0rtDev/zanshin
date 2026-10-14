@@ -14,7 +14,7 @@ use axum::{
 };
 use zanshin_core::apikey::ApiKeyKind;
 
-use super::auth::{api_key_from_parts, bearer_from_parts};
+use super::auth::{api_key_from_parts, bearer_from_parts, console_principal};
 use crate::{
     services::{apikeys::Principal, identity::SessionContext, limits::Scope},
     state::AppState,
@@ -71,6 +71,12 @@ pub async fn limit(State(state): State<AppState>, req: Request, next: Next) -> R
                 return decide(state, Scope::Ip, ip, None, req, next).await;
             }
         },
+        None if console_principal(&parts, &state).is_some() => {
+            let p = console_principal(&parts, &state).expect("checked above");
+            let id = format!("oidc:{}", p.name);
+            parts.extensions.insert::<Principal>(p);
+            (Scope::Admin, id, None)
+        }
         None => match bearer_from_parts(&parts) {
             Some(token) => match state.identity.verify_access(&token).await {
                 Ok(s) => {

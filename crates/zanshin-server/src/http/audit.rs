@@ -80,7 +80,10 @@ pub async fn audit(State(state): State<AppState>, req: Request, next: Next) -> R
             .unwrap_or_else(|| "unauthenticated".into()),
         actor_kind: actor
             .as_ref()
-            .map(|p| p.kind.as_str().to_string())
+            .map(|p| match (p.key_id, p.name.as_str()) {
+                (None, name) if name != "bootstrap" => "oidc".to_string(),
+                _ => p.kind.as_str().to_string(),
+            })
             .unwrap_or_else(|| "none".into()),
         method,
         path,

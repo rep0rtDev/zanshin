@@ -9,7 +9,9 @@ metric and lift vs control), audiences (condition builder, membership check), li
 (month calendar of server-computed occurrences), message campaigns (live template preview,
 delivery stats), identities (properties, events, inbox with direct send, push devices),
 analytics (compare up to four events, events vs unique identities, hover tooltips), API keys
-(read-only / expiring / per-key quota), audit log (filters, cursor paging, redacted bodies).
+(role / expiring / per-key quota), audit log (filters, cursor paging, redacted bodies). Sign in with an
+admin API key or, when `admin.oidc` is configured, through the SSO button; the sidebar shows the
+current user and role, and the API keys screen is only offered to admins.
 Light and dark themes (follows the OS by default).
 
 The targeting condition editor (`src/RuleBuilder.tsx`) edits the same JSON the API accepts
