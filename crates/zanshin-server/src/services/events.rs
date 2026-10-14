@@ -37,6 +37,9 @@ pub struct EventService {
     hooks: WebhookBus,
     cache: Option<Cache>,
     inner: Arc<Inner>,
+    /// Set once the evaluator exists: tags every event with the live events (and variants) the
+    /// player is in, as `live:<key>` → variant, next to experiment assignments.
+    live: Arc<std::sync::RwLock<Option<super::eval::Evaluator>>>,
 }
 
 struct Inner {
@@ -58,6 +61,7 @@ impl EventService {
             identities,
             experiments,
             cache: None,
+            live: Arc::new(std::sync::RwLock::new(None)),
             inner: Arc::new(Inner {
                 rx: std::sync::Mutex::new(Some(rx)),
             }),
@@ -93,6 +97,13 @@ impl EventService {
     }
 
     /// Retention purge (see `retention.events`); returns rows removed in this batch.
+    /// Wire the evaluator in (after construction) so events get live-event tags.
+    pub fn attach_evaluator(&self, eval: super::eval::Evaluator) {
+        if let Ok(mut g) = self.live.write() {
+            *g = Some(eval);
+        }
+    }
+
     pub async fn purge_before(
         &self,
         before: chrono::DateTime<chrono::Utc>,
@@ -153,11 +164,21 @@ impl EventService {
         for i in &inputs {
             i.validate(allow_system)?;
         }
-        let experiments = self
+        let mut experiments = self
             .experiments
             .assignment_keys_for(identity.id)
             .await
             .unwrap_or_default();
+        let live = self.live.read().ok().and_then(|g| g.clone());
+        if let Some(eval) = live {
+            for ev in eval.live_events(identity, &[], true).await {
+                experiments.push((
+                    format!("{}{}", zanshin_core::live_events::LIVE_TAG_PREFIX, ev.key),
+                    ev.variant
+                        .unwrap_or_else(|| zanshin_core::live_events::DEFAULT_VARIANT.to_string()),
+                ));
+            }
+        }
         let now = chrono::Utc::now();
         let mut seen = std::collections::HashSet::new();
         let mut n = 0;

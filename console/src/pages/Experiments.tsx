@@ -12,8 +12,10 @@ type Experiment = {
   condition: Cond | null; audiences: string[]; percentage: number; variants: Variant[]; control: string | null; flag_key: string | null;
   starts_at: string | null; ends_at: string | null; tags: string[]; version: number; updated_at: string;
 };
-type CatalogMetric = { metric: string; name?: string; kind?: string; aggregation?: string; error?: string; variants?: { variant: string; value: number; lift: number | null }[] };
+type VStats = { rate: number; ci_low: number; ci_high: number; prob_beats_control?: number; expected_uplift?: number };
+type CatalogMetric = { metric: string; name?: string; kind?: string; aggregation?: string; error?: string; variants?: { variant: string; value: number; lift: number | null; stats?: VStats }[] };
 type Results = {
+  srm?: { chi2: number; p_value: number; suspicious: boolean } | null;
   metrics?: CatalogMetric[]; winner?: string | null; interrupted_at?: string | null; interrupt_reason?: string; locked?: boolean;
   total_assigned: number; metric: string | null; control: string | null;
   variants: { variant: string; weight: number; assigned: number; exposed: number; exposures: number; metric?: { identities: number; count: number; sum: number; conversion: number } }[];
@@ -42,7 +44,7 @@ function Lifecycle({ exp, reload }: { exp: Experiment; reload: () => void }) {
   );
 }
 
-function MetricsPicker({ value, onChange }: { value: string[]; onChange: (v: string[]) => void }) {
+export function MetricsPicker({ value, onChange }: { value: string[]; onChange: (v: string[]) => void }) {
   const q = useLoad(() => get<{ items: { key: string; kind: string; name: string }[] }>('/metrics'), []);
   const items = q.data?.items ?? [];
   return (
@@ -143,7 +145,10 @@ function ResultsPanel({ exp }: { exp: Experiment }) {
       </div>
       {r && (
         <>
-          <div className="hint" style={{ marginBottom: 8 }}>{fmtNum(r.total_assigned)} identities assigned{r.metric ? ` · metric "${r.metric}"` : ''}</div>
+          <div className="hint" style={{ marginBottom: 8 }}>{fmtNum(r.total_assigned)} identities assigned{r.metric ? ` · metric "${r.metric}"` : ''}
+            {r.srm && <> · sample ratio {r.srm.suspicious ? <Badge tone="bad">mismatch (p = {r.srm.p_value.toExponential(1)}) — assignment is skewed, do not trust these results</Badge> : <Badge tone="ok">ok (p = {r.srm.p_value.toFixed(2)})</Badge>}</>}
+            <button className="btn ghost sm" style={{ marginLeft: 8 }} onClick={() => download(`/experiments/${encodeURIComponent(exp.key)}/results.csv`, `${exp.key}-results.csv`)}>Download CSV</button>
+          </div>
 
           {r.metrics && r.metrics.length > 0 && (
 
@@ -151,7 +156,7 @@ function ResultsPanel({ exp }: { exp: Experiment }) {
 
               <thead><tr><th>Metric</th><th>Kind</th>{r.variants.map((v) => <th key={v.variant}>{v.variant}{r.control === v.variant ? ' (control)' : ''}</th>)}</tr></thead>
 
-              <tbody>{r.metrics.map((m) => <tr key={m.metric}><td><strong>{m.metric}</strong><div className="hint">{m.error ?? `${m.aggregation}`}</div></td><td>{m.kind && <Badge tone={m.kind === 'goal' ? 'ok' : 'info'}>{m.kind}</Badge>}</td>{r.variants.map((v) => { const x = m.variants?.find((y) => y.variant === v.variant); return <td key={v.variant}>{x ? <>{fmtNum(x.value)}{x.lift != null && <span className={'hint ' + (x.lift >= 0 ? 'up' : 'down')}> {x.lift >= 0 ? '+' : ''}{(x.lift * 100).toFixed(1)}%</span>}</> : '—'}</td>; })}</tr>)}</tbody>
+              <tbody>{r.metrics.map((m) => <tr key={m.metric}><td><strong>{m.metric}</strong><div className="hint">{m.error ?? `${m.aggregation}`}</div></td><td>{m.kind && <Badge tone={m.kind === 'goal' ? 'ok' : 'info'}>{m.kind}</Badge>}</td>{r.variants.map((v) => { const x = m.variants?.find((y) => y.variant === v.variant); return <td key={v.variant}>{x ? <>{fmtNum(x.value)}{x.lift != null && <span className={'hint ' + (x.lift >= 0 ? 'up' : 'down')}> {x.lift >= 0 ? '+' : ''}{(x.lift * 100).toFixed(1)}%</span>}{x.stats && <div className="hint">{(x.stats.ci_low * 100).toFixed(1)}–{(x.stats.ci_high * 100).toFixed(1)}%{x.stats.prob_beats_control != null && <> · P(beats control) <strong>{(x.stats.prob_beats_control * 100).toFixed(0)}%</strong></>}</div>}</> : '—'}</td>; })}</tr>)}</tbody>
 
             </table>
 
@@ -232,7 +237,34 @@ export default function Experiments() {
           <Tags value={d.tags} onChange={(tags) => set({ tags })} />
         </>
       )}
-      extra={(e, reload) => (<><Lifecycle exp={e} reload={reload} /><Ops exp={e} reload={reload} /><ResultsPanel exp={e} /><Participants exp={e} /></>)}
+      extra={(e, reload) => (<><Lifecycle exp={e} reload={reload} /><Phases exp={e} /><Ops exp={e} reload={reload} /><ResultsPanel exp={e} /><Participants exp={e} /></>)}
     />
+  );
+}
+
+type Phase = { phase: number; key: string; name: string; status: Experiment['status']; phase_of: string | null; starts_at: string | null; ends_at: string | null; audiences: string[]; variants: string[]; winner: string | null };
+
+function Phases({ exp }: { exp: Experiment }) {
+  const q = useLoad(() => get<{ items: Phase[] }>(`/experiments/${encodeURIComponent(exp.key)}/phases`), [exp.key, exp.version]);
+  const items = q.data?.items ?? [];
+  if (items.length < 2 && !exp.phase_of) return null;
+  return (
+    <div className="card">
+      <strong>Phases</strong> <span className="hint">one family: a QA phase on a test audience, then the live phase — copy “as phase” to add the next one; edits to a template apply to the next phase, not the running one</span>
+      <ErrorBox error={q.error} />
+      <Table<Phase>
+        rows={items}
+        rowKey={(p) => p.key}
+        empty="—"
+        cols={[
+          { h: '#', w: '50px', c: (p) => p.phase },
+          { h: 'Experiment', c: (p) => p.key === exp.key ? <strong>{p.key}</strong> : <a href={`/console/experiments/${encodeURIComponent(p.key)}`}>{p.key}</a> },
+          { h: 'Status', c: (p) => <Badge tone={TONE[p.status]}>{p.status}</Badge> },
+          { h: 'Audiences', c: (p) => p.audiences.length ? p.audiences.join(', ') : <span className="muted">everyone</span> },
+          { h: 'Window', c: (p) => <>{p.starts_at ? fmtDate(p.starts_at) : '—'} → {p.ends_at ? fmtDate(p.ends_at) : '—'}</> },
+          { h: 'Winner', c: (p) => p.winner ?? <span className="muted">—</span> },
+        ]}
+      />
+    </div>
   );
 }

@@ -11,7 +11,7 @@ use serde_json::Value;
 use uuid::Uuid;
 use zanshin_core::{
     flags::validate_key,
-    live_events::{ActiveEvent, Join, JoinMode, LiveEvent},
+    live_events::{ActiveEvent, Join, JoinMode, LiveEvent, LiveEventVariant},
     properties::PropertyMap,
     rules::Condition,
     Error, Result,
@@ -83,6 +83,10 @@ pub struct LiveEventPatch {
     pub participation_secs: Option<Option<i64>>,
     #[serde(default)]
     pub flag_overrides: Option<serde_json::Map<String, Value>>,
+    #[serde(default)]
+    pub variants: Option<Vec<LiveEventVariant>>,
+    #[serde(default)]
+    pub metrics: Option<Vec<String>>,
 }
 
 #[derive(Clone)]
@@ -149,7 +153,13 @@ impl LiveEventService {
                         .get(&e.id)
                         .is_some_and(|j| e.sticky || j.window_open(now))
             })
-            .map(|e| e.view_join(now, joins.get(&e.id)))
+            .map(|e| {
+                let mut v = e.view_join(now, joins.get(&e.id));
+                if let Some(subject) = flat.get("identity.id").and_then(|x| x.as_str()) {
+                    e.personalize(&mut v, subject);
+                }
+                v
+            })
             .filter(|v| !active_only || v.active)
             .collect()
     }
@@ -162,12 +172,11 @@ impl LiveEventService {
     ) -> HashMap<String, (String, Value)> {
         let mut out = HashMap::new();
         for ev in catalog {
-            if ev.flag_overrides.is_empty() || !active.iter().any(|a| a.active && a.key == ev.key) {
+            let Some(a) = active.iter().find(|a| a.active && a.key == ev.key) else {
                 continue;
-            }
-            for (flag, value) in &ev.flag_overrides {
-                out.entry(flag.clone())
-                    .or_insert_with(|| (ev.key.clone(), value.clone()));
+            };
+            for (flag, value) in ev.overrides_for(a.variant.as_deref()) {
+                out.entry(flag).or_insert_with(|| (ev.key.clone(), value));
             }
         }
         out
@@ -302,6 +311,8 @@ impl LiveEventService {
             sticky: p.sticky.unwrap_or(false),
             participation_secs: p.participation_secs.unwrap_or(None),
             flag_overrides: p.flag_overrides.unwrap_or_default(),
+            variants: p.variants.unwrap_or_default(),
+            metrics: p.metrics.unwrap_or_default(),
             tags: normalize_tags(p.tags.unwrap_or_default())?,
             version: 1,
             created_at: now,
@@ -361,6 +372,12 @@ impl LiveEventService {
         }
         if let Some(v) = p.flag_overrides {
             e.flag_overrides = v;
+        }
+        if let Some(v) = p.variants {
+            e.variants = v;
+        }
+        if let Some(v) = p.metrics {
+            e.metrics = v;
         }
         if let Some(v) = p.tags {
             e.tags = normalize_tags(v)?;

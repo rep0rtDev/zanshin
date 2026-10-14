@@ -159,6 +159,21 @@ impl MetricService {
                 )
             };
             let control = exp.control.as_deref().map(value_of);
+            let is_conv = matches!(
+                metric.aggregation,
+                zanshin_core::metrics::Aggregation::Conversion
+            );
+            let ident_of = |variant: &str| -> i64 {
+                totals
+                    .iter()
+                    .find(|t| t.variant == variant)
+                    .map(|t| t.identities)
+                    .unwrap_or(0)
+            };
+            let control_pair = exp
+                .control
+                .as_deref()
+                .map(|c| (ident_of(c), assigned.get(c).copied().unwrap_or(0)));
             let variants: Vec<Value> = exp
                 .variants
                 .iter()
@@ -170,7 +185,20 @@ impl MetricService {
                         }
                         _ => None,
                     };
-                    json!({"variant": v.key, "value": value, "lift": lift})
+                    let mut row = json!({"variant": v.key, "value": value, "lift": lift});
+                    if is_conv {
+                        let ctrl = if exp.control.as_deref() == Some(&v.key) {
+                            None
+                        } else {
+                            control_pair
+                        };
+                        row["stats"] = json!(zanshin_core::stats::conversion(
+                            ident_of(&v.key),
+                            assigned.get(v.key.as_str()).copied().unwrap_or(0),
+                            ctrl,
+                        ));
+                    }
+                    row
                 })
                 .collect();
             out.push(json!({
@@ -179,6 +207,93 @@ impl MetricService {
             }));
         }
         out
+    }
+
+    /// Monitor metrics of a live event over a window, per variant (`default` without variants),
+    /// read from the `live:<key>` event tag. Conversion is reported per unique participant seen.
+    pub async fn for_live_event(
+        &self,
+        ev: &zanshin_core::live_events::LiveEvent,
+        from: chrono::DateTime<chrono::Utc>,
+        to: chrono::DateTime<chrono::Utc>,
+    ) -> Vec<Value> {
+        let tag = ev.tag(None).0;
+        let mut variants: Vec<String> = ev.variants.iter().map(|v| v.key.clone()).collect();
+        if variants.is_empty() {
+            variants.push(zanshin_core::live_events::DEFAULT_VARIANT.to_string());
+        }
+        let mut out = Vec::new();
+        for key in &ev.metrics {
+            let metric = match self.repo.get(key).await {
+                Ok(m) => m,
+                Err(e) => {
+                    out.push(json!({"metric": key, "error": e.to_string()}));
+                    continue;
+                }
+            };
+            let totals = match self
+                .events
+                .experiment_metric_field(
+                    &tag,
+                    &metric.event_name,
+                    metric.metadata_field(),
+                    from,
+                    to,
+                )
+                .await
+            {
+                Ok(t) => t,
+                Err(e) => {
+                    out.push(json!({"metric": key, "error": e.to_string()}));
+                    continue;
+                }
+            };
+            let rows: Vec<Value> = variants
+                .iter()
+                .map(|v| {
+                    let t = totals.iter().find(|t| &t.variant == v);
+                    let (count, identities, sum) = t
+                        .map(|t| (t.count, t.identities, t.sum))
+                        .unwrap_or((0, 0, 0.0));
+                    json!({
+                        "variant": v,
+                        "value": metric.aggregation.apply(count, identities, sum, identities),
+                        "count": count, "identities": identities, "sum": sum,
+                    })
+                })
+                .collect();
+            out.push(json!({
+                "metric": metric.key, "name": metric.name, "kind": metric.kind, "event_name": metric.event_name,
+                "aggregation": metric.aggregation, "variants": rows,
+            }));
+        }
+        out
+    }
+
+    /// Daily series of one live-event metric per variant.
+    pub async fn live_series(
+        &self,
+        ev: &zanshin_core::live_events::LiveEvent,
+        metric_key: &str,
+        from: chrono::DateTime<chrono::Utc>,
+        to: chrono::DateTime<chrono::Utc>,
+    ) -> Result<Value> {
+        let metric = self.repo.get(metric_key).await?;
+        let rows = self
+            .events
+            .experiment_metric_series(
+                &ev.tag(None).0,
+                &metric.event_name,
+                metric.metadata_field(),
+                from,
+                to,
+            )
+            .await?;
+        let points: Vec<Value> = rows
+            .iter()
+            .map(|r| json!({"variant": r.variant, "day": r.day, "value": metric.aggregation.apply(r.count, r.identities, r.sum, r.identities), "count": r.count, "identities": r.identities, "sum": r.sum}))
+            .collect();
+        Ok(json!({"metric": metric.key, "aggregation": metric.aggregation, "points": points}))
     }
 
     /// Daily series of one metric per variant.

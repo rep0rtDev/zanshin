@@ -448,6 +448,18 @@ Experiment fields added: `split_key` (`identity` or `property:<flat path>` — b
 `max_participants`, `enrol_until` (enrolment deadline; assigned players keep being served), `locked`, `metrics`,
 `copied_from`, `phase_of`, `interrupted_at`, `interrupt_reason`, `winner`.
 
+### Live events v3 / Experiments v3
+
+| Route | Purpose |
+|-------|---------|
+| `variants[]` on a live event | `{ key, name, weight, payload?, flag_overrides }` — each participant gets one variant (deterministic by weight); `GET /v1/live-events` returns `variant` and the variant payload (falls back to the event payload); variant flag overrides apply on top of the event's. |
+| `metrics[]` on a live event | Catalog metric keys evaluated over participants. Events sent while a player is in the event carry the tag `live:<key>` → variant (`default` without variants) in `experiments`, so every metric / filter that works per experiment variant works per live-event variant too. |
+| `GET /admin/v1/live-events/{key}/metrics?from&to&metric` | Metric values per variant over the window (default: since the first occurrence) plus a daily `series` for `metric` (default: the first attached). |
+| `GET /admin/v1/live-events/{key}/runs?limit` | Run report: past and current occurrences (newest first) with the attached metrics per run and per variant. |
+| `GET /admin/v1/experiments/{key}/phases` | The experiment family (root + every experiment chained through `phase_of`), oldest first, with status / audiences / window / winner. |
+| `GET /admin/v1/experiments/{key}/results.csv` | Results as CSV, one row per metric × variant (value, lift, credible interval, probability to beat control) plus assignment rows. |
+| `srm` and `stats` on `GET /admin/v1/experiments/{key}/results` | `srm { chi2, p_value, suspicious }` compares assignment counts with the variant weights (chi-square; `suspicious` below p = 0.001). Conversion metrics carry `stats { rate, ci_low, ci_high, prob_beats_control, expected_uplift }` from Beta(1,1) posteriors (deterministic Monte Carlo); the control has no comparison fields. |
+
 ### Flags v2 / Live events v2
 
 Override chain for a flag value: **identity override → experiment variant → live-event flag override →

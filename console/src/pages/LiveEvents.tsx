@@ -2,14 +2,16 @@ import { get, useLoad } from '../api';
 import { DateTime, EntityPage, Num, Tags, Text } from '../crud';
 import { AudiencePicker, ConditionEditor } from '../RuleBuilder';
 import type { Cond } from '../RuleBuilder';
-import { Badge, ErrorBox, Field, JsonField, Table, Toggle, fmtDate } from '../ui';
+import { Badge, ErrorBox, Field, JsonField, Table, Toggle, fmtDate, fmtNum } from '../ui';
+import { MetricsPicker } from './Experiments';
 import { Calendar } from '../Calendar';
 import { useNavigate } from 'react-router-dom';
 
 type LiveEvent = {
   key: string; name: string; description: string; enabled: boolean; condition: Cond | null; audiences: string[];
-  starts_at: string; ends_at: string | null; duration_secs: number | null; recurrence: string | null; payload: unknown; join_mode?: 'auto' | 'explicit'; sticky?: boolean; participation_secs?: number | null; flag_overrides?: Record<string, unknown>; tags: string[]; version: number; updated_at: string;
+  starts_at: string; ends_at: string | null; duration_secs: number | null; recurrence: string | null; payload: unknown; join_mode?: 'auto' | 'explicit'; sticky?: boolean; participation_secs?: number | null; flag_overrides?: Record<string, unknown>; variants?: LEVariant[]; metrics?: string[]; tags: string[]; version: number; updated_at: string;
 };
+type LEVariant = { key: string; name: string; weight: number; payload: unknown; flag_overrides: Record<string, unknown> };
 
 const now = () => Date.now();
 function status(e: LiveEvent): ['ok' | 'muted' | 'info' | 'bad', string] {
@@ -64,12 +66,16 @@ export default function LiveEvents() {
             <div className="field fixed"><span className="label">Sticky</span><Toggle value={!!d.sticky} onChange={(sticky) => set({ sticky })} label={d.sticky ? 'keep participants across windows' : 'off'} /></div>
           </div>
           <Field label="Flag overrides (JSON)" hint='{"flag_key": value} applied to participants while active — above rules, below experiments'><JsonField value={d.flag_overrides ?? {}} onChange={(flag_overrides) => set({ flag_overrides: (flag_overrides ?? {}) as Record<string, unknown> })} rows={3} /></Field>
+          <Field label="Variants" hint="optional: each participant is deterministically assigned one by weight and gets its payload (blank = event payload) and flag overrides on top of the event's; metrics are reported per variant">
+            <VariantsPanel value={d.variants ?? []} onChange={(variants) => set({ variants })} />
+          </Field>
+          <Field label="Monitor metrics" hint="catalog metrics evaluated over participants, per run and per variant"><MetricsPicker value={d.metrics ?? []} onChange={(metrics) => set({ metrics })} /></Field>
           <Field label="Targeting condition"><ConditionEditor optional value={d.condition} onChange={(condition) => set({ condition })} /></Field>
           <Field label="Audiences"><AudiencePicker value={d.audiences ?? []} onChange={(audiences) => set({ audiences })} /></Field>
           <Tags value={d.tags} onChange={(tags) => set({ tags })} />
         </>
       )}
-      extra={(e) => <Participants ev={e} />}
+      extra={(e) => <><Monitor ev={e} /><Participants ev={e} /></>}
     />
   );
 }
@@ -112,6 +118,69 @@ function Participants({ ev }: { ev: LiveEvent }) {
             { h: 'Player', c: (m) => <span className="mono">{m.external_id}</span> },
             { h: 'Joined', c: (m) => fmtDate(m.joined_at) },
             { h: 'Left', c: (m) => m.left_at ? fmtDate(m.left_at) : <Badge tone="ok">participating</Badge> },
+          ]}
+        />
+      </div>
+    </>
+  );
+}
+
+function VariantsPanel({ value, onChange }: { value: LEVariant[]; onChange: (v: LEVariant[]) => void }) {
+  const upd = (i: number, patch: Partial<LEVariant>) => onChange(value.map((v, j) => (j === i ? { ...v, ...patch } : v)));
+  return (
+    <div className="stack">
+      {value.map((v, i) => (
+        <div key={i} className="card" style={{ padding: 10 }}>
+          <div className="row" style={{ alignItems: 'end' }}>
+            <Text label="Key" value={v.key} onChange={(key) => upd(i, { key })} mono />
+            <Text label="Name" value={v.name} onChange={(name) => upd(i, { name })} />
+            <Num label="Weight" value={v.weight} onChange={(weight) => upd(i, { weight: weight ?? 1 })} min={0.01} />
+            <button className="btn ghost sm" onClick={() => onChange(value.filter((_, j) => j !== i))}>Remove</button>
+          </div>
+          <div className="row">
+            <Field label="Payload (JSON, blank = event payload)"><JsonField value={v.payload} onChange={(payload) => upd(i, { payload: payload ?? null })} rows={2} /></Field>
+            <Field label="Flag overrides (JSON)"><JsonField value={v.flag_overrides} onChange={(fo) => upd(i, { flag_overrides: (fo ?? {}) as Record<string, unknown> })} rows={2} /></Field>
+          </div>
+        </div>
+      ))}
+      <div><button className="btn ghost" onClick={() => onChange([...value, { key: `v${value.length + 1}`, name: '', weight: 1, payload: null, flag_overrides: {} }])}>Add variant</button></div>
+    </div>
+  );
+}
+
+type MetricRow = { metric: string; name?: string; kind?: string; aggregation?: string; error?: string; variants?: { variant: string; value: number; count: number; identities: number }[] };
+type Monitor = { variants: string[]; metrics: MetricRow[]; series: { metric: string; points: { variant: string; day: string; value: number }[] } | null };
+type Runs = { runs: { run: number; start: string; end: string; live: boolean; metrics: MetricRow[] }[] };
+
+function Monitor({ ev }: { ev: LiveEvent }) {
+  const k = encodeURIComponent(ev.key);
+  const m = useLoad(() => get<Monitor>(`/live-events/${k}/metrics`), [ev.key, ev.version]);
+  const r = useLoad(() => get<Runs>(`/live-events/${k}/runs?limit=12`), [ev.key, ev.version]);
+  if (!ev.metrics?.length) return <div className="card"><strong>Monitor metrics</strong><div className="hint">Attach catalog metrics to this event to see per-run and per-variant results here.</div></div>;
+  const cols = m.data?.variants.length ? m.data.variants : ['default'];
+  return (
+    <>
+      <div className="card">
+        <strong>Monitor metrics</strong> <span className="hint">since the first occurrence, per variant</span>
+        <ErrorBox error={m.error} />
+        {m.data && (
+          <table className="table" style={{ marginTop: 8 }}>
+            <thead><tr><th>Metric</th>{cols.map((c) => <th key={c}>{c}</th>)}</tr></thead>
+            <tbody>{m.data.metrics.map((x) => <tr key={x.metric}><td><strong>{x.metric}</strong><div className="hint">{x.error ?? `${x.kind} · ${x.aggregation}`}</div></td>{cols.map((c) => { const v = x.variants?.find((y) => y.variant === c); return <td key={c}>{v ? <>{fmtNum(v.value)} <span className="hint">({fmtNum(v.identities)} players)</span></> : '—'}</td>; })}</tr>)}</tbody>
+          </table>
+        )}
+      </div>
+      <div className="card">
+        <strong>Run report</strong> <span className="hint">compare the same event across its runs</span>
+        <ErrorBox error={r.error} />
+        <Table<Runs['runs'][number]>
+          rows={r.data?.runs}
+          rowKey={(x) => x.start}
+          empty="No run has started yet"
+          cols={[
+            { h: 'Run', w: '70px', c: (x) => <>#{x.run} {x.live && <Badge tone="ok">live</Badge>}</> },
+            { h: 'Window', c: (x) => <>{fmtDate(x.start)} → {fmtDate(x.end)}</> },
+            ...(ev.metrics ?? []).map((mk) => ({ h: mk, c: (x: Runs['runs'][number]) => { const row = x.metrics.find((y) => y.metric === mk); return row?.variants ? row.variants.map((v) => <div key={v.variant}><span className="hint">{v.variant}: </span>{fmtNum(v.value)}</div>) : <span className="muted">—</span>; } })),
           ]}
         />
       </div>

@@ -56,12 +56,43 @@ pub struct LiveEvent {
     /// for them (`{ "flag_key": value }`).
     #[serde(default)]
     pub flag_overrides: serde_json::Map<String, Value>,
+    /// Optional variants: each participant is deterministically assigned one (by weight) and
+    /// receives its `payload` (falls back to the event payload) and its flag overrides on top of
+    /// the event-level ones. Events are tagged `live:<key> → variant` for per-variant metrics.
+    #[serde(default)]
+    pub variants: Vec<LiveEventVariant>,
+    /// Monitor metrics (catalog keys) evaluated over the event's participants per run.
+    #[serde(default)]
+    pub metrics: Vec<String>,
     #[serde(default)]
     pub tags: Vec<String>,
     pub version: i64,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }
+
+fn one() -> f64 {
+    1.0
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct LiveEventVariant {
+    pub key: String,
+    #[serde(default)]
+    pub name: String,
+    #[serde(default = "one")]
+    pub weight: f64,
+    /// Payload for this variant; `None` = the event payload.
+    #[serde(default)]
+    pub payload: Option<Value>,
+    #[serde(default)]
+    pub flag_overrides: serde_json::Map<String, Value>,
+}
+
+/// Event tag prefix used in the per-event `experiments` map: `live:<event key>` → variant
+/// (or `default` when the event has no variants).
+pub const LIVE_TAG_PREFIX: &str = "live:";
+pub const DEFAULT_VARIANT: &str = "default";
 
 /// An occurrence window.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -144,6 +175,9 @@ pub struct ActiveEvent {
     /// When the player's participation ends (participation timer or window end).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub participation_ends_at: Option<DateTime<Utc>>,
+    /// Variant assigned to this player (events with variants only).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub variant: Option<String>,
     pub version: i64,
 }
 
@@ -153,6 +187,24 @@ impl LiveEvent {
             return Err(Error::invalid("participation_secs must be positive"));
         }
         validate_key(&self.key)?;
+        let mut keys = std::collections::HashSet::new();
+        for v in &self.variants {
+            if v.key.is_empty() || v.key.len() > 64 || !keys.insert(v.key.as_str()) {
+                return Err(Error::invalid(format!(
+                    "variant keys must be unique, 1..64 chars ({:?})",
+                    v.key
+                )));
+            }
+            if v.weight <= 0.0 || !v.weight.is_finite() {
+                return Err(Error::invalid(format!(
+                    "variant {:?}: weight must be > 0",
+                    v.key
+                )));
+            }
+        }
+        for m in &self.metrics {
+            validate_key(m)?;
+        }
         self.condition.validate()?;
         if let Some(d) = self.duration_secs {
             if d <= 0 || d > 366 * 86_400 {
@@ -181,6 +233,57 @@ impl LiveEvent {
             }
         }
         Ok(())
+    }
+
+    /// Deterministic variant for a subject (identity id), by weight; `None` without variants.
+    pub fn variant_for(&self, subject: &str) -> Option<&LiveEventVariant> {
+        if self.variants.is_empty() {
+            return None;
+        }
+        let total: f64 = self.variants.iter().map(|v| v.weight.max(0.0)).sum();
+        if total <= 0.0 {
+            return self.variants.first();
+        }
+        let point = crate::hash::bucket("live_event", &self.key, subject) as f64
+            / crate::hash::BUCKETS as f64
+            * total;
+        let mut acc = 0.0;
+        for v in &self.variants {
+            acc += v.weight.max(0.0);
+            if point < acc {
+                return Some(v);
+            }
+        }
+        self.variants.last()
+    }
+
+    /// Apply the subject's variant to a view: value and `variant` field.
+    pub fn personalize(&self, view: &mut ActiveEvent, subject: &str) {
+        if let Some(v) = self.variant_for(subject) {
+            view.variant = Some(v.key.clone());
+            if let Some(p) = &v.payload {
+                view.value = p.clone();
+            }
+        }
+    }
+
+    /// Event-level flag overrides with the variant's on top.
+    pub fn overrides_for(&self, variant: Option<&str>) -> serde_json::Map<String, Value> {
+        let mut out = self.flag_overrides.clone();
+        if let Some(v) = variant.and_then(|k| self.variants.iter().find(|v| v.key == k)) {
+            for (k, val) in &v.flag_overrides {
+                out.insert(k.clone(), val.clone());
+            }
+        }
+        out
+    }
+
+    /// Tag written into each analytics event of a participant.
+    pub fn tag(&self, variant: Option<&str>) -> (String, String) {
+        (
+            format!("{LIVE_TAG_PREFIX}{}", self.key),
+            variant.unwrap_or(DEFAULT_VARIANT).to_string(),
+        )
     }
 
     pub fn targets(&self, props: &PropertyMap, audiences: &dyn Fn(&str) -> bool) -> bool {
@@ -297,6 +400,7 @@ impl LiveEvent {
                     join_required: false,
                     joined_at: Some(j.joined_at),
                     participation_ends_at: active.then_some(we),
+                    variant: None,
                     version: self.version,
                 };
             }
@@ -341,6 +445,7 @@ impl LiveEvent {
             join_required: self.join_mode == JoinMode::Explicit && !joined,
             joined_at,
             participation_ends_at: if active { participation_ends_at } else { None },
+            variant: None,
             version: self.version,
         }
     }
@@ -374,6 +479,8 @@ mod tests {
             sticky: false,
             participation_secs: None,
             flag_overrides: Default::default(),
+            variants: Vec::new(),
+            metrics: Vec::new(),
             tags: vec![],
             version: 1,
             created_at: Utc::now(),

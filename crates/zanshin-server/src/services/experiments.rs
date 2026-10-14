@@ -240,6 +240,40 @@ impl ExperimentService {
     }
 
     /// Duplicate an experiment as a fresh draft (new salt, no assignments).
+    /// All phases of an experiment family (the root plus every experiment chained to it through
+    /// `phase_of`), oldest first.
+    pub async fn phases(&self, key: &str) -> Result<Vec<Arc<Experiment>>> {
+        let all = self.list().await;
+        let find = |k: &str| all.iter().find(|e| e.key == k).cloned();
+        let mut root = self.get(key).await?;
+        let mut hops = 0;
+        while let Some(p) = root.phase_of.as_deref().and_then(find) {
+            root = p;
+            hops += 1;
+            if hops > 100 {
+                break;
+            }
+        }
+        let root_of = |mut e: Arc<Experiment>| -> String {
+            let mut hops = 0;
+            while let Some(p) = e.phase_of.as_deref().and_then(find) {
+                e = p;
+                hops += 1;
+                if hops > 100 {
+                    break;
+                }
+            }
+            e.key.clone()
+        };
+        let mut family: Vec<Arc<Experiment>> = all
+            .iter()
+            .filter(|e| root_of((*e).clone()) == root.key)
+            .cloned()
+            .collect();
+        family.sort_by_key(|e| e.created_at);
+        Ok(family)
+    }
+
     pub async fn copy(&self, key: &str, new_key: &str, as_phase: bool) -> Result<Experiment> {
         let src = self.get(key).await?;
         validate_key(new_key)?;
