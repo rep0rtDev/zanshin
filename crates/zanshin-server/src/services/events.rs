@@ -8,6 +8,7 @@ use serde_json::Value;
 use tokio::sync::mpsc;
 use uuid::Uuid;
 use zanshin_core::{
+    analytics::EventFilter,
     events::{fold_computed, Event, EventInput, MAX_BATCH},
     webhooks::{type_for_event, WebhookEvent},
     Error, Identity, PropertyMap, Result,
@@ -298,16 +299,18 @@ impl EventService {
         &self,
         from: chrono::DateTime<chrono::Utc>,
         to: chrono::DateTime<chrono::Utc>,
+        filter: &EventFilter,
     ) -> Result<Vec<(String, i64)>> {
-        self.store.active_per_day(from, to).await
+        self.store.active_per_day(from, to, filter).await
     }
 
     pub async fn active_in_range(
         &self,
         from: chrono::DateTime<chrono::Utc>,
         to: chrono::DateTime<chrono::Utc>,
+        filter: &EventFilter,
     ) -> Result<i64> {
-        self.store.active_in_range(from, to).await
+        self.store.active_in_range(from, to, filter).await
     }
 
     pub async fn revenue_per_day(
@@ -315,8 +318,9 @@ impl EventService {
         names: &[String],
         from: chrono::DateTime<chrono::Utc>,
         to: chrono::DateTime<chrono::Utc>,
+        filter: &EventFilter,
     ) -> Result<Vec<(String, f64, i64, i64)>> {
-        self.store.revenue_per_day(names, from, to).await
+        self.store.revenue_per_day(names, from, to, filter).await
     }
 
     pub async fn funnel_rows(
@@ -325,8 +329,9 @@ impl EventService {
         from: chrono::DateTime<chrono::Utc>,
         to: chrono::DateTime<chrono::Utc>,
         limit: i64,
-    ) -> Result<Vec<(Uuid, String, chrono::DateTime<chrono::Utc>, Value)>> {
-        self.store.funnel_rows(names, from, to, limit).await
+        filter: &EventFilter,
+    ) -> Result<Vec<zanshin_store::events::FunnelRow>> {
+        self.store.funnel_rows(names, from, to, limit, filter).await
     }
 
     pub async fn active_days(
@@ -334,8 +339,51 @@ impl EventService {
         identities: &[Uuid],
         from: chrono::DateTime<chrono::Utc>,
         to: chrono::DateTime<chrono::Utc>,
+        filter: &EventFilter,
     ) -> Result<Vec<(Uuid, String)>> {
-        self.store.active_days(identities, from, to).await
+        self.store.active_days(identities, from, to, filter).await
+    }
+
+    pub async fn by_country(
+        &self,
+        from: chrono::DateTime<chrono::Utc>,
+        to: chrono::DateTime<chrono::Utc>,
+        filter: &EventFilter,
+    ) -> Result<Vec<(String, i64, i64)>> {
+        self.store.by_country(from, to, filter).await
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub async fn explore(
+        &self,
+        name: &str,
+        from: chrono::DateTime<chrono::Utc>,
+        to: chrono::DateTime<chrono::Utc>,
+        g: Granularity,
+        group_by: Option<&str>,
+        sum_field: Option<&str>,
+        filter: &EventFilter,
+        limit: i64,
+    ) -> Result<Vec<zanshin_store::events::ExploreRow>> {
+        self.store
+            .explore(name, from, to, g, group_by, sum_field, filter, limit)
+            .await
+    }
+
+    pub async fn revenue_by_identity(
+        &self,
+        identities: &[Uuid],
+        names: &[String],
+        from: chrono::DateTime<chrono::Utc>,
+        to: chrono::DateTime<chrono::Utc>,
+    ) -> Result<Vec<(Uuid, String, f64)>> {
+        self.store
+            .revenue_by_identity(identities, names, from, to)
+            .await
+    }
+
+    pub async fn count_since(&self, from: chrono::DateTime<chrono::Utc>) -> Result<(i64, i64)> {
+        self.store.count_since(from).await
     }
 
     pub async fn recent_for_identity(
@@ -378,10 +426,22 @@ async fn flush(store: &EventStore, identities: &IdentityRepo, batch: &[Event]) {
             return;
         }
     }
+    // Denormalise the identity's default properties onto each event for analytics filters.
     let rows: Vec<Event> = by_identity
         .values()
-        .filter(|(i, _)| i.is_some())
-        .flat_map(|(_, evs)| evs.iter().cloned())
+        .filter_map(|(i, evs)| i.as_ref().map(|i| (i, evs)))
+        .flat_map(|(identity, evs)| {
+            let d = &identity.properties.default;
+            let pick = |k: &str| d.get(k).and_then(|v| v.as_str()).unwrap_or("").to_string();
+            let (country, platform, app_version) =
+                (pick("country"), pick("platform"), pick("app_version"));
+            evs.iter().cloned().map(move |mut e| {
+                e.country = country.clone();
+                e.platform = platform.clone();
+                e.app_version = app_version.clone();
+                e
+            })
+        })
         .collect();
     let dropped = batch.len() - rows.len();
     if dropped > 0 {

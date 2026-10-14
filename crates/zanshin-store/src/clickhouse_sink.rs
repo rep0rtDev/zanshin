@@ -26,7 +26,10 @@ const SCHEMA: &[&str] = &[r#"CREATE TABLE IF NOT EXISTS events (
       ORDER BY (name, event_time, identity_id)
       TTL toDateTime(event_time) + INTERVAL 400 DAY"#,
     "ALTER TABLE events ADD COLUMN IF NOT EXISTS experiments Map(LowCardinality(String), LowCardinality(String))",
-    "ALTER TABLE events ADD COLUMN IF NOT EXISTS id UUID DEFAULT generateUUIDv4()"];
+    "ALTER TABLE events ADD COLUMN IF NOT EXISTS id UUID DEFAULT generateUUIDv4()",
+    "ALTER TABLE events ADD COLUMN IF NOT EXISTS country LowCardinality(String) DEFAULT ''",
+    "ALTER TABLE events ADD COLUMN IF NOT EXISTS platform LowCardinality(String) DEFAULT ''",
+    "ALTER TABLE events ADD COLUMN IF NOT EXISTS app_version LowCardinality(String) DEFAULT ''"];
 
 impl ClickHouse {
     pub async fn connect(cfg: &ClickHouseConfig) -> Result<Self> {

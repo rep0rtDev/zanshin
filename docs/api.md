@@ -670,3 +670,29 @@ admin must be changed on first login (`must_change_password` in `GET /admin/v1/m
 `role`). `POST /admin/v1/api-keys/{id}/rotate` `{grace_hours?: 24}` mints a successor with the same
 name, kind, limits and grants and gives the old key `expires_at = now + grace`; the rows link
 through `rotated_from` / `rotated_to`, and a key rotates at most once.
+||||||| constructed merge base
+
+
+## Analytics v3
+
+Every event-based report under `/admin/v1/analytics` accepts a **dimension filter** as query
+parameters (or a `filter` object in POST bodies): `country`, `platform`, `app_version`,
+`experiment` + `variant`. Dimensions are copied onto each event at ingest from the identity's
+default properties (`country`, `platform`, `app_version`), so the filter is exact for events
+recorded after this release and matches nothing older. `variant` requires `experiment`.
+
+| Method | Path | Notes |
+| --- | --- | --- |
+| `GET` | `/analytics/status` | online now (open play sessions, 5 min), DAU today, events last hour, running experiments / live events / campaigns / journeys, live events in the next 7 days, 24 h errors |
+| `GET` | `/analytics/calendar?from&to` | items `{kind: live_event\|experiment\|campaign\|annotation, key, name, start, end, open_ended}` + daily `metrics` (DAU / revenue) for the range; default −7 … +14 days |
+| `POST` | `/analytics/explore` | `{event, from?, to?, granularity: day\|hour, group_by?: country\|platform\|app_version\|experiment:<key>\|meta:<field>, sum_field?, filter?}` → `total`, `groups`, `series` |
+| `GET` | `/analytics/map` | players / events / share per country |
+| `GET` | `/analytics/playtime` | per-day sessions, players, total / avg / median seconds; totals; session-length histogram |
+| `GET` | `/analytics/retention?cumulative=true` | `cumulative` counts players who returned on **or before** day N; response adds `installs` |
+| `POST` | `/analytics/funnel` | `model`: `window` (default; all steps within `window_secs` of the first), `step` (each within `window_secs` of the previous), `session` (same play session), `unlimited` |
+| `GET` | `/analytics/ltv?days=1,7,30` | install cohorts × `{revenue, ltv, roas}` at day offsets, `installs`, `spend`, `cpi` (spend from ad-spend rows of the same day, narrowed by platform / country when filtered) |
+| `GET` / `POST` / `DELETE` | `/analytics/ad-spend` | spend rows keyed by `(day, platform, country, campaign)`; `POST {rows: [...]}` and/or `{csv: "day,platform,country,campaign,spend,installs[,currency]"}` upserts |
+| `GET` | `/analytics/errors?from` | rejected events (count, by reason, recent) and failed `message_deliveries` / `webhook_deliveries` / `export_runs` since `from` (default 24 h) |
+
+`GET /analytics/overview` and the dashboard `number` / `timeseries` / `funnel` / `retention`
+widgets apply the same filter; a dashboard's `filters` object is used as its event filter.

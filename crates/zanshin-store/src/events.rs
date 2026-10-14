@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use sqlx::PgPool;
 use uuid::Uuid;
-use zanshin_core::{events::Event, Error, Result};
+use zanshin_core::{analytics::EventFilter, events::Event, Error, Result};
 
 use crate::{clickhouse_sink::ClickHouse, map_sqlx};
 
@@ -74,6 +74,9 @@ struct ChRow<'a> {
     #[serde(with = "clickhouse::serde::uuid")]
     session_id: Uuid,
     experiments: Vec<(&'a str, &'a str)>,
+    country: &'a str,
+    platform: &'a str,
+    app_version: &'a str,
 }
 
 /// One event as written to an export sink.
@@ -177,6 +180,55 @@ fn ch_err(e: clickhouse::error::Error) -> Error {
     Error::internal(anyhow::anyhow!("clickhouse: {e}"))
 }
 
+/// Constant-shape filter clauses: every dimension is always bound (empty = no restriction), so
+/// the SQL text never changes with the filter. ClickHouse binds positionally (`?`), Postgres by
+/// number starting at `$base`.
+const CH_FILTER: &str = " AND (? = '' OR country = ?) AND (? = '' OR platform = ?) AND (? = '' OR app_version = ?) AND (? = '' OR experiments[?] = ?)";
+
+fn pg_filter(base: usize) -> String {
+    let (c, p, v, e, x) = (base, base + 1, base + 2, base + 3, base + 4);
+    format!(" AND (${c} = '' OR country = ${c}) AND (${p} = '' OR platform = ${p}) AND (${v} = '' OR app_version = ${v}) AND (${e} = '' OR experiments->>${e} = ${x})")
+}
+
+fn fparts(f: &EventFilter) -> [String; 5] {
+    let g = |o: &Option<String>| o.clone().unwrap_or_default();
+    [
+        g(&f.country),
+        g(&f.platform),
+        g(&f.app_version),
+        g(&f.experiment),
+        g(&f.variant),
+    ]
+}
+
+trait BindFilter: Sized {
+    fn bind_filter(self, f: &EventFilter) -> Self;
+}
+
+impl BindFilter for clickhouse::query::Query {
+    fn bind_filter(self, f: &EventFilter) -> Self {
+        let [c, p, v, e, x] = fparts(f);
+        self.bind(c.clone())
+            .bind(c)
+            .bind(p.clone())
+            .bind(p)
+            .bind(v.clone())
+            .bind(v)
+            .bind(e.clone())
+            .bind(e)
+            .bind(x)
+    }
+}
+
+impl<'q, O> BindFilter
+    for sqlx::query::QueryAs<'q, sqlx::Postgres, O, sqlx::postgres::PgArguments>
+{
+    fn bind_filter(self, f: &EventFilter) -> Self {
+        let [c, p, v, e, x] = fparts(f);
+        self.bind(c).bind(p).bind(v).bind(e).bind(x)
+    }
+}
+
 impl EventStore {
     pub fn backend(&self) -> &'static str {
         match self {
@@ -211,13 +263,16 @@ impl EventStore {
                             .iter()
                             .map(|(k, v)| (k.as_str(), v.as_str()))
                             .collect(),
+                        country: &e.country,
+                        platform: &e.platform,
+                        app_version: &e.app_version,
                     };
                     insert.write(&row).await.map_err(ch_err)?;
                 }
                 insert.end().await.map_err(ch_err)
             }
             EventStore::Postgres(pg) => {
-                let mut qb = sqlx::QueryBuilder::new("INSERT INTO events (id, event_time, identity_id, external_id, name, value, metadata, session_id, experiments) ");
+                let mut qb = sqlx::QueryBuilder::new("INSERT INTO events (id, event_time, identity_id, external_id, name, value, metadata, session_id, experiments, country, platform, app_version) ");
                 qb.push_values(events, |mut b, e| {
                     let experiments: serde_json::Map<String, serde_json::Value> = e
                         .experiments
@@ -232,7 +287,10 @@ impl EventStore {
                         .push_bind(&e.value)
                         .push_bind(&e.metadata)
                         .push_bind(e.session_id)
-                        .push_bind(serde_json::Value::Object(experiments));
+                        .push_bind(serde_json::Value::Object(experiments))
+                        .push_bind(&e.country)
+                        .push_bind(&e.platform)
+                        .push_bind(&e.app_version);
                 });
                 qb.push(" ON CONFLICT (id) DO NOTHING");
                 qb.build().execute(pg).await.map_err(map_sqlx)?;
@@ -513,25 +571,28 @@ impl EventStore {
         &self,
         from: DateTime<Utc>,
         to: DateTime<Utc>,
+        filter: &EventFilter,
     ) -> Result<Vec<(String, i64)>> {
         match self {
             EventStore::ClickHouse(ch) => {
                 let rows: Vec<ChDay> = ch
                     .client
-                    .query("SELECT toString(toDate(event_time)) AS day, uniqExact(identity_id) AS n FROM events WHERE event_time >= ? AND event_time < ? GROUP BY day ORDER BY day")
+                    .query(&format!("SELECT toString(toDate(event_time)) AS day, uniqExact(identity_id) AS n FROM events WHERE event_time >= ? AND event_time < ?{CH_FILTER} GROUP BY day ORDER BY day"))
                     .bind(from.timestamp_millis() as f64 / 1000.0)
                     .bind(to.timestamp_millis() as f64 / 1000.0)
+                    .bind_filter(filter)
                     .fetch_all()
                     .await
                     .map_err(ch_err)?;
                 Ok(rows.into_iter().map(|r| (r.day, r.n as i64)).collect())
             }
-            EventStore::Postgres(pg) => sqlx::query_as(
+            EventStore::Postgres(pg) => sqlx::query_as(&format!(
                 "SELECT to_char(date_trunc('day', event_time), 'YYYY-MM-DD'), count(DISTINCT identity_id)::bigint
-                 FROM events WHERE event_time >= $1 AND event_time < $2 GROUP BY 1 ORDER BY 1",
-            )
+                 FROM events WHERE event_time >= $1 AND event_time < $2{} GROUP BY 1 ORDER BY 1", pg_filter(3)
+            ))
             .bind(from)
             .bind(to)
+            .bind_filter(filter)
             .fetch_all(pg)
             .await
             .map_err(map_sqlx),
@@ -539,23 +600,30 @@ impl EventStore {
     }
 
     /// Distinct identities active over the whole range (WAU / MAU).
-    pub async fn active_in_range(&self, from: DateTime<Utc>, to: DateTime<Utc>) -> Result<i64> {
+    pub async fn active_in_range(
+        &self,
+        from: DateTime<Utc>,
+        to: DateTime<Utc>,
+        filter: &EventFilter,
+    ) -> Result<i64> {
         match self {
             EventStore::ClickHouse(ch) => {
                 let n: u64 = ch
                     .client
-                    .query("SELECT uniqExact(identity_id) FROM events WHERE event_time >= ? AND event_time < ?")
+                    .query(&format!("SELECT uniqExact(identity_id) FROM events WHERE event_time >= ? AND event_time < ?{CH_FILTER}"))
                     .bind(from.timestamp_millis() as f64 / 1000.0)
                     .bind(to.timestamp_millis() as f64 / 1000.0)
+                    .bind_filter(filter)
                     .fetch_one()
                     .await
                     .map_err(ch_err)?;
                 Ok(n as i64)
             }
             EventStore::Postgres(pg) => {
-                let (n,): (i64,) = sqlx::query_as("SELECT count(DISTINCT identity_id)::bigint FROM events WHERE event_time >= $1 AND event_time < $2")
+                let (n,): (i64,) = sqlx::query_as(&format!("SELECT count(DISTINCT identity_id)::bigint FROM events WHERE event_time >= $1 AND event_time < $2{}", pg_filter(3)))
                     .bind(from)
                     .bind(to)
+                    .bind_filter(filter)
                     .fetch_one(pg)
                     .await
                     .map_err(map_sqlx)?;
@@ -570,6 +638,7 @@ impl EventStore {
         names: &[String],
         from: DateTime<Utc>,
         to: DateTime<Utc>,
+        filter: &EventFilter,
     ) -> Result<Vec<(String, f64, i64, i64)>> {
         if names.is_empty() {
             return Ok(vec![]);
@@ -578,25 +647,27 @@ impl EventStore {
             EventStore::ClickHouse(ch) => {
                 let rows: Vec<ChRevenue> = ch
                     .client
-                    .query("SELECT toString(toDate(event_time)) AS day, sum(toFloat64OrZero(JSONExtractRaw(metadata, 'amount'))) AS amount, uniqExact(identity_id) AS payers, count() AS purchases
-                            FROM events WHERE name IN ? AND event_time >= ? AND event_time < ? GROUP BY day ORDER BY day")
+                    .query(&format!("SELECT toString(toDate(event_time)) AS day, sum(toFloat64OrZero(JSONExtractRaw(metadata, 'amount'))) AS amount, uniqExact(identity_id) AS payers, count() AS purchases
+                            FROM events WHERE name IN ? AND event_time >= ? AND event_time < ?{CH_FILTER} GROUP BY day ORDER BY day"))
                     .bind(names)
                     .bind(from.timestamp_millis() as f64 / 1000.0)
                     .bind(to.timestamp_millis() as f64 / 1000.0)
+                    .bind_filter(filter)
                     .fetch_all()
                     .await
                     .map_err(ch_err)?;
                 Ok(rows.into_iter().map(|r| (r.day, r.amount, r.payers as i64, r.purchases as i64)).collect())
             }
-            EventStore::Postgres(pg) => sqlx::query_as(
+            EventStore::Postgres(pg) => sqlx::query_as(&format!(
                 "SELECT to_char(date_trunc('day', event_time), 'YYYY-MM-DD'),
                         COALESCE(sum(CASE WHEN metadata->>'amount' ~ '^-?[0-9]+(\\.[0-9]+)?$' THEN (metadata->>'amount')::float8 ELSE 0 END), 0)::float8,
                         count(DISTINCT identity_id)::bigint, count(*)::bigint
-                 FROM events WHERE name = ANY($1) AND event_time >= $2 AND event_time < $3 GROUP BY 1 ORDER BY 1",
-            )
+                 FROM events WHERE name = ANY($1) AND event_time >= $2 AND event_time < $3{} GROUP BY 1 ORDER BY 1", pg_filter(4)
+            ))
             .bind(names)
             .bind(from)
             .bind(to)
+            .bind_filter(filter)
             .fetch_all(pg)
             .await
             .map_err(map_sqlx),
@@ -610,15 +681,17 @@ impl EventStore {
         from: DateTime<Utc>,
         to: DateTime<Utc>,
         limit: i64,
-    ) -> Result<Vec<(Uuid, String, DateTime<Utc>, Value)>> {
+        filter: &EventFilter,
+    ) -> Result<Vec<FunnelRow>> {
         match self {
             EventStore::ClickHouse(ch) => {
                 let rows: Vec<ChFunnelRow> = ch
                     .client
-                    .query("SELECT identity_id, name, toUnixTimestamp64Milli(event_time) AS ts, metadata FROM events WHERE name IN ? AND event_time >= ? AND event_time < ? ORDER BY identity_id, event_time LIMIT ?")
+                    .query(&format!("SELECT identity_id, name, toUnixTimestamp64Milli(event_time) AS ts, metadata, session_id FROM events WHERE name IN ? AND event_time >= ? AND event_time < ?{CH_FILTER} ORDER BY identity_id, event_time LIMIT ?"))
                     .bind(names)
                     .bind(from.timestamp_millis() as f64 / 1000.0)
                     .bind(to.timestamp_millis() as f64 / 1000.0)
+                    .bind_filter(filter)
                     .bind(limit)
                     .fetch_all()
                     .await
@@ -627,17 +700,19 @@ impl EventStore {
                     .into_iter()
                     .map(|r| {
                         let at = DateTime::<Utc>::from_timestamp_millis(r.ts).unwrap_or(from);
-                        (r.identity_id, r.name, at, serde_json::from_str(&r.metadata).unwrap_or(Value::Null))
+                        let session = (!r.session_id.is_nil()).then_some(r.session_id);
+                        (r.identity_id, r.name, at, serde_json::from_str(&r.metadata).unwrap_or(Value::Null), session)
                     })
                     .collect())
             }
-            EventStore::Postgres(pg) => sqlx::query_as(
-                "SELECT identity_id, name, event_time, metadata FROM events WHERE name = ANY($1) AND event_time >= $2 AND event_time < $3 ORDER BY identity_id, event_time LIMIT $4",
-            )
+            EventStore::Postgres(pg) => sqlx::query_as(&format!(
+                "SELECT identity_id, name, event_time, metadata, session_id FROM events WHERE name = ANY($1) AND event_time >= $2 AND event_time < $3{} ORDER BY identity_id, event_time LIMIT $4", pg_filter(5)
+            ))
             .bind(names)
             .bind(from)
             .bind(to)
             .bind(limit)
+            .bind_filter(filter)
             .fetch_all(pg)
             .await
             .map_err(map_sqlx),
@@ -650,6 +725,7 @@ impl EventStore {
         identities: &[Uuid],
         from: DateTime<Utc>,
         to: DateTime<Utc>,
+        filter: &EventFilter,
     ) -> Result<Vec<(Uuid, String)>> {
         if identities.is_empty() {
             return Ok(vec![]);
@@ -658,22 +734,24 @@ impl EventStore {
             EventStore::ClickHouse(ch) => {
                 let rows: Vec<ChActiveDay> = ch
                     .client
-                    .query("SELECT DISTINCT identity_id, toString(toDate(event_time)) AS day FROM events WHERE identity_id IN ? AND event_time >= ? AND event_time < ?")
+                    .query(&format!("SELECT DISTINCT identity_id, toString(toDate(event_time)) AS day FROM events WHERE identity_id IN ? AND event_time >= ? AND event_time < ?{CH_FILTER}"))
                     .bind(identities)
                     .bind(from.timestamp_millis() as f64 / 1000.0)
                     .bind(to.timestamp_millis() as f64 / 1000.0)
+                    .bind_filter(filter)
                     .fetch_all()
                     .await
                     .map_err(ch_err)?;
                 Ok(rows.into_iter().map(|r| (r.identity_id, r.day)).collect())
             }
-            EventStore::Postgres(pg) => sqlx::query_as(
+            EventStore::Postgres(pg) => sqlx::query_as(&format!(
                 "SELECT DISTINCT identity_id, to_char(date_trunc('day', event_time), 'YYYY-MM-DD') FROM events
-                 WHERE identity_id = ANY($1) AND event_time >= $2 AND event_time < $3",
-            )
+                 WHERE identity_id = ANY($1) AND event_time >= $2 AND event_time < $3{}", pg_filter(4)
+            ))
             .bind(identities)
             .bind(from)
             .bind(to)
+            .bind_filter(filter)
             .fetch_all(pg)
             .await
             .map_err(map_sqlx),
@@ -879,6 +957,226 @@ impl EventStore {
         }
     }
 
+    /// Distinct identities and events per country over the range (player map).
+    pub async fn by_country(
+        &self,
+        from: DateTime<Utc>,
+        to: DateTime<Utc>,
+        filter: &EventFilter,
+    ) -> Result<Vec<(String, i64, i64)>> {
+        match self {
+            EventStore::ClickHouse(ch) => {
+                let rows: Vec<ChCountry> = ch
+                    .client
+                    .query(&format!("SELECT country, uniqExact(identity_id) AS identities, count() AS events FROM events WHERE event_time >= ? AND event_time < ?{CH_FILTER} GROUP BY country ORDER BY identities DESC LIMIT 300"))
+                    .bind(from.timestamp_millis() as f64 / 1000.0)
+                    .bind(to.timestamp_millis() as f64 / 1000.0)
+                    .bind_filter(filter)
+                    .fetch_all()
+                    .await
+                    .map_err(ch_err)?;
+                Ok(rows.into_iter().map(|r| (r.country, r.identities as i64, r.events as i64)).collect())
+            }
+            EventStore::Postgres(pg) => sqlx::query_as(&format!(
+                "SELECT country, count(DISTINCT identity_id)::bigint, count(*)::bigint FROM events WHERE event_time >= $1 AND event_time < $2{} GROUP BY 1 ORDER BY 2 DESC LIMIT 300", pg_filter(3)
+            ))
+            .bind(from)
+            .bind(to)
+            .bind_filter(filter)
+            .fetch_all(pg)
+            .await
+            .map_err(map_sqlx),
+        }
+    }
+
+    /// Ad-hoc explorer: one event name, bucketed by day/hour and optionally split by a dimension
+    /// (`country`, `platform`, `app_version`, `experiment:<key>`, `meta:<field>`). Returns
+    /// (bucket, group, count, identities, sum(value), sum(metadata.field)).
+    #[allow(clippy::too_many_arguments)]
+    pub async fn explore(
+        &self,
+        name: &str,
+        from: DateTime<Utc>,
+        to: DateTime<Utc>,
+        granularity: Granularity,
+        group_by: Option<&str>,
+        sum_field: Option<&str>,
+        filter: &EventFilter,
+        limit: i64,
+    ) -> Result<Vec<ExploreRow>> {
+        validate_name(name)?;
+        let ident = |s: &str| {
+            s.len() <= 64
+                && s.chars()
+                    .all(|c| c.is_ascii_alphanumeric() || matches!(c, '_' | '.' | '-' | ':' | '$'))
+        };
+        if let Some(f) = sum_field {
+            if !ident(f) {
+                return Err(Error::invalid("invalid metadata field"));
+            }
+        }
+        let group_kind = match group_by {
+            None | Some("") => GroupBy::None,
+            Some("country") => GroupBy::Country,
+            Some("platform") => GroupBy::Platform,
+            Some("app_version") => GroupBy::AppVersion,
+            Some(g) if g.starts_with("experiment:") && ident(&g[11..]) => {
+                GroupBy::Experiment(g[11..].to_string())
+            }
+            Some(g) if g.starts_with("meta:") && ident(&g[5..]) => {
+                GroupBy::Meta(g[5..].to_string())
+            }
+            Some(_) => return Err(Error::invalid(
+                "group_by must be country, platform, app_version, experiment:<key> or meta:<field>",
+            )),
+        };
+        let sum_field = sum_field.unwrap_or("amount");
+        match self {
+            EventStore::ClickHouse(ch) => {
+                let trunc = match granularity {
+                    Granularity::Hour => "toStartOfHour",
+                    Granularity::Day => "toStartOfDay",
+                };
+                let grp = match &group_kind {
+                    GroupBy::None => "''".to_string(),
+                    GroupBy::Country => "country".into(),
+                    GroupBy::Platform => "platform".into(),
+                    GroupBy::AppVersion => "app_version".into(),
+                    GroupBy::Experiment(k) => format!("experiments['{}']", k.replace('\'', "")),
+                    GroupBy::Meta(f) => {
+                        format!("JSONExtractString(metadata, '{}')", f.replace('\'', ""))
+                    }
+                };
+                let rows: Vec<ChExplore> = ch
+                    .client
+                    .query(&format!(
+                        "SELECT {trunc}(event_time) AS bucket, toString({grp}) AS grp, count() AS count, uniqExact(identity_id) AS identities,
+                                sum(toFloat64OrZero(value)) AS sum, sum(toFloat64OrZero(JSONExtractRaw(metadata, '{sf}'))) AS field_sum
+                         FROM events WHERE name = ? AND event_time >= ? AND event_time < ?{CH_FILTER}
+                         GROUP BY bucket, grp ORDER BY bucket, count DESC LIMIT ?",
+                        sf = sum_field.replace('\'', "")
+                    ))
+                    .bind(name)
+                    .bind(from.timestamp_millis() as f64 / 1000.0)
+                    .bind(to.timestamp_millis() as f64 / 1000.0)
+                    .bind_filter(filter)
+                    .bind(limit)
+                    .fetch_all()
+                    .await
+                    .map_err(ch_err)?;
+                Ok(rows
+                    .into_iter()
+                    .map(|r| {
+                        (
+                            r.bucket,
+                            r.grp,
+                            r.count as i64,
+                            r.identities as i64,
+                            r.sum,
+                            r.field_sum,
+                        )
+                    })
+                    .collect())
+            }
+            EventStore::Postgres(pg) => {
+                let trunc = match granularity {
+                    Granularity::Hour => "hour",
+                    Granularity::Day => "day",
+                };
+                let grp = match &group_kind {
+                    GroupBy::None => "''".to_string(),
+                    GroupBy::Country => "country".into(),
+                    GroupBy::Platform => "platform".into(),
+                    GroupBy::AppVersion => "app_version".into(),
+                    GroupBy::Experiment(_) => "COALESCE(experiments->>$5, '')".into(),
+                    GroupBy::Meta(_) => "COALESCE(metadata->>$5, '')".into(),
+                };
+                let key = match &group_kind {
+                    GroupBy::Experiment(k) | GroupBy::Meta(k) => k.clone(),
+                    _ => String::new(),
+                };
+                sqlx::query_as(&format!(
+                    "SELECT date_trunc('{trunc}', event_time), {grp}::text, count(*)::bigint, count(DISTINCT identity_id)::bigint,
+                            COALESCE(sum(CASE WHEN value ~ '^-?[0-9]+(\\.[0-9]+)?$' THEN value::float8 ELSE 0 END), 0)::float8,
+                            COALESCE(sum(CASE WHEN metadata->>$6 ~ '^-?[0-9]+(\\.[0-9]+)?$' THEN (metadata->>$6)::float8 ELSE 0 END), 0)::float8
+                     FROM events WHERE name = $1 AND event_time >= $2 AND event_time < $3{} GROUP BY 1, 2 ORDER BY 1, 3 DESC LIMIT $4",
+                    pg_filter(7)
+                ))
+                .bind(name)
+                .bind(from)
+                .bind(to)
+                .bind(limit)
+                .bind(key)
+                .bind(sum_field)
+                .bind_filter(filter)
+                .fetch_all(pg)
+                .await
+                .map_err(map_sqlx)
+            }
+        }
+    }
+
+    /// Revenue per (identity, UTC day) for the given identities — LTV input.
+    pub async fn revenue_by_identity(
+        &self,
+        identities: &[Uuid],
+        names: &[String],
+        from: DateTime<Utc>,
+        to: DateTime<Utc>,
+    ) -> Result<Vec<(Uuid, String, f64)>> {
+        if identities.is_empty() || names.is_empty() {
+            return Ok(vec![]);
+        }
+        match self {
+            EventStore::ClickHouse(ch) => {
+                let rows: Vec<ChIdentityRevenue> = ch
+                    .client
+                    .query("SELECT identity_id, toString(toDate(event_time)) AS day, sum(toFloat64OrZero(JSONExtractRaw(metadata, 'amount'))) AS amount FROM events WHERE identity_id IN ? AND name IN ? AND event_time >= ? AND event_time < ? GROUP BY identity_id, day")
+                    .bind(identities)
+                    .bind(names)
+                    .bind(from.timestamp_millis() as f64 / 1000.0)
+                    .bind(to.timestamp_millis() as f64 / 1000.0)
+                    .fetch_all()
+                    .await
+                    .map_err(ch_err)?;
+                Ok(rows.into_iter().map(|r| (r.identity_id, r.day, r.amount)).collect())
+            }
+            EventStore::Postgres(pg) => sqlx::query_as(
+                "SELECT identity_id, to_char(date_trunc('day', event_time), 'YYYY-MM-DD'),
+                        COALESCE(sum(CASE WHEN metadata->>'amount' ~ '^-?[0-9]+(\\.[0-9]+)?$' THEN (metadata->>'amount')::float8 ELSE 0 END), 0)::float8
+                 FROM events WHERE identity_id = ANY($1) AND name = ANY($2) AND event_time >= $3 AND event_time < $4 GROUP BY 1, 2",
+            )
+            .bind(identities)
+            .bind(names)
+            .bind(from)
+            .bind(to)
+            .fetch_all(pg)
+            .await
+            .map_err(map_sqlx),
+        }
+    }
+
+    /// Total events and distinct identities since `from` (status board: events per minute).
+    pub async fn count_since(&self, from: DateTime<Utc>) -> Result<(i64, i64)> {
+        match self {
+            EventStore::ClickHouse(ch) => {
+                let (n, ids): (u64, u64) = ch
+                    .client
+                    .query("SELECT count(), uniqExact(identity_id) FROM events WHERE event_time >= ?")
+                    .bind(from.timestamp_millis() as f64 / 1000.0)
+                    .fetch_one()
+                    .await
+                    .map_err(ch_err)?;
+                Ok((n as i64, ids as i64))
+            }
+            EventStore::Postgres(pg) => sqlx::query_as("SELECT count(*)::bigint, count(DISTINCT identity_id)::bigint FROM events WHERE event_time >= $1")
+                .bind(from)
+                .fetch_one(pg)
+                .await
+                .map_err(map_sqlx),
+        }
+    }
+
     pub async fn delete_identity(&self, identity_id: Uuid) -> Result<()> {
         match self {
             EventStore::ClickHouse(ch) => ch
@@ -921,6 +1219,8 @@ struct ChFunnelRow {
     name: String,
     ts: i64,
     metadata: String,
+    #[serde(with = "clickhouse::serde::uuid")]
+    session_id: Uuid,
 }
 
 #[derive(Row, Deserialize)]
@@ -928,4 +1228,42 @@ struct ChActiveDay {
     #[serde(with = "clickhouse::serde::uuid")]
     identity_id: Uuid,
     day: String,
+}
+
+pub type FunnelRow = (Uuid, String, DateTime<Utc>, Value, Option<Uuid>);
+pub type ExploreRow = (DateTime<Utc>, String, i64, i64, f64, f64);
+
+enum GroupBy {
+    None,
+    Country,
+    Platform,
+    AppVersion,
+    Experiment(String),
+    Meta(String),
+}
+
+#[derive(Row, Deserialize)]
+struct ChCountry {
+    country: String,
+    identities: u64,
+    events: u64,
+}
+
+#[derive(Row, Deserialize)]
+struct ChExplore {
+    #[serde(with = "clickhouse::serde::chrono::datetime")]
+    bucket: DateTime<Utc>,
+    grp: String,
+    count: u64,
+    identities: u64,
+    sum: f64,
+    field_sum: f64,
+}
+
+#[derive(Row, Deserialize)]
+struct ChIdentityRevenue {
+    #[serde(with = "clickhouse::serde::uuid")]
+    identity_id: Uuid,
+    day: String,
+    amount: f64,
 }

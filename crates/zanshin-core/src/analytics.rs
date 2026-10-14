@@ -196,6 +196,83 @@ fn loose_eq(a: &Value, b: &Value) -> bool {
 /// Fold per-identity event rows (sorted by time) into funnel step counts with a conversion window.
 /// `rows` are `(identity, step_index, time)`; an identity advances to step `i` only after step `i-1`
 /// and within `window_secs` of entering the funnel.
+/// How funnel steps must relate in time.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum FunnelModel {
+    /// Steps in order, any time apart (within the queried range).
+    Unlimited,
+    /// All steps within `window_secs` of the first step (default).
+    #[default]
+    Window,
+    /// Each step within `window_secs` of the previous one.
+    Step,
+    /// All steps inside one play session.
+    Session,
+}
+
+/// Funnel fold with a time model. `rows` = (identity, step index, time, session); per identity
+/// the steps must be reached in order, each respecting the model's constraint. Returns how many
+/// identities reached each step.
+pub fn fold_funnel_model(
+    mut rows: Vec<(Uuid, usize, DateTime<Utc>, Option<Uuid>)>,
+    steps: usize,
+    window_secs: i64,
+    model: FunnelModel,
+) -> Vec<i64> {
+    // Same-timestamp events (one batch) are ordered by step so they can still chain.
+    rows.sort_by(|a, b| a.0.cmp(&b.0).then(a.2.cmp(&b.2)).then(a.1.cmp(&b.1)));
+    let mut counts = vec![0i64; steps];
+    let mut i = 0;
+    while i < rows.len() {
+        let id = rows[i].0;
+        let mut j = i;
+        while j < rows.len() && rows[j].0 == id {
+            j += 1;
+        }
+        let mine = &rows[i..j];
+        // Try every occurrence of step 0 as an entry point; keep the deepest progress.
+        let mut best = 0usize;
+        for (k, &(_, step, entered, session)) in mine.iter().enumerate() {
+            if step != 0 {
+                continue;
+            }
+            let mut reached = 1usize;
+            let mut prev = entered;
+            for &(_, s, at, sess) in &mine[k + 1..] {
+                if s != reached {
+                    continue;
+                }
+                let ok = match model {
+                    FunnelModel::Unlimited => true,
+                    FunnelModel::Window => (at - entered).num_seconds() <= window_secs,
+                    FunnelModel::Step => (at - prev).num_seconds() <= window_secs,
+                    FunnelModel::Session => session.is_some() && sess == session,
+                };
+                if ok {
+                    reached += 1;
+                    prev = at;
+                    if reached == steps {
+                        break;
+                    }
+                } else if model == FunnelModel::Window && (at - entered).num_seconds() > window_secs
+                {
+                    break;
+                }
+            }
+            best = best.max(reached);
+            if best == steps {
+                break;
+            }
+        }
+        for c in counts.iter_mut().take(best) {
+            *c += 1;
+        }
+        i = j;
+    }
+    counts
+}
+
 pub fn fold_funnel(
     mut rows: Vec<(Uuid, usize, DateTime<Utc>)>,
     steps: usize,
@@ -272,5 +349,47 @@ mod tests {
             value: serde_json::json!(5),
         };
         assert!(s.matches(&serde_json::json!({"usd": "9.99"})));
+    }
+}
+
+/// Dimension filter applied to event-based analytics. All fields are optional and AND-ed;
+/// `experiment` + `variant` select events recorded while the identity was in that variant.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct EventFilter {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub country: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub platform: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub app_version: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub experiment: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub variant: Option<String>,
+}
+
+impl EventFilter {
+    pub fn is_empty(&self) -> bool {
+        *self == Self::default()
+    }
+
+    pub fn validate(&self) -> Result<(), String> {
+        for (k, v) in [
+            ("country", &self.country),
+            ("platform", &self.platform),
+            ("app_version", &self.app_version),
+            ("experiment", &self.experiment),
+            ("variant", &self.variant),
+        ] {
+            if let Some(v) = v {
+                if v.is_empty() || v.len() > 128 {
+                    return Err(format!("filter {k} must be 1..128 characters"));
+                }
+            }
+        }
+        if self.variant.is_some() && self.experiment.is_none() {
+            return Err("filter variant requires experiment".into());
+        }
+        Ok(())
     }
 }
