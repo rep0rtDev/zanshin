@@ -39,10 +39,13 @@ console comes last once the model is stable.
       direct messages opt in with `push: true`, proactive sweep delivers live push campaigns to
       every registered device (every minute, after campaign changes, or `POST /admin/v1/push/sweep`),
       dead tokens pruned on provider feedback
+- [x] **Unity SDK** (`sdk/unity`): dependency-free UPM package (netstandard2.1, own JSON), async client
+      with single-flight refresh, all client endpoints, reconnecting `ClientWebSocket` stream with
+      local flag cache; compiled in CI with `dotnet build`, smoke-tested against a live server
 
 ## 0.2 — reach
 
-- Unity (C#), Unreal (C++), Godot (GDScript/C#) SDKs
+- Unreal (C++), Godot (GDScript/C#) SDKs
 - Webhooks and outbound integrations (Slack / Discord / generic)
 - Multi-project (tenant) support with per-project keys
 - Rate limiting, audit log of admin actions

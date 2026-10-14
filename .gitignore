@@ -5,3 +5,5 @@
 /data
 node_modules/
 sdk/ts/dist/
+sdk/unity/**/bin/
+sdk/unity/**/obj/

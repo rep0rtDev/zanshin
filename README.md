@@ -76,6 +76,7 @@ variables. `zanshin --check-config` prints the effective configuration with secr
 | Computed properties maintained from events: `session_count`, `first/last_seen_at`, `event_count`, per-event `count` / `sum` / `last_at` — targetable from rules | ✅ |
 | Go SDK `sdk/go` (server-key client with local cache + change-stream invalidation) | ✅ |
 | TypeScript SDK `sdk/ts` (browser + Node, zero deps): session with auto-refresh, flags, experiments, live events, inbox, events, WebSocket stream | ✅ |
+| Unity C# SDK `sdk/unity` (UPM, zero deps, netstandard2.1): same surface as the TS SDK incl. push-token registration and WebSocket stream | ✅ |
 | Push notifications (FCM HTTP v1 / APNs token auth): device token registry, `push: true` on campaigns and direct messages, proactive campaign sweep | ✅ |
 | Embedded admin console | 🔜 |
 
@@ -113,6 +114,9 @@ Full reference: [docs/api.md](docs/api.md). Design: [docs/ARCHITECTURE.md](docs/
 - [`sdk/ts`](sdk/ts) — TypeScript for browsers and Node: `authenticate` / `restore`, automatic
   token refresh, `flags`, `experiments` + `expose`, `liveEvents`, `inbox`, `track`, and a
   reconnecting WebSocket stream (`z.stream().onFlag(...)`).
+- [`sdk/unity`](sdk/unity) — Unity 2021.3+ UPM package (`https://github.com/rep0rtDev/zanshin.git?path=sdk/unity`):
+  async `ZanshinClient` with auto refresh, flags / experiments / live events / inbox / push tokens /
+  events, `ZanshinStream` over `System.Net.WebSockets`.
 - [`sdk/go`](sdk/go) — Go for trusted backends: server-key client with a per-identity evaluation
   cache invalidated by the `/server/v1/stream` change feed, identity sync, direct messages, events.
 - [`nakama/`](nakama) — Nakama runtime plugin on top of the Go SDK: users become Zanshin
