@@ -6,6 +6,7 @@ pub mod audiences;
 pub mod audit;
 pub mod auth;
 pub mod console;
+pub mod data;
 pub mod error;
 pub mod experiments_v2;
 pub mod journeys;
@@ -40,6 +41,7 @@ use tower_http::{
 use crate::{state::AppState, telemetry};
 
 pub fn router(state: AppState) -> Router {
+    crate::services::config::spawn_history(state.clone());
     let cors = if state.cfg.server.cors_origins.is_empty() {
         CorsLayer::new().allow_origin(AllowOrigin::any())
     } else {
@@ -117,7 +119,8 @@ pub fn router(state: AppState) -> Router {
                 .merge(messaging_v2::router())
                 .merge(webhooks::router())
                 .merge(journeys::router())
-                .merge(analytics_v2::router()),
+                .merge(analytics_v2::router())
+                .merge(data::router()),
         )
         .merge(console::router())
         .layer(axum::middleware::from_fn_with_state(

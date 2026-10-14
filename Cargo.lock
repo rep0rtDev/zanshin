@@ -4363,6 +4363,7 @@ dependencies = [
  "clap",
  "cron",
  "figment",
+ "flate2",
  "futures",
  "hmac",
  "http",

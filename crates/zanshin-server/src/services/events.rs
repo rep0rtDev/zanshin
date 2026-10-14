@@ -237,6 +237,23 @@ impl EventService {
             .await
     }
 
+    pub async fn delete_before(
+        &self,
+        before: chrono::DateTime<chrono::Utc>,
+        names: &[String],
+    ) -> Result<u64> {
+        self.store.delete_before(before, names).await
+    }
+
+    pub async fn export_batch(
+        &self,
+        after: Option<(chrono::DateTime<chrono::Utc>, Uuid)>,
+        names: &[String],
+        limit: i64,
+    ) -> Result<Vec<zanshin_store::events::ExportedEvent>> {
+        self.store.export_batch(after, names, limit).await
+    }
+
     pub async fn active_per_day(
         &self,
         from: chrono::DateTime<chrono::Utc>,
