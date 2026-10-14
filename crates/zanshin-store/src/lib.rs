@@ -148,3 +148,4 @@ pub(crate) fn map_sqlx(e: sqlx::Error) -> Error {
     }
 }
 pub mod templates;
+pub mod webhooks;

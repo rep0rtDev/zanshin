@@ -2,6 +2,7 @@ use crate::services::taxonomy::TaxonomyService;
 use crate::services::{
     audit::AuditService, integrations::IntegrationService, limits::RateLimiter,
     metrics::MetricService, oidc::OidcService, templates::TemplateService,
+    webhooks::WebhookService,
 };
 use std::sync::Arc;
 use zanshin_store::taxonomy::TaxonomyRepo;
@@ -12,7 +13,7 @@ use zanshin_store::{
     api_keys::ApiKeyRepo, audiences::AudienceRepo, experiments::ExperimentRepo, flags::FlagRepo,
     identities::IdentityRepo, integrations::IntegrationRepo, live_events::LiveEventRepo,
     messages::MessageRepo, metrics::MetricRepo, push::PushTokenRepo, sessions::SessionRepo,
-    templates::TemplateRepo, Stores,
+    templates::TemplateRepo, webhooks::WebhookRepo, Stores,
 };
 
 use crate::{
@@ -51,6 +52,7 @@ pub struct AppState {
     pub messages: MessageService,
     pub templates: TemplateService,
     pub integrations: IntegrationService,
+    pub webhooks: WebhookService,
     pub push: PushService,
     pub eval: Evaluator,
     pub taxonomy: TaxonomyService,
@@ -143,10 +145,12 @@ impl AppState {
             Some(ch) => zanshin_store::events::EventStore::ClickHouse(Box::new(ch.clone())),
             None => zanshin_store::events::EventStore::Postgres(stores.pg.clone()),
         };
+        let hooks = crate::services::webhooks::new_bus();
         let events = EventService::new(
             event_store,
             identities.clone(),
             ExperimentRepo::new(stores.pg.clone()),
+            hooks.clone(),
         );
         let experiments = ExperimentService::new(
             ExperimentRepo::new(stores.pg.clone()),
@@ -165,7 +169,9 @@ impl AppState {
             TemplateRepo::new(stores.pg.clone()),
             integrations.clone(),
             LiveEventRepo::new(stores.pg.clone()),
+            hooks.clone(),
         );
+        let webhooks = WebhookService::new(WebhookRepo::new(stores.pg.clone()), hooks, bus.clone());
         let taxonomy = TaxonomyService::new(
             TaxonomyRepo::new(stores.pg.clone()),
             stores.cache.clone(),
@@ -198,6 +204,7 @@ impl AppState {
             messages,
             templates,
             integrations,
+            webhooks,
             push,
             eval,
             taxonomy,

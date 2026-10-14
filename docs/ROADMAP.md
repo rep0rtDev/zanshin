@@ -76,7 +76,8 @@ console comes last once the model is stable.
   split key, enrolment + metric series, participants list and CSV.
 - [ ] **Messaging v2**: reusable templates (plaintext / HTML / JSON, translations, test send), schedules
   (cron and live-event relative), per-channel delivery status, inbox deletion.
-- [ ] **Webhooks**: HMAC-signed deliveries, event subscriptions, batching, retries, delivery log.
+- [x] **Webhooks**: subscriptions with event-type patterns, HMAC-signed requests, batching, retries with backoff,
+  persisted delivery log with manual retry, test send, console page.
 - [ ] **Journeys**: entry triggers, delays, branches, actions (message / live event / experiment / flag /
   webhook), cooldowns, worker, flow editor.
 - [ ] **Analytics v2**: status / game-metrics dashboards (DAU / MAU / retention / ARPDAU / revenue),

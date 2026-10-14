@@ -17,3 +17,4 @@ pub mod oidc;
 pub mod push;
 pub mod taxonomy;
 pub mod templates;
+pub mod webhooks;

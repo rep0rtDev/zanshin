@@ -18,6 +18,7 @@ pub mod push;
 pub mod rules;
 pub mod templates;
 pub mod token;
+pub mod webhooks;
 
 pub use error::{Error, Result};
 pub use identity::Identity;

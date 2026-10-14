@@ -121,6 +121,7 @@ pub struct MessageService {
     templates: TemplateRepo,
     integrations: super::integrations::IntegrationService,
     live_events: LiveEventRepo,
+    hooks: super::webhooks::WebhookBus,
     pub catalog: Arc<Catalog<MessageCampaign>>,
 }
 
@@ -132,6 +133,7 @@ impl MessageService {
         templates: TemplateRepo,
         integrations: super::integrations::IntegrationService,
         live_events: LiveEventRepo,
+        hooks: super::webhooks::WebhookBus,
     ) -> Self {
         let catalog = Catalog::new(ChangeKind::Message, "message", Arc::new(repo.clone()));
         Self {
@@ -141,6 +143,7 @@ impl MessageService {
             templates,
             integrations,
             live_events,
+            hooks,
             catalog,
         }
     }
@@ -306,6 +309,13 @@ impl MessageService {
                 .repo
                 .record_delivery(m.id, identity.id, occurrence, "inbox", "sent", "")
                 .await;
+            let _ = self.hooks.send(zanshin_core::webhooks::WebhookEvent::new(
+                "message.delivered",
+                serde_json::json!({
+                    "message_key": m.key, "identity_id": identity.id, "external_id": identity.external_id,
+                    "inbox_id": id, "occurrence": occurrence, "channels": m.channels, "title": title,
+                }),
+            ));
             if m.push {
                 self.push_copy(
                     identity.id,
