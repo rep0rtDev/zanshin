@@ -10,7 +10,7 @@ use uuid::Uuid;
 use zanshin_core::{
     flags::validate_key,
     identity::Identity,
-    journeys::{next_local_time, Action, Journey, Step, Trigger},
+    journeys::{find_cycle, next_cron, next_local_time, Action, Journey, Step, Trigger, PLAYER_TZ},
     properties::PropertyMap,
     rules::{Condition, Context},
     webhooks::WebhookEvent,
@@ -18,7 +18,7 @@ use zanshin_core::{
 };
 use zanshin_store::{
     identities::IdentityRepo,
-    journeys::{JourneyRepo, LogEntry, Run, RunView},
+    journeys::{JourneyRepo, LogEntry, Run, RunView, Timing},
     live_events::LiveEventRepo,
 };
 
@@ -28,6 +28,7 @@ use super::{
     experiments::ExperimentService,
     flags::{normalize_tags, FlagService},
     integrations::{IntegrationService, Outbound},
+    live_events::LiveEventService,
     messages::{DirectMessage, MessageService},
     webhooks::WebhookBus,
 };
@@ -79,6 +80,17 @@ pub struct JourneyDeps {
     pub experiments: ExperimentService,
     pub integrations: IntegrationService,
     pub live_events: LiveEventRepo,
+    pub live_event_svc: LiveEventService,
+}
+
+/// Runs listing plus the funnel / timing numbers drawn on the canvas.
+pub struct RunsReport {
+    pub journey: Journey,
+    pub items: Vec<RunView>,
+    pub by_status: Vec<(String, i64)>,
+    pub by_step: Vec<(i32, i64)>,
+    pub passed: Vec<(i32, i64)>,
+    pub timing: Timing,
 }
 
 #[derive(Clone)]
@@ -581,6 +593,101 @@ impl JourneyService {
                     .ok_or_else(|| Error::invalid(format!("unknown step {target:?}")))?;
                 Ok(Flow::Jump(i, format!("goto {target}")))
             }
+            Action::TimeWindow {
+                at,
+                cron,
+                timezone,
+                timezone_prop,
+            } => {
+                if let Some(at) = at {
+                    return Ok(if *at > now {
+                        Flow::Sleep(*at)
+                    } else {
+                        Flow::Next("time window already open".into())
+                    });
+                }
+                let expr = cron.as_deref().unwrap_or_default();
+                let tz: chrono_tz::Tz = match timezone.as_deref() {
+                    Some(PLAYER_TZ) => {
+                        let prop = timezone_prop.as_deref().unwrap_or("default.timezone");
+                        flat.get(prop)
+                            .and_then(|v| v.as_str())
+                            .and_then(|t| t.parse().ok())
+                            .unwrap_or(chrono_tz::UTC)
+                    }
+                    Some(z) => z.parse().unwrap_or(chrono_tz::UTC),
+                    None => chrono_tz::UTC,
+                };
+                let until = next_cron(now, expr, tz)
+                    .ok_or_else(|| Error::invalid(format!("cron {expr:?} has no next slot")))?;
+                Ok(Flow::Sleep(until))
+            }
+            Action::LiveEvent {
+                live_event,
+                duration_secs,
+            } => {
+                let view = self
+                    .deps
+                    .live_event_svc
+                    .join_personal(identity.id, live_event, now, *duration_secs)
+                    .await?;
+                Ok(Flow::Next(format!(
+                    "live event {live_event} until {}",
+                    view.participation_ends_at
+                        .map(|d| d.to_rfc3339())
+                        .unwrap_or_default()
+                )))
+            }
+            Action::Revert { step: target } => {
+                let t = j
+                    .steps
+                    .iter()
+                    .find(|s| &s.id == target)
+                    .ok_or_else(|| Error::invalid(format!("unknown step {target:?}")))?;
+                let detail = match &t.action {
+                    Action::FlagOverride { flag, .. } => {
+                        self.deps.flags.delete_override(flag, identity.id).await?;
+                        format!("removed override {flag}")
+                    }
+                    Action::ExperimentAssign { experiment, .. } => {
+                        self.deps
+                            .experiments
+                            .delete_assignment(experiment, identity.id)
+                            .await?;
+                        format!("removed assignment {experiment}")
+                    }
+                    Action::LiveEvent { live_event, .. } => {
+                        self.deps
+                            .live_event_svc
+                            .leave(identity.id, live_event)
+                            .await?;
+                        format!("left live event {live_event}")
+                    }
+                    _ => {
+                        return Err(Error::invalid(format!(
+                            "step {target:?} cannot be reverted"
+                        )))
+                    }
+                };
+                Ok(Flow::Next(detail))
+            }
+            Action::EnterJourney { journey } => {
+                let target = self
+                    .cache
+                    .read()
+                    .await
+                    .iter()
+                    .find(|t| &t.key == journey)
+                    .cloned();
+                let Some(target) = target else {
+                    return Ok(Flow::Next(format!("journey {journey} not found, skipped")));
+                };
+                let ctx = json!({ "trigger": "journey", "parent": j.key, "parent_run": run.id });
+                match Box::pin(self.try_enter(&target, identity, ctx, false)).await {
+                    Ok(r) => Ok(Flow::Next(format!("entered {journey} (run {})", r.id))),
+                    Err(e) => Ok(Flow::Next(format!("{journey} not entered: {e}"))),
+                }
+            }
             Action::Exit => Ok(Flow::Exit),
         }
     }
@@ -618,6 +725,7 @@ impl JourneyService {
             updated_at: now,
         };
         j.validate()?;
+        self.check_cycles(&j).await?;
         let created = self.repo.create(&j).await?;
         self.reload().await?;
         Ok(created)
@@ -662,9 +770,33 @@ impl JourneyService {
             j.tags = normalize_tags(v)?;
         }
         j.validate()?;
+        self.check_cycles(&j).await?;
         let updated = self.repo.update(&j).await?;
         self.reload().await?;
         Ok(updated)
+    }
+
+    /// `EnterJourney` steps must not form a cycle across journeys.
+    async fn check_cycles(&self, j: &Journey) -> Result<()> {
+        let others = self.cache.read().await.clone();
+        let children = |k: &str| -> Vec<String> {
+            if k == j.key {
+                j.child_journeys().map(String::from).collect()
+            } else {
+                others
+                    .iter()
+                    .find(|o| o.key == k)
+                    .map(|o| o.child_journeys().map(String::from).collect())
+                    .unwrap_or_default()
+            }
+        };
+        if let Some(path) = find_cycle(&j.key, &children) {
+            return Err(Error::invalid(format!(
+                "journeys would form a cycle: {}",
+                path.join(" → ")
+            )));
+        }
+        Ok(())
     }
 
     pub async fn delete(&self, key: &str) -> Result<()> {
@@ -685,14 +817,23 @@ impl JourneyService {
         status: Option<&str>,
         after: Option<Uuid>,
         limit: i64,
-    ) -> Result<(Journey, Vec<RunView>, Vec<(String, i64)>, Vec<(i32, i64)>)> {
-        let j = self.repo.get(key).await?;
+    ) -> Result<RunsReport> {
+        let journey = self.repo.get(key).await?;
         let items = self
             .repo
-            .runs(j.id, status, after, limit.clamp(1, 500))
+            .runs(journey.id, status, after, limit.clamp(1, 500))
             .await?;
-        let (by_status, by_step) = self.repo.stats(j.id).await?;
-        Ok((j, items, by_status, by_step))
+        let (by_status, by_step) = self.repo.stats(journey.id).await?;
+        let passed = self.repo.passed(journey.id).await?;
+        let timing = self.repo.timing(journey.id).await?;
+        Ok(RunsReport {
+            journey,
+            items,
+            by_status,
+            by_step,
+            passed,
+            timing,
+        })
     }
 
     pub async fn run_detail(&self, key: &str, id: Uuid) -> Result<(Run, Vec<LogEntry>)> {
@@ -717,8 +858,25 @@ impl JourneyService {
             .await
     }
 
-    pub async fn runs_for_identity(&self, identity_id: Uuid) -> Result<Vec<(String, Run)>> {
-        self.repo.runs_for_identity(identity_id).await
+    /// A player's journey history: every run with its step log (newest first).
+    pub async fn runs_for_identity(
+        &self,
+        identity_id: Uuid,
+    ) -> Result<Vec<(String, Run, Vec<LogEntry>)>> {
+        let runs = self.repo.runs_for_identity(identity_id).await?;
+        let ids: Vec<Uuid> = runs.iter().map(|(_, r)| r.id).collect();
+        let logs = self.repo.logs_for_runs(&ids).await?;
+        Ok(runs
+            .into_iter()
+            .map(|(k, r)| {
+                let log = logs
+                    .iter()
+                    .filter(|(id, _)| *id == r.id)
+                    .map(|(_, e)| e.clone())
+                    .collect();
+                (k, r, log)
+            })
+            .collect())
     }
 
     pub async fn purge(&self, keep: chrono::Duration) -> Result<u64> {

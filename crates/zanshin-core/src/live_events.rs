@@ -98,6 +98,32 @@ impl std::str::FromStr for JoinMode {
     }
 }
 
+/// A player's membership record: when they joined and, for events granted by a journey on the
+/// player's own timeline, the personal window during which the event is active for them.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Join {
+    pub joined_at: DateTime<Utc>,
+    #[serde(default)]
+    pub window_start: Option<DateTime<Utc>>,
+    #[serde(default)]
+    pub window_end: Option<DateTime<Utc>>,
+}
+
+impl Join {
+    pub fn at(joined_at: DateTime<Utc>) -> Self {
+        Self {
+            joined_at,
+            window_start: None,
+            window_end: None,
+        }
+    }
+
+    /// Personal window still ahead of or around `now`.
+    pub fn window_open(&self, now: DateTime<Utc>) -> bool {
+        self.window_end.is_some_and(|e| now < e)
+    }
+}
+
 /// What a client sees for an event that targets it.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ActiveEvent {
@@ -163,7 +189,7 @@ impl LiveEvent {
             && self.audiences.iter().all(|a| audiences(a))
     }
 
-    fn duration(&self) -> Option<Duration> {
+    pub fn duration(&self) -> Option<Duration> {
         self.duration_secs.map(Duration::seconds)
     }
 
@@ -247,6 +273,35 @@ impl LiveEvent {
     /// Schedule-only view (no participant state).
     pub fn view(&self, now: DateTime<Utc>) -> ActiveEvent {
         self.view_for(now, None)
+    }
+
+    /// View honouring a personal window (journey-granted event on the player's own clock):
+    /// inside the window the event is active regardless of its schedule; once the window has
+    /// passed the membership no longer counts.
+    pub fn view_join(&self, now: DateTime<Utc>, join: Option<&Join>) -> ActiveEvent {
+        if let Some(j) = join {
+            if let (Some(ws), Some(we)) = (j.window_start, j.window_end) {
+                if now >= we {
+                    return self.view_for(now, None);
+                }
+                let active = now >= ws;
+                let window = Occurrence { start: ws, end: we };
+                return ActiveEvent {
+                    key: self.key.clone(),
+                    name: self.name.clone(),
+                    description: self.description.clone(),
+                    value: self.payload.clone(),
+                    active,
+                    current: active.then_some(window.clone()),
+                    next: if active { self.next(now) } else { Some(window) },
+                    join_required: false,
+                    joined_at: Some(j.joined_at),
+                    participation_ends_at: active.then_some(we),
+                    version: self.version,
+                };
+            }
+        }
+        self.view_for(now, join.map(|j| j.joined_at))
     }
 
     /// View for a specific player given when (if ever) they joined. Explicit-join events are only

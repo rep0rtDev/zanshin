@@ -4,7 +4,7 @@ use chrono::{DateTime, Utc};
 use serde_json::Value;
 use sqlx::{FromRow, PgPool};
 use uuid::Uuid;
-use zanshin_core::{live_events::LiveEvent, rules::Condition, Error, Result};
+use zanshin_core::{live_events::Join, live_events::LiveEvent, rules::Condition, Error, Result};
 
 use crate::map_sqlx;
 
@@ -190,6 +190,8 @@ impl LiveEventRepo {
             "INSERT INTO live_event_members (live_event_id, identity_id) VALUES ($1, $2)
              ON CONFLICT (live_event_id, identity_id) DO UPDATE
                SET joined_at = CASE WHEN live_event_members.left_at IS NULL THEN live_event_members.joined_at ELSE now() END,
+                   window_start = CASE WHEN live_event_members.left_at IS NULL THEN live_event_members.window_start END,
+                   window_end = CASE WHEN live_event_members.left_at IS NULL THEN live_event_members.window_end END,
                    left_at = NULL
              RETURNING joined_at",
         )
@@ -214,16 +216,65 @@ impl LiveEventRepo {
         Ok(r.rows_affected() > 0)
     }
 
-    /// Active joins for one identity: event id → joined_at.
-    pub async fn joins_for(&self, identity_id: Uuid) -> Result<HashMap<Uuid, DateTime<Utc>>> {
-        let rows: Vec<(Uuid, DateTime<Utc>)> = sqlx::query_as(
-            "SELECT live_event_id, joined_at FROM live_event_members WHERE identity_id = $1 AND left_at IS NULL",
+    /// Join with a personal window: the event runs for this player from `start` to `end`
+    /// regardless of its schedule (journeys). Re-granting restarts the window.
+    pub async fn join_window(
+        &self,
+        live_event_id: Uuid,
+        identity_id: Uuid,
+        start: DateTime<Utc>,
+        end: DateTime<Utc>,
+    ) -> Result<Join> {
+        sqlx::query(
+            "INSERT INTO live_event_members (live_event_id, identity_id, joined_at, window_start, window_end)
+             VALUES ($1, $2, $3, $3, $4)
+             ON CONFLICT (live_event_id, identity_id) DO UPDATE
+               SET joined_at = $3, left_at = NULL, window_start = $3, window_end = $4",
+        )
+        .bind(live_event_id)
+        .bind(identity_id)
+        .bind(start)
+        .bind(end)
+        .execute(&self.pg)
+        .await
+        .map_err(map_sqlx)?;
+        Ok(Join {
+            joined_at: start,
+            window_start: Some(start),
+            window_end: Some(end),
+        })
+    }
+
+    /// Active joins for one identity: event id → membership (joined_at + personal window).
+    pub async fn joins_for(&self, identity_id: Uuid) -> Result<HashMap<Uuid, Join>> {
+        #[derive(sqlx::FromRow)]
+        struct MemberRow {
+            live_event_id: Uuid,
+            joined_at: DateTime<Utc>,
+            window_start: Option<DateTime<Utc>>,
+            window_end: Option<DateTime<Utc>>,
+        }
+        let rows: Vec<MemberRow> = sqlx::query_as(
+            "SELECT live_event_id, joined_at, window_start, window_end FROM live_event_members
+             WHERE identity_id = $1 AND left_at IS NULL",
         )
         .bind(identity_id)
         .fetch_all(&self.pg)
         .await
         .map_err(map_sqlx)?;
-        Ok(rows.into_iter().collect())
+        Ok(rows
+            .into_iter()
+            .map(|r| {
+                (
+                    r.live_event_id,
+                    Join {
+                        joined_at: r.joined_at,
+                        window_start: r.window_start,
+                        window_end: r.window_end,
+                    },
+                )
+            })
+            .collect())
     }
 
     pub async fn participants(

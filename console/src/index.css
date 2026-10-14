@@ -198,3 +198,5 @@ ol.chain { margin: 10px 0 0; padding-left: 18px; display: grid; gap: 6px; }
   border-radius: 6px;
   background: #fff;
 }
+
+.canvas{display:block;background:var(--bg);border:1px solid var(--line);border-radius:var(--radius)}.canvas .node:hover rect:first-child{stroke:var(--fg)}

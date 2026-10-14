@@ -1,7 +1,7 @@
 //! Journeys: multi-step automations entered by a trigger and executed per player with delays and
 //! branches — "when a player buys for the first time, thank them, wait a day, offer a bundle".
 
-use std::collections::HashSet;
+use std::{collections::HashSet, str::FromStr};
 
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
@@ -112,8 +112,40 @@ pub enum Action {
     Goto {
         step: String,
     },
+    /// Hold until a specific instant (`at`) or until the next slot of a cron schedule (`cron`),
+    /// resolved in UTC, in a fixed IANA zone (`timezone`) or in the player's own zone
+    /// (`timezone = "player"`, read from `timezone_prop`, default `default.timezone`).
+    TimeWindow {
+        #[serde(default)]
+        at: Option<DateTime<Utc>>,
+        #[serde(default)]
+        cron: Option<String>,
+        #[serde(default)]
+        timezone: Option<String>,
+        #[serde(default)]
+        timezone_prop: Option<String>,
+    },
+    /// Put the player into a live event on their own timeline: it starts for them now and runs
+    /// `duration_secs` (default: the event's own duration, else until the event ends).
+    LiveEvent {
+        live_event: String,
+        #[serde(default)]
+        duration_secs: Option<i64>,
+    },
+    /// Undo what an earlier step granted: a flag override, an experiment assignment or a live
+    /// event membership.
+    Revert {
+        step: String,
+    },
+    /// Enrol the player into another journey (journeys cannot form a cycle).
+    EnterJourney {
+        journey: String,
+    },
     Exit,
 }
+
+pub const PLAYER_TZ: &str = "player";
+pub const MAX_LIVE_EVENT_SECS: i64 = 365 * 86_400;
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Step {
@@ -246,6 +278,70 @@ impl Journey {
                         )));
                     }
                 }
+                Action::TimeWindow {
+                    at, cron, timezone, ..
+                } => {
+                    match (at, cron) {
+                        (Some(_), None) => {}
+                        (None, Some(expr)) => {
+                            if cron::Schedule::from_str(expr).is_err() {
+                                return Err(Error::invalid(format!(
+                                    "step {:?}: invalid cron expression {expr:?} (sec min hour dom month dow [year])",
+                                    s.id
+                                )));
+                            }
+                        }
+                        _ => {
+                            return Err(Error::invalid(format!(
+                                "step {:?}: exactly one of at / cron is required",
+                                s.id
+                            )))
+                        }
+                    }
+                    if let Some(tz) = timezone {
+                        if tz != PLAYER_TZ && tz.parse::<chrono_tz::Tz>().is_err() {
+                            return Err(Error::invalid(format!(
+                                "step {:?}: unknown timezone {tz:?} (IANA name or \"player\")",
+                                s.id
+                            )));
+                        }
+                    }
+                }
+                Action::LiveEvent {
+                    live_event,
+                    duration_secs,
+                } => {
+                    validate_key(live_event)?;
+                    if duration_secs.is_some_and(|d| d <= 0 || d > MAX_LIVE_EVENT_SECS) {
+                        return Err(Error::invalid(format!(
+                            "step {:?}: duration_secs must be 1s..365d",
+                            s.id
+                        )));
+                    }
+                }
+                Action::Revert { step } => {
+                    let Some(target) = self.steps.iter().find(|t| &t.id == step) else {
+                        return Err(Error::invalid(format!(
+                            "step {:?}: unknown target {step:?}",
+                            s.id
+                        )));
+                    };
+                    if target.id == s.id || !target.action.is_revertible() {
+                        return Err(Error::invalid(format!(
+                            "step {:?}: {step:?} is not a flag override / experiment assignment / live event step",
+                            s.id
+                        )));
+                    }
+                }
+                Action::EnterJourney { journey } => {
+                    validate_key(journey)?;
+                    if journey == &self.key {
+                        return Err(Error::invalid(format!(
+                            "step {:?}: a journey cannot enter itself",
+                            s.id
+                        )));
+                    }
+                }
                 Action::Exit => {}
             }
         }
@@ -287,6 +383,89 @@ impl Journey {
     pub fn step_index(&self, id: &str) -> Option<usize> {
         self.steps.iter().position(|s| s.id == id)
     }
+
+    pub fn status(&self, now: DateTime<Utc>) -> Status {
+        if !self.enabled {
+            Status::Disabled
+        } else if self.starts_at.is_some_and(|s| now < s) {
+            Status::Scheduled
+        } else if self.ends_at.is_some_and(|e| now >= e) {
+            Status::Terminated
+        } else {
+            Status::Running
+        }
+    }
+
+    /// Keys of the journeys this one enrols players into.
+    pub fn child_journeys(&self) -> impl Iterator<Item = &str> {
+        self.steps.iter().filter_map(|s| match &s.action {
+            Action::EnterJourney { journey } => Some(journey.as_str()),
+            _ => None,
+        })
+    }
+}
+
+impl Action {
+    pub fn is_revertible(&self) -> bool {
+        matches!(
+            self,
+            Action::FlagOverride { .. }
+                | Action::ExperimentAssign { .. }
+                | Action::LiveEvent { .. }
+        )
+    }
+}
+
+/// Lifecycle derived from `enabled` and the activity window.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Status {
+    Disabled,
+    Scheduled,
+    Running,
+    Terminated,
+}
+
+/// Find a cycle among journeys linked by `EnterJourney` steps, starting from `start`.
+/// `children` yields the child keys of a journey key. Returns the path of the cycle if any.
+pub fn find_cycle<'a>(
+    start: &'a str,
+    children: &dyn Fn(&str) -> Vec<String>,
+) -> Option<Vec<String>> {
+    fn walk(
+        key: &str,
+        children: &dyn Fn(&str) -> Vec<String>,
+        path: &mut Vec<String>,
+        seen: &mut HashSet<String>,
+    ) -> bool {
+        if let Some(i) = path.iter().position(|p| p == key) {
+            path.drain(..i);
+            path.push(key.to_string());
+            return true;
+        }
+        if !seen.insert(key.to_string()) {
+            return false;
+        }
+        path.push(key.to_string());
+        for c in children(key) {
+            if walk(&c, children, path, seen) {
+                return true;
+            }
+        }
+        path.pop();
+        false
+    }
+    let mut path = Vec::new();
+    walk(start, children, &mut path, &mut HashSet::new()).then_some(path)
+}
+
+/// Next slot of a cron schedule strictly after `now`, resolved in `tz`.
+pub fn next_cron(now: DateTime<Utc>, expr: &str, tz: chrono_tz::Tz) -> Option<DateTime<Utc>> {
+    let schedule = cron::Schedule::from_str(expr).ok()?;
+    schedule
+        .after(&now.with_timezone(&tz))
+        .next()
+        .map(|d| d.with_timezone(&Utc))
 }
 
 /// Next occurrence of `hour:minute` in `tz` strictly after `now`.
@@ -321,6 +500,28 @@ pub fn next_local_time(
 mod tests {
     use super::*;
     use chrono::TimeZone;
+
+    #[test]
+    fn cron_and_cycles() {
+        let now = Utc.with_ymd_and_hms(2026, 1, 1, 12, 0, 0).unwrap();
+        // 09:00 every Saturday, Berlin time → Sat 2026-01-03 08:00Z.
+        let at = next_cron(now, "0 0 9 * * Sat", chrono_tz::Europe::Berlin).unwrap();
+        assert_eq!(at, Utc.with_ymd_and_hms(2026, 1, 3, 8, 0, 0).unwrap());
+        assert!(next_cron(now, "nope", chrono_tz::UTC).is_none());
+        let graph = |k: &str| -> Vec<String> {
+            match k {
+                "a" => vec!["b".into()],
+                "b" => vec!["c".into(), "d".into()],
+                "c" => vec!["a".into()],
+                _ => vec![],
+            }
+        };
+        assert_eq!(
+            find_cycle("a", &graph),
+            Some(vec!["a".into(), "b".into(), "c".into(), "a".into()])
+        );
+        assert_eq!(find_cycle("d", &graph), None);
+    }
 
     #[test]
     fn local_time_rolls_over() {

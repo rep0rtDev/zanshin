@@ -347,12 +347,12 @@ Per-player automations under `/admin/v1/journeys` and the **Journeys** console p
 
 | Route | Purpose |
 |-------|---------|
-| `GET/POST /admin/v1/journeys`, `GET/PUT/DELETE /admin/v1/journeys/{key}` | Journey definition: `trigger`, entry `condition` / `audiences`, `steps`, `cooldown_secs`, `max_entries`, `starts_at` / `ends_at`. |
+| `GET/POST /admin/v1/journeys`, `GET/PUT/DELETE /admin/v1/journeys/{key}` | Journey definition: `trigger`, entry `condition` / `audiences`, `steps`, `cooldown_secs` (rejoin cooldown), `max_entries`, `starts_at` / `ends_at`. Responses carry a derived `status`: `disabled`, `scheduled` (before `starts_at`), `running`, `terminated` (after `ends_at`; players already inside keep going). `EnterJourney` steps across journeys must not form a cycle (`400`). |
 | `POST /admin/v1/journeys/{key}/enter` `{ identity_id \| external_id }` | Enter a player now (honours targeting, cooldown and caps; ignores the live window). |
-| `GET /admin/v1/journeys/{key}/runs?status&after&limit` | Runs with per-status stats and a per-step count of players currently waiting. |
+| `GET /admin/v1/journeys/{key}/runs?status&after&limit` | Runs with per-status `stats`, per-step `steps[] { active, passed }` (players waiting at / that went through each step) and `timing { completed, min_secs, avg_secs, max_secs }` for finished runs. |
 | `GET /admin/v1/journeys/{key}/runs/{id}` | One run with its step log. |
 | `POST /admin/v1/journeys/{key}/runs/{id}/exit` | Stop an active run. |
-| `GET /admin/v1/identities/{id}/journeys` | A player's runs across journeys. |
+| `GET /admin/v1/identities/{id}/journeys` | A player's runs across journeys, each with its step `log` (what happened, when). |
 
 Triggers: `{ "kind": "manual" }`, `{ "kind": "event", "name": "purchase" }`, `{ "kind": "identity_created" }`,
 `{ "kind": "audience_enter", "audience": "whales" }` (checked whenever the player produces an event, once per membership),
@@ -369,6 +369,10 @@ Steps are an ordered list of `{ "id", "kind", … }`:
 | `integration` | `integration`, `title`, `body`, `payload` — send through a delivery integration |
 | `wait` | `secs` |
 | `wait_until` | `hour`, `minute`, `timezone_prop` (default `default.timezone`) — next local occurrence |
+| `time_window` | `at` (instant) **or** `cron` (`sec min hour dom month dow [year]`) + `timezone` (`null` = UTC, an IANA zone, or `"player"` to read `timezone_prop`) — hold until a date or the next slot of a schedule |
+| `live_event` | `live_event`, `duration_secs` — the event starts for this player now and stays active for the duration (default: the event's own duration, else until its end), whatever its schedule; `GET /v1/live-events` reports it with a personal `current` window |
+| `revert` | `step` — undo what that earlier `flag_override` / `experiment_assign` / `live_event` step granted |
+| `enter_journey` | `journey` — enrol the player into another journey (its targeting / cooldown apply; the child run's `context.parent` names this journey) |
 | `branch` | `condition`, `then`, `else` (step ids; `else` omitted = next step) |
 | `goto` | `step` |
 | `exit` | — |
