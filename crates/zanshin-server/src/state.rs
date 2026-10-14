@@ -81,6 +81,11 @@ pub struct AppState {
     pub eval: Evaluator,
     pub taxonomy: TaxonomyService,
     pub started_at: chrono::DateTime<chrono::Utc>,
+    /// Cluster-wide job locks (Postgres advisory locks).
+    pub locks: zanshin_store::locks::JobLock,
+    /// Flipped to `true` once the process starts shutting down; long-lived streams subscribe to it.
+    pub shutdown: Arc<tokio::sync::watch::Sender<bool>>,
+    draining: Arc<std::sync::atomic::AtomicBool>,
 }
 
 impl AppState {
@@ -126,6 +131,16 @@ impl AppState {
         state.events.spawn_writer();
         tracing::info!(backend = state.events.backend(), "event sink ready");
         Ok(state)
+    }
+
+    /// Mark the process as draining: `/readyz` answers 503 so load balancers stop routing here.
+    pub fn begin_drain(&self) {
+        self.draining
+            .store(true, std::sync::atomic::Ordering::Relaxed);
+    }
+
+    pub fn is_draining(&self) -> bool {
+        self.draining.load(std::sync::atomic::Ordering::Relaxed)
     }
 
     pub fn with_stores(cfg: Arc<Config>, stores: Stores) -> anyhow::Result<Self> {
@@ -175,7 +190,8 @@ impl AppState {
             identities.clone(),
             ExperimentRepo::new(stores.pg.clone()),
             hooks.clone(),
-        );
+        )
+        .with_cache(stores.cache.clone());
         let experiments = ExperimentService::new(
             ExperimentRepo::new(stores.pg.clone()),
             bus.clone(),
@@ -243,6 +259,7 @@ impl AppState {
             events.clone(),
         );
         let config_history = ConfigHistoryRepo::new(stores.pg.clone());
+        let locks = zanshin_store::locks::JobLock::new(stores.pg.clone());
         Ok(Self {
             cfg,
             stores,
@@ -270,6 +287,9 @@ impl AppState {
             taxonomy,
             metrics,
             started_at: chrono::Utc::now(),
+            locks,
+            shutdown: Arc::new(tokio::sync::watch::channel(false).0),
+            draining: Arc::new(std::sync::atomic::AtomicBool::new(false)),
         })
     }
 }

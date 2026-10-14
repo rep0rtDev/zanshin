@@ -29,6 +29,10 @@ pub struct Config {
     pub audit: AuditConfig,
     #[serde(default)]
     pub taxonomy: TaxonomyConfig,
+    #[serde(default)]
+    pub telemetry: TelemetryConfig,
+    #[serde(default)]
+    pub retention: RetentionConfig,
 }
 
 /// Event taxonomy enforcement and player-session tracking.
@@ -132,6 +136,68 @@ pub struct ServerConfig {
     /// Emit `Strict-Transport-Security` (only when TLS is terminated in front of Zanshin).
     #[serde(default)]
     pub hsts: bool,
+    /// Production guard: refuse to start with placeholder secrets, wildcard CORS or plain-text logs.
+    #[serde(default)]
+    pub production: bool,
+    /// After SIGTERM, keep serving (with `/readyz` → 503) for this long so load balancers drain
+    /// before the listeners close.
+    #[serde(default = "default_shutdown_grace", with = "humantime_serde")]
+    pub shutdown_grace: Duration,
+    /// Hard deadline for in-flight requests and WebSocket streams after the drain period.
+    #[serde(default = "default_shutdown_timeout", with = "humantime_serde")]
+    pub shutdown_timeout: Duration,
+    /// Largest gRPC message accepted (bytes).
+    #[serde(default = "default_grpc_max_message")]
+    pub grpc_max_message_bytes: usize,
+    /// Maximum concurrent in-flight gRPC requests per process (0 = unlimited).
+    #[serde(default = "default_grpc_concurrency")]
+    pub grpc_concurrency: usize,
+}
+
+/// Distributed tracing. Spans are exported over OTLP/gRPC when `otlp_endpoint` is set
+/// (Jaeger, Tempo, Honeycomb, Datadog agent, ...); Prometheus metrics are always on at `/metrics`.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct TelemetryConfig {
+    #[serde(default)]
+    pub otlp_endpoint: Option<String>,
+    #[serde(default = "default_service_name")]
+    pub service_name: String,
+    /// Head sampling ratio for traces, 0.0–1.0.
+    #[serde(default = "default_sample_ratio")]
+    pub sample_ratio: f64,
+    /// Extra resource attributes (`deployment.environment=prod`).
+    #[serde(default)]
+    pub resource: HashMap<String, String>,
+}
+
+/// How long housekeeping keeps operational data. `0s` disables a purge.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RetentionConfig {
+    /// Analytics events in the PostgreSQL fallback store (ClickHouse uses `clickhouse.retention_days`).
+    #[serde(default = "default_events_retention", with = "humantime_serde")]
+    pub events: Duration,
+    #[serde(default = "default_export_runs_retention", with = "humantime_serde")]
+    pub export_runs: Duration,
+    #[serde(default = "default_config_history_retention", with = "humantime_serde")]
+    pub config_history: Duration,
+    #[serde(default = "default_config_history_retention", with = "humantime_serde")]
+    pub annotations: Duration,
+    #[serde(default = "default_journey_runs_retention", with = "humantime_serde")]
+    pub journey_runs: Duration,
+    #[serde(
+        default = "default_webhook_deliveries_retention",
+        with = "humantime_serde"
+    )]
+    pub webhook_deliveries: Duration,
+    /// Rows deleted per purge statement (keeps vacuum pressure and lock time bounded).
+    #[serde(default = "default_purge_batch")]
+    pub purge_batch: u32,
+}
+
+impl Default for RetentionConfig {
+    fn default() -> Self {
+        serde_json::from_str("{}").expect("retention defaults")
+    }
 }
 
 /// Request budgets. Each scope is a token bucket per caller that refills at `*_per_minute / 60`
@@ -323,6 +389,42 @@ fn default_access_ttl() -> Duration {
 fn default_refresh_ttl() -> Duration {
     Duration::from_secs(60 * 60 * 24 * 30)
 }
+fn default_shutdown_grace() -> Duration {
+    Duration::from_secs(5)
+}
+fn default_shutdown_timeout() -> Duration {
+    Duration::from_secs(30)
+}
+fn default_grpc_max_message() -> usize {
+    4 * 1024 * 1024
+}
+fn default_grpc_concurrency() -> usize {
+    1024
+}
+fn default_service_name() -> String {
+    "zanshin".into()
+}
+fn default_sample_ratio() -> f64 {
+    1.0
+}
+fn default_events_retention() -> Duration {
+    Duration::from_secs(400 * 24 * 3600)
+}
+fn default_export_runs_retention() -> Duration {
+    Duration::from_secs(30 * 24 * 3600)
+}
+fn default_config_history_retention() -> Duration {
+    Duration::from_secs(400 * 24 * 3600)
+}
+fn default_journey_runs_retention() -> Duration {
+    Duration::from_secs(90 * 24 * 3600)
+}
+fn default_webhook_deliveries_retention() -> Duration {
+    Duration::from_secs(14 * 24 * 3600)
+}
+fn default_purge_batch() -> u32 {
+    10_000
+}
 fn default_log_level() -> String {
     "info,sqlx=warn,hyper=warn,tower_http=info".into()
 }
@@ -333,6 +435,7 @@ fn default_clickhouse() -> ClickHouseConfig {
 impl Config {
     /// Layering: built-in defaults < YAML file < `ZANSHIN__*` environment variables.
     pub fn load(path: Option<&Path>) -> anyhow::Result<Self> {
+        Self::load_file_secrets()?;
         let mut fig = Figment::new().merge(Serialized::defaults(serde_json::json!({
             "server": {},
             "database": { "url": "postgres://zanshin:zanshin@localhost:5432/zanshin" },
@@ -357,11 +460,60 @@ impl Config {
         Ok(cfg)
     }
 
+    /// `ZANSHIN_FILE__SECTION__KEY=/run/secrets/x` reads the file and exposes its trimmed content
+    /// as `ZANSHIN__SECTION__KEY`, so Docker/Kubernetes secrets never have to live in the
+    /// environment or a config file.
+    fn load_file_secrets() -> anyhow::Result<()> {
+        for (k, path) in std::env::vars() {
+            let Some(rest) = k.strip_prefix("ZANSHIN_FILE__") else {
+                continue;
+            };
+            let target = format!("ZANSHIN__{rest}");
+            if std::env::var_os(&target).is_some() {
+                continue;
+            }
+            let raw = std::fs::read_to_string(&path)
+                .with_context(|| format!("reading secret file {path} for {target}"))?;
+            std::env::set_var(&target, raw.trim());
+        }
+        Ok(())
+    }
+
     fn validate(&self) -> anyhow::Result<()> {
         anyhow::ensure!(
             self.auth.jwt_secret.len() >= 32,
             "auth.jwt_secret must be at least 32 characters"
         );
+        anyhow::ensure!(
+            (0.0..=1.0).contains(&self.telemetry.sample_ratio),
+            "telemetry.sample_ratio must be within 0.0..=1.0"
+        );
+        if self.server.production {
+            let placeholder = |s: &str| s.contains("change-me") || s.contains("changeme");
+            anyhow::ensure!(
+                !placeholder(&self.auth.jwt_secret),
+                "server.production: auth.jwt_secret is a placeholder"
+            );
+            if let Some(k) = &self.admin.bootstrap_key {
+                anyhow::ensure!(
+                    !placeholder(k),
+                    "server.production: admin.bootstrap_key is a placeholder"
+                );
+            }
+            anyhow::ensure!(
+                !self.auth.allow_anonymous_authenticate,
+                "server.production: auth.allow_anonymous_authenticate must be false"
+            );
+            anyhow::ensure!(
+                !self.server.cors_origins.is_empty()
+                    && !self.server.cors_origins.iter().any(|o| o == "*"),
+                "server.production: server.cors_origins must list explicit origins"
+            );
+            anyhow::ensure!(
+                self.database.url.contains("sslmode=") || self.database.url.contains("localhost"),
+                "server.production: database.url must set sslmode (or point at localhost)"
+            );
+        }
         anyhow::ensure!(
             self.auth.access_ttl < self.auth.refresh_ttl,
             "auth.access_ttl must be shorter than auth.refresh_ttl"

@@ -130,6 +130,13 @@ const PROP_COLS: &str = "key, namespace, read_only, description, created_at, upd
 const SESSION_COLS: &str =
     "id, identity_id, started_at, last_seen_at, ended_at, duration_sec, platform, app_version";
 
+fn prefix_cols(cols: &str, alias: &str) -> String {
+    cols.split(", ")
+        .map(|c| format!("{alias}.{c}"))
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
 #[derive(Clone)]
 pub struct TaxonomyRepo {
     pg: PgPool,
@@ -626,9 +633,7 @@ impl TaxonomyRepo {
                  duration_sec = GREATEST(0, EXTRACT(EPOCH FROM last_seen_at - started_at))::int
              FROM c WHERE p.id = c.id
              RETURNING {}",
-            SESSION_COLS
-                .replace("id,", "p.id,")
-                .replace(", identity_id", ", p.identity_id")
+            prefix_cols(SESSION_COLS, "p")
         ))
         .bind(idle_secs as f64)
         .bind(limit)

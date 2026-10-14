@@ -168,13 +168,8 @@ impl ExportSinkRepo {
              UPDATE export_sinks s SET next_run_at = now() + make_interval(secs => s.interval_secs)
              FROM due WHERE s.id = due.id RETURNING {}",
             SINK_COLS
-                .replace("id,", "s.id,")
                 .split(", ")
-                .map(|c| if c.starts_with("s.") {
-                    c.to_string()
-                } else {
-                    format!("s.{c}")
-                })
+                .map(|c| format!("s.{c}"))
                 .collect::<Vec<_>>()
                 .join(", ")
         ))

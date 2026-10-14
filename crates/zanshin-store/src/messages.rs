@@ -335,6 +335,25 @@ impl MessageRepo {
         .map_err(map_sqlx)
     }
 
+    /// `(identity_id, message_id, occurrence)` for every delivered copy of the given campaigns at
+    /// or after `since` (copies without an occurrence are always included). One query per sweep
+    /// instead of one per identity.
+    pub async fn delivered_for_messages(
+        &self,
+        message_ids: &[Uuid],
+        since: DateTime<Utc>,
+    ) -> Result<Vec<(Uuid, Uuid, Option<DateTime<Utc>>)>> {
+        sqlx::query_as(
+            "SELECT identity_id, message_id, occurrence FROM inbox
+             WHERE message_id = ANY($1) AND (occurrence IS NULL OR occurrence >= $2)",
+        )
+        .bind(message_ids)
+        .bind(since)
+        .fetch_all(&self.pg)
+        .await
+        .map_err(map_sqlx)
+    }
+
     pub async fn delete_inbox(&self, identity_id: Uuid, id: Uuid) -> Result<bool> {
         let res = sqlx::query("DELETE FROM inbox WHERE identity_id = $1 AND id = $2")
             .bind(identity_id)

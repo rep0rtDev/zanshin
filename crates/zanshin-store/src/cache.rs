@@ -123,6 +123,21 @@ impl Cache {
         Ok(())
     }
 
+    /// Set a marker only if absent; returns true when this call created it (idempotency keys).
+    pub async fn set_nx(&self, key: &str, ttl: Duration) -> Result<bool> {
+        let mut c = self.conn.clone();
+        let r: Option<String> = redis::cmd("SET")
+            .arg(key)
+            .arg(1u8)
+            .arg("NX")
+            .arg("EX")
+            .arg(ttl.as_secs().max(1))
+            .query_async(&mut c)
+            .await
+            .map_err(map_redis)?;
+        Ok(r.is_some())
+    }
+
     pub async fn set_flag(&self, key: &str, ttl: Duration) -> Result<()> {
         let mut c = self.conn.clone();
         let _: () = c

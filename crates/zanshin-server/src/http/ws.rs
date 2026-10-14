@@ -59,6 +59,7 @@ async fn run(mut socket: WebSocket, state: AppState, ctx: SessionContext, names:
     let identity_id = ctx.identity_id();
     let expires_at = ctx.claims.expires_at();
     let mut rx = state.bus.subscribe();
+    let mut shutdown = state.shutdown.subscribe();
     metrics::gauge!("zanshin_ws_connections").increment(1.0);
     send(
         &mut socket,
@@ -68,6 +69,13 @@ async fn run(mut socket: WebSocket, state: AppState, ctx: SessionContext, names:
 
     loop {
         tokio::select! {
+            _ = shutdown.changed() => {
+                if *shutdown.borrow() {
+                    send(&mut socket, json!({"type": "bye", "reason": "server_shutdown"})).await;
+                    let _ = socket.send(Message::Close(None)).await;
+                    break;
+                }
+            }
             change = rx.recv() => {
                 let change = match change {
                     Ok(c) => c,

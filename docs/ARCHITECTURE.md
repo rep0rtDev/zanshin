@@ -92,6 +92,17 @@ not need a third database.
 
 * `tracing` with `RUST_LOG`/`log.level` filters; JSON output with `log.json = true`.
 * `metrics` + Prometheus exporter at `/metrics` (`zanshin_*` counters, HTTP error counters by code).
+* Per-route HTTP histograms/counters (`http/http_metrics.rs`), a tower layer for gRPC
+  (`grpc/metrics.rs`), pool/queue/uptime gauges and `zanshin_job_seconds` from housekeeping.
+* Optional OTLP trace export (`telemetry.otlp_endpoint`) via `tracing-opentelemetry`; the HTTP span
+  carries `request_id`, so JSON logs and traces join on it.
+* Housekeeping runs on every replica but each job is wrapped in `zanshin_store::locks::JobLock`
+  (Postgres transaction-scoped advisory lock) — exactly one replica executes it, no leader
+  election needed, and the lock is released even when the job is cancelled by shutdown. Campaign
+  sweeps resolve delivered copies with one query per sweep (`inbox_message_occurrence_idx`).
+* Shutdown is two-phase: `AppState::begin_drain` turns `/readyz` into 503 while listeners keep
+  serving for `server.shutdown_grace`; then `AppState::shutdown` fires and WebSocket streams send
+  `{"type":"bye"}` and close, bounded by `server.shutdown_timeout`.
 * `x-request-id` is generated when missing and propagated to the response.
 * `/healthz` is liveness, `/readyz` pings every configured backend; gRPC exposes
   `grpc.health.v1.Health` and server reflection.

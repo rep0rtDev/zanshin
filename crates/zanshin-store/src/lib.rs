@@ -15,6 +15,7 @@ pub mod identities;
 pub mod integrations;
 pub mod journeys;
 pub mod live_events;
+pub mod locks;
 pub mod messages;
 pub mod metrics;
 pub mod push;
@@ -58,6 +59,9 @@ pub struct ClickHouseConfig {
     pub password: String,
     #[serde(default = "default_ch_db")]
     pub database: String,
+    /// Events older than this are expired by ClickHouse TTL (0 = keep forever).
+    #[serde(default = "default_ch_retention_days")]
+    pub retention_days: u32,
 }
 
 fn default_max_conns() -> u32 {
@@ -77,6 +81,9 @@ fn default_ch_user() -> String {
 }
 fn default_ch_db() -> String {
     "zanshin".into()
+}
+fn default_ch_retention_days() -> u32 {
+    400
 }
 
 #[derive(Clone)]
@@ -126,6 +133,73 @@ impl Stores {
         })
     }
 
+    /// Apply pending migrations without starting anything else (`zanshin --migrate`).
+    pub async fn migrate_only(db: &DatabaseConfig) -> Result<()> {
+        let pg = PgPoolOptions::new()
+            .max_connections(2)
+            .acquire_timeout(Duration::from_secs(10))
+            .connect(&db.url)
+            .await
+            .context("connecting to postgres")?;
+        sqlx::migrate!("../../migrations")
+            .run(&pg)
+            .await
+            .context("running migrations")?;
+        Ok(())
+    }
+
+    /// Per-backend readiness report; `ok` is false when any configured backend fails.
+    pub async fn health(&self) -> Health {
+        let started = std::time::Instant::now();
+        let pg = sqlx::query("SELECT 1")
+            .execute(&self.pg)
+            .await
+            .map(|_| ())
+            .map_err(|e| map_sqlx(e).to_string());
+        let pg_ms = started.elapsed().as_millis() as u64;
+        let started = std::time::Instant::now();
+        let redis = self.cache.ping().await.map_err(|e| e.to_string());
+        let redis_ms = started.elapsed().as_millis() as u64;
+        let clickhouse = match &self.clickhouse {
+            Some(ch) => {
+                let started = std::time::Instant::now();
+                let r = ch.ping().await.map_err(|e| e.to_string());
+                Some(Component::from(r, started.elapsed().as_millis() as u64))
+            }
+            None => None,
+        };
+        let pg = Component::from(pg, pg_ms);
+        let redis = Component::from(redis, redis_ms);
+        let ok = pg.ok && redis.ok && clickhouse.as_ref().map(|c| c.ok).unwrap_or(true);
+        Health {
+            ok,
+            postgres: pg,
+            redis,
+            clickhouse,
+            pool: PoolStats {
+                size: self.pg.size(),
+                idle: self.pg.num_idle() as u32,
+            },
+        }
+    }
+
+    /// [`Self::health`] bounded to 5s so a hung backend cannot stall the probe.
+    pub async fn ping_timeout(&self) -> Health {
+        match tokio::time::timeout(Duration::from_secs(5), self.health()).await {
+            Ok(h) => h,
+            Err(_) => Health {
+                ok: false,
+                postgres: Component::from(Err("probe timed out".into()), 5000),
+                redis: Component::from(Err("probe timed out".into()), 5000),
+                clickhouse: None,
+                pool: PoolStats {
+                    size: self.pg.size(),
+                    idle: self.pg.num_idle() as u32,
+                },
+            },
+        }
+    }
+
     /// Readiness probe: every configured backend must answer.
     pub async fn ping(&self) -> Result<()> {
         sqlx::query("SELECT 1")
@@ -138,6 +212,40 @@ impl Stores {
         }
         Ok(())
     }
+}
+
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct Component {
+    pub ok: bool,
+    pub latency_ms: u64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
+}
+
+impl Component {
+    fn from(r: std::result::Result<(), String>, latency_ms: u64) -> Self {
+        Self {
+            ok: r.is_ok(),
+            latency_ms,
+            error: r.err(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct PoolStats {
+    pub size: u32,
+    pub idle: u32,
+}
+
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct Health {
+    pub ok: bool,
+    pub postgres: Component,
+    pub redis: Component,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub clickhouse: Option<Component>,
+    pub pool: PoolStats,
 }
 
 pub(crate) fn map_sqlx(e: sqlx::Error) -> Error {
