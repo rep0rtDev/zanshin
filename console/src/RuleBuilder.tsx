@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import type { ReactNode } from 'react';
 import { get } from './api';
-import { JsonField } from './ui';
+import { JsonField, KeyPicker } from './ui';
 
 export type Cmp = { prop: string; op: string; value?: unknown };
 export type Cond = { all: Cond[] } | { any: Cond[] } | { not: Cond } | Cmp;
@@ -127,17 +127,7 @@ export function AudiencePicker({ value, onChange }: { value: string[]; onChange:
   value = value ?? [];
   const [opts, setOpts] = useState<{ key: string; name: string }[] | null>(null);
   useEffect(() => { get<{ key: string; name: string }[]>('/audiences').then(setOpts, () => setOpts([])); }, []);
-  const toggle = (k: string) => onChange(value.includes(k) ? value.filter((x) => x !== k) : [...value, k]);
-  if (!opts) return <span className="hint">loading audiences…</span>;
-  if (!opts.length) return <span className="hint">no audiences defined yet</span>;
-  return (
-    <div className="chips">
-      {opts.map((a) => (
-        <button type="button" key={a.key} className={'chip' + (value.includes(a.key) ? ' on' : '')} onClick={() => toggle(a.key)} title={a.name}>{a.key}</button>
-      ))}
-      {value.filter((v) => !opts.some((o) => o.key === v)).map((v) => <span key={v} className="chip missing" title="unknown audience">{v}</span>)}
-    </div>
-  );
+  return <KeyPicker value={value} onChange={onChange} options={opts} placeholder="Add audience…" empty="no audiences defined yet" />;
 }
 
 export type ValueType = 'bool' | 'string' | 'number' | 'json';

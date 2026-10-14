@@ -6,6 +6,14 @@ Release automation reads the section whose heading contains the tagged version.
 
 ## [Unreleased]
 
+### Changed
+- Console cleanup (same design, tidier): denser spacing for cards, tables, forms and stats; detail
+  pages are roughly a third of their former height; audience and metric chip walls replaced by a
+  searchable picker (`KeyPicker`) with removable chips; the Status board caps each list at 8 rows
+  with a "+N more" link and keeps dates on one line; breadcrumbs no longer wrap and the project
+  switcher is sized to its content; JSON editors grow with their content instead of a fixed height;
+  range/checkbox accents follow the theme; removed a stray merge marker and a duplicate `.tabs` rule.
+
 ### Added
 - gRPC follows project routing: the `x-zanshin-project` metadata key, else the `prj` claim of the
   session token, selects the project (default otherwise); unknown projects answer `NOT_FOUND`.

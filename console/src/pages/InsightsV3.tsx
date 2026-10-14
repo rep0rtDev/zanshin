@@ -40,6 +40,12 @@ type StatusData = {
   errors_24h: { rejected_events: number; failures: { source: string; count: number }[] };
 };
 
+const MAX_ROWS = 8;
+const fmtShort = (iso: string) => new Date(iso).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+function MoreLink({ n, to }: { n: number; to: string }) {
+  return n > MAX_ROWS ? <div className="hint" style={{ marginTop: 4 }}><Link to={to}>+{n - MAX_ROWS} more</Link></div> : null;
+}
+
 export function StatusBoard() {
   const q = useLoad(() => get<StatusData>('/analytics/status'));
   const d = q.data;
@@ -53,23 +59,28 @@ export function StatusBoard() {
         <Stat label="Events / min" value={fmtNum(Math.round((d?.events_last_hour ?? 0) / 60))} sub={`${fmtNum(d?.events_last_hour ?? 0)} in the last hour`} />
         <Stat label="Errors (24 h)" value={<span style={{ color: (d?.errors_24h.rejected_events ?? 0) + failures > 0 ? 'var(--bad)' : undefined }}>{fmtNum((d?.errors_24h.rejected_events ?? 0) + failures)}</span>} sub={`${d?.errors_24h.rejected_events ?? 0} rejected events · ${failures} failed deliveries`} />
       </div>
-      <div className="row" style={{ alignItems: 'stretch' }}>
-        <div className="card" style={{ flex: 1 }}>
+      <div className="grid" style={{ gridTemplateColumns: 'repeat(3,minmax(0,1fr))' }}>
+        <div className="card">
           <strong>Live now</strong>
           {d && d.running.live_events.length === 0 && <div className="hint">No live event is running.</div>}
-          {d?.running.live_events.map((e) => <div key={e.key} className="row" style={{ justifyContent: 'space-between' }}><Link to={`/live-events/${e.key}`}>{e.name || e.key}</Link><span className="hint">until {fmtDate(e.end)}</span></div>)}
+          {d?.running.live_events.slice(0, MAX_ROWS).map((e) => <div key={e.key} className="list-row"><Link to={`/live-events/${e.key}`}>{e.name || e.key}</Link><span className="hint">until {fmtShort(e.end)}</span></div>)}
+          <MoreLink n={d?.running.live_events.length ?? 0} to="/live-events" />
           <div className="hint" style={{ marginTop: 8 }}>Next 7 days</div>
-          {d?.upcoming.live_events.map((e) => <div key={e.key + e.start} className="row" style={{ justifyContent: 'space-between' }}><Link to={`/live-events/${e.key}`}>{e.name || e.key}</Link><span className="hint">{fmtDate(e.start)}</span></div>)}
+          {d?.upcoming.live_events.slice(0, MAX_ROWS).map((e) => <div key={e.key + e.start} className="list-row"><Link to={`/live-events/${e.key}`}>{e.name || e.key}</Link><span className="hint">{fmtShort(e.start)}</span></div>)}
+          <MoreLink n={d?.upcoming.live_events.length ?? 0} to="/insights?tab=calendar" />
         </div>
-        <div className="card" style={{ flex: 1 }}>
+        <div className="card">
           <strong>Experiments</strong>
           {d && d.running.experiments.length === 0 && <div className="hint">Nothing running.</div>}
-          {d?.running.experiments.map((e) => <div key={e.key} className="row" style={{ justifyContent: 'space-between' }}><Link to={`/experiments/${e.key}`}>{e.name || e.key}</Link><span><Badge tone={e.status === 'running' ? 'ok' : 'warn'}>{e.status}</Badge>{e.ends_at && <span className="hint"> ends {fmtDate(e.ends_at)}</span>}</span></div>)}
+          {d?.running.experiments.slice(0, MAX_ROWS).map((e) => <div key={e.key} className="list-row"><Link to={`/experiments/${e.key}`}>{e.name || e.key}</Link><span><Badge tone={e.status === 'running' ? 'ok' : 'warn'}>{e.status}</Badge>{e.ends_at && <span className="hint"> ends {fmtShort(e.ends_at)}</span>}</span></div>)}
+          <MoreLink n={d?.running.experiments.length ?? 0} to="/experiments" />
         </div>
-        <div className="card" style={{ flex: 1 }}>
+        <div className="card">
           <strong>Campaigns & journeys</strong>
-          {d?.running.campaigns.map((c) => <div key={c.key}><Link to={`/messages/${c.key}`}>{c.name || c.key}</Link> <Badge>campaign</Badge></div>)}
-          {d?.running.journeys.map((j) => <div key={j.key}><Link to={`/journeys/${j.key}`}>{j.name || j.key}</Link> <Badge tone="info">journey</Badge></div>)}
+          {d?.running.campaigns.slice(0, MAX_ROWS).map((c) => <div key={c.key} className="list-row"><Link to={`/messages/${c.key}`}>{c.name || c.key}</Link><Badge>campaign</Badge></div>)}
+          <MoreLink n={d?.running.campaigns.length ?? 0} to="/messages" />
+          {d?.running.journeys.slice(0, MAX_ROWS).map((j) => <div key={j.key} className="list-row"><Link to={`/journeys/${j.key}`}>{j.name || j.key}</Link><Badge tone="info">journey</Badge></div>)}
+          <MoreLink n={d?.running.journeys.length ?? 0} to="/journeys" />
           {d && d.running.campaigns.length + d.running.journeys.length === 0 && <div className="hint">Nothing enabled.</div>}
         </div>
       </div>
