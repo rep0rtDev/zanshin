@@ -25,6 +25,7 @@ import Webhooks from './pages/Webhooks';
 import Journeys from './pages/Journeys';
 import Insights from './pages/Insights';
 import Data from './pages/Data';
+import Recipes from './pages/Recipes';
 import ApiKeys from './pages/ApiKeys';
 import Audit from './pages/Audit';
 
@@ -126,7 +127,7 @@ const Icon = ({ d }: { d: string }) => <svg className="ico" viewBox="0 0 24 24" 
 const GROUPS: NavGroup[] = [
   { name: '', items: [['/', 'Overview', I.home]] },
   { name: 'Targeting', items: [['/flags', 'Feature flags', I.flag], ['/audiences', 'Audiences', I.users], ['/experiments', 'Experiments', I.lab], ['/live-events', 'Live events', I.cal]] },
-  { name: 'Engage', items: [['/messages', 'Messages', I.mail], ['/templates', 'Templates', I.doc], ['/journeys', 'Journeys', I.route], ['/integrations', 'Integrations', I.plug]] },
+  { name: 'Engage', items: [['/messages', 'Messages', I.mail], ['/templates', 'Templates', I.doc], ['/journeys', 'Journeys', I.route], ['/integrations', 'Integrations', I.plug], ['/recipes', 'Recipes', I.lab]] },
   { name: 'Players', items: [['/identities', 'Identities', I.users], ['/taxonomy', 'Taxonomy', I.tag]] },
   { name: 'Analytics', items: [['/insights', 'Insights', I.chart], ['/analytics', 'Events', I.pulse], ['/metrics', 'Metrics', I.gauge]] },
   { name: 'Platform', items: [['/webhooks', 'Webhooks', I.hook], ['/data', 'Data', I.db], ['/api-keys', 'API keys', I.key], ['/users', 'Users', I.users], ['/audit', 'Audit log', I.list], ['/settings', 'Settings', I.gear]] },
@@ -241,6 +242,7 @@ export default function App() {
               <Route path="/journeys/*" element={<Journeys />} />
               <Route path="/insights/*" element={<Insights />} />
               <Route path="/data/*" element={<Data />} />
+              <Route path="/recipes" element={<Recipes />} />
               {allows(me.permissions, 'api_keys', 'read') && <Route path="/api-keys" element={<ApiKeys />} />}
               {allows(me.permissions, 'users', 'read') && <Route path="/users" element={<Users />} />}
               <Route path="/account" element={<Account onChanged={() => void loadMe()} />} />

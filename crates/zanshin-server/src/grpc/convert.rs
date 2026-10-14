@@ -12,8 +12,8 @@ use zanshin_core::{
 };
 use zanshin_core::{properties::PropertyMap, Identity as CoreIdentity, PropertySet};
 use zanshin_proto::api::v1::{
-    Event as ProtoEvent, Experiment, Flag, Identity, LiveEvent, Message, Occurrence, Properties,
-    Session,
+    Event as ProtoEvent, Experiment, Flag, FlagOverride, Identity, IdentityWithProperties,
+    LiveEvent, Message, Occurrence, Properties, PushToken, Session,
 };
 
 use crate::services::identity::SessionTokens;
@@ -180,5 +180,47 @@ pub fn event_from_proto(e: ProtoEvent) -> EventInput {
             .then(|| chrono::DateTime::from_timestamp_millis(e.timestamp_ms))
             .flatten(),
         id: uuid::Uuid::parse_str(&e.id).ok(),
+    }
+}
+
+pub fn override_to_proto(o: crate::services::eval::FlagOverrideView) -> FlagOverride {
+    FlagOverride {
+        flag_key: o.flag_key,
+        value: Some(json_to_value(o.value)),
+        source: o.source,
+        source_key: o.source_key.unwrap_or_default(),
+        variant: o.variant.unwrap_or_default(),
+    }
+}
+
+pub fn push_token_to_proto(t: zanshin_core::push::PushToken) -> PushToken {
+    PushToken {
+        identity_id: t.identity_id.to_string(),
+        platform: t.platform.as_str().to_string(),
+        token: t.token,
+        device_id: t.device_id,
+        created_at: Some(timestamp(t.created_at)),
+        updated_at: Some(timestamp(t.updated_at)),
+        failures: t.failures,
+    }
+}
+
+pub fn identity_with_properties(i: &CoreIdentity) -> IdentityWithProperties {
+    IdentityWithProperties {
+        identity: Some(identity_to_proto(i)),
+        properties: Some(properties_to_proto(&i.properties)),
+    }
+}
+
+/// Free-form JSON document (object expected) as a protobuf Struct.
+pub fn json_to_struct(v: serde_json::Value) -> Struct {
+    match json_to_value(v).kind {
+        Some(Kind::StructValue(s)) => s,
+        other => Struct {
+            fields: std::collections::BTreeMap::from([(
+                "value".to_string(),
+                Value { kind: other },
+            )]),
+        },
     }
 }

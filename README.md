@@ -208,11 +208,18 @@ version, stores, auth, rate limits and an inventory (`GET /admin/v1/system`).
   endpoints), `FZanshinStream` over the engine `WebSockets` module, Blueprint-friendly `UZanshinSubsystem`.
 - [`sdk/godot`](sdk/godot) — Godot 4.3+ GDScript addon (`Zanshin` autoload): awaitable client with auto refresh,
   typed helpers, `WebSocketPeer` live stream; headless smoke test against a live server.
+- [`sdk/swift`](sdk/swift) — Swift Package (iOS / macOS / tvOS / watchOS / visionOS / Linux): `actor ZanshinClient` with
+  `async`/`await`, `ZanshinStream` over `URLSessionWebSocketTask`, zero dependencies.
+- [`sdk/kotlin`](sdk/kotlin) — Kotlin / JVM (Android, servers): JDK 11 `HttpClient` + `WebSocket`, built-in JSON,
+  blocking calls plus `CompletableFuture` twins.
+- [`sdk/dart`](sdk/dart) — Dart / Flutter: `dart:io` client with the same surface and a broadcast `Stream<StreamMessage>`.
 - [`sdk/go`](sdk/go) — Go for trusted backends: server-key client with a per-identity evaluation
   cache invalidated by the `/server/v1/stream` change feed, identity sync, direct messages, events.
 - [`nakama/`](nakama) — Nakama runtime plugin on top of the Go SDK: users become Zanshin
   identities on login; clients call `zanshin.flags`, `zanshin.experiments`, `zanshin.live_events`,
   `zanshin.inbox`, `zanshin.track`… as regular RPCs. Build with `docker build -f nakama/Dockerfile .`.
+  The same module exists for the JavaScript runtime ([`nakama/ts`](nakama/ts), single-file build) and the Lua
+  runtime ([`nakama/lua`](nakama/lua)); all three expose identical RPC names and payloads.
 
 ## License
 

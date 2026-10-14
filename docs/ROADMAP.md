@@ -55,6 +55,9 @@ console comes last once the model is stable.
 - [x] **Unity SDK** (`sdk/unity`): dependency-free UPM package (netstandard2.1, own JSON), async client
       with single-flight refresh, all client endpoints, reconnecting `ClientWebSocket` stream with
       local flag cache; compiled in CI with `dotnet build`, smoke-tested against a live server
+- [x] **SDK wave 2**: gRPC parity with REST, Nakama JavaScript (`nakama/ts`) and Lua (`nakama/lua`) runtime
+  modules, Swift (`sdk/swift`), Kotlin / JVM (`sdk/kotlin`) and Dart / Flutter (`sdk/dart`) SDKs, LiveOps
+  recipes library in the console.
 
 ## 0.4 — LiveOps parity
 

@@ -139,7 +139,10 @@ fn client_ip(
 }
 
 /// Record a play session and the synthetic `$identity_create` / `$session_start` events.
-async fn begin_play_session(state: &AppState, s: &crate::services::identity::SessionTokens) {
+pub(crate) async fn begin_play_session(
+    state: &AppState,
+    s: &crate::services::identity::SessionTokens,
+) {
     let d = &s.identity.properties.default;
     let str_of = |k: &str| d.get(k).and_then(|v| v.as_str()).unwrap_or("").to_string();
     state

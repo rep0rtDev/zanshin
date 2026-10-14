@@ -7,6 +7,15 @@ Release automation reads the section whose heading contains the tagged version.
 ## [Unreleased]
 
 ### Added
+- SDK wave 2: gRPC parity with REST (`Identify`, `GetFlagOverrides`, `JoinLiveEvent` / `LeaveLiveEvent`,
+  `RemoveMessage`, push-token RPCs, and server-key RPCs for single flag / explain / identity upsert /
+  identify / properties / live-event join-leave / inbox / managed audience members; gRPC `Authenticate`
+  now opens a play session like HTTP), Nakama runtime modules for the JavaScript (`nakama/ts`) and Lua
+  (`nakama/lua`) runtimes with the same RPCs as the Go plugin, new client SDKs for Swift (`sdk/swift`),
+  Kotlin / JVM (`sdk/kotlin`) and Dart / Flutter (`sdk/dart`) with the full client surface and the
+  live stream, and a LiveOps recipes library in the console (timed offer, dynamic pricing, offer wall,
+  return incentive, soft launch, holiday event) that creates the flags / live events / campaigns /
+  experiments behind each recipe in one step.
 - LiveOps polish: flag value diff and payload sizes (`GET /admin/v1/flags/{key}/diff?a=&b=`,
   `GET /admin/v1/flags/{key}/sizes`, "Diff & size" tab in the console), `GET /v1/flags/overrides`
   (every identity / experiment / live-event override applied to the caller), deterministic
