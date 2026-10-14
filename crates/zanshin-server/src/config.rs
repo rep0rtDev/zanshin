@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::{net::SocketAddr, path::Path, time::Duration};
 
 use anyhow::Context;
@@ -168,6 +169,50 @@ pub struct AdminConfig {
     /// Bootstrap admin API key. Use it to mint real keys through the admin API, then drop it.
     #[serde(default)]
     pub bootstrap_key: Option<String>,
+    /// Single sign-on for the console via any OpenID Connect provider.
+    #[serde(default)]
+    pub oidc: Option<OidcConfig>,
+    /// Lifetime of a console login (cookie session) established through OIDC.
+    #[serde(default = "default_console_session_ttl", with = "humantime_serde")]
+    pub console_session_ttl: Duration,
+}
+
+/// OpenID Connect login for the admin console (authorization code + PKCE).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct OidcConfig {
+    /// Issuer URL; `{issuer}/.well-known/openid-configuration` must be reachable.
+    pub issuer: String,
+    pub client_id: String,
+    #[serde(default)]
+    pub client_secret: Option<String>,
+    /// Public URL of `/console/auth/callback` as registered at the provider.
+    pub redirect_url: String,
+    #[serde(default = "default_oidc_scopes")]
+    pub scopes: Vec<String>,
+    /// ID-token claim holding the user's groups/roles (string or array of strings).
+    #[serde(default = "default_role_claim")]
+    pub role_claim: String,
+    /// Maps claim values to console roles; the most privileged match wins.
+    #[serde(default)]
+    pub role_map: HashMap<String, zanshin_core::apikey::Role>,
+    /// Role for users with no matching claim value. `None` = reject login.
+    #[serde(default)]
+    pub default_role: Option<zanshin_core::apikey::Role>,
+    /// Only allow emails from these domains (empty = any).
+    #[serde(default)]
+    pub allowed_domains: Vec<String>,
+}
+
+fn default_console_session_ttl() -> Duration {
+    Duration::from_secs(12 * 3600)
+}
+
+fn default_oidc_scopes() -> Vec<String> {
+    vec!["openid".into(), "email".into(), "profile".into()]
+}
+
+fn default_role_claim() -> String {
+    "groups".into()
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

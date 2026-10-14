@@ -117,6 +117,14 @@ Full reference: [docs/api.md](docs/api.md). Design: [docs/ARCHITECTURE.md](docs/
   `admin`), configured under `limits:`; every API response carries `X-RateLimit-Limit`,
   `X-RateLimit-Remaining` and `X-RateLimit-Scope`, throttled calls get `429` + `Retry-After`.
   Any API key can carry its own budget (`rate_limit_per_minute` when minting it). Redis outages fail open.
+- **Roles** — admin keys and console users carry a role: `viewer` (GET only), `editor` (manages
+  flags / experiments / audiences / live events / messages / identities, cannot touch API keys) or
+  `admin` (everything). `read_only: true` is kept as an alias for `viewer`.
+- **Console SSO** — `admin.oidc` enables login through any OpenID Connect provider (authorization
+  code + PKCE, ID token verified against the provider JWKS, nonce/state bound to a signed cookie).
+  A claim (`role_claim`, default `groups`) is mapped to a role via `role_map`, optionally restricted
+  by `allowed_domains`; the console session is an HttpOnly cookie valid `console_session_ttl`.
+  Audit entries record the user's email with `actor_kind: oidc`.
 - **API key scopes** — admin keys can be minted `read_only` (GET-only on `/admin/v1`), any key can have
   an `expires_at`; both are enforced at authentication time.
 - **Audit log** — every mutating `/admin/v1` call (including rejected and unauthenticated attempts) is
@@ -130,7 +138,7 @@ Full reference: [docs/api.md](docs/api.md). Design: [docs/ARCHITECTURE.md](docs/
 ## Admin console
 
 Open `http://localhost:7550/console/` and sign in with the bootstrap admin key (or any admin
-API key). The UI is a React app in [`console/`](console) compiled into the server binary — run
+API key), or with SSO when `admin.oidc` is configured — see `config/zanshin.example.yml`. The UI is a React app in [`console/`](console) compiled into the server binary — run
 `npm ci && npm run build` there before `cargo build` (the Dockerfile does this for you).
 
 ## SDKs

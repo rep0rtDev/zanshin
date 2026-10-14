@@ -22,7 +22,7 @@ export async function api<T = unknown>(method: string, path: string, body?: unkn
   const k = auth.key();
   if (k) headers['x-api-key'] = k;
   if (body !== undefined) headers['content-type'] = 'application/json';
-  const res = await fetch('/admin/v1' + path, { method, headers, body: body === undefined ? undefined : JSON.stringify(body) });
+  const res = await fetch('/admin/v1' + path, { method, headers, credentials: 'same-origin', body: body === undefined ? undefined : JSON.stringify(body) });
   const text = await res.text();
   if (!res.ok) {
     let code = res.statusText, message = text;
@@ -64,4 +64,23 @@ export function qs(params: Record<string, string | number | boolean | undefined 
   for (const [k, v] of Object.entries(params)) if (v !== undefined && v !== null && v !== '') q.set(k, String(v));
   const s = q.toString();
   return s ? '?' + s : '';
+}
+
+export type Role = 'viewer' | 'editor' | 'admin';
+export type Me = { name: string; auth: 'api_key' | 'bootstrap' | 'oidc'; role: Role; read_only: boolean };
+
+/** Whether the server offers OIDC single sign-on for the console. */
+export async function authConfig(): Promise<{ oidc: boolean }> {
+  try {
+    const r = await fetch('/console/auth/config', { credentials: 'same-origin' });
+    return r.ok ? ((await r.json()) as { oidc: boolean }) : { oidc: false };
+  } catch {
+    return { oidc: false };
+  }
+}
+
+export async function ssoLogout(): Promise<void> {
+  try {
+    await fetch('/console/auth/logout', { method: 'POST', credentials: 'same-origin' });
+  } catch { /* cookie may already be gone */ }
 }

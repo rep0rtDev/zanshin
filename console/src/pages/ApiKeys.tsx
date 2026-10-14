@@ -1,14 +1,14 @@
 import { useState } from 'react';
 import { del, get, post, useLoad } from '../api';
-import { Badge, Confirm, ErrorBox, Field, Page, Table, Toggle, fmtDate } from '../ui';
+import { Badge, Confirm, ErrorBox, Field, Page, Table, fmtDate } from '../ui';
 
-type Key = { id: string; name: string; kind: string; prefix: string; created_at: string; last_used_at: string | null; revoked_at: string | null; read_only: boolean; expires_at: string | null; rate_limit_per_minute: number | null };
+type Key = { id: string; name: string; kind: string; prefix: string; created_at: string; last_used_at: string | null; revoked_at: string | null; read_only: boolean; role: 'admin' | 'editor' | 'viewer'; expires_at: string | null; rate_limit_per_minute: number | null };
 
 export default function ApiKeys() {
   const q = useLoad(() => get<Key[]>('/api-keys'));
   const [name, setName] = useState('');
   const [kind, setKind] = useState('client');
-  const [readOnly, setReadOnly] = useState(false);
+  const [role, setRole] = useState<'admin' | 'editor' | 'viewer'>('admin');
   const [expires, setExpires] = useState('');
   const [limit, setLimit] = useState('');
   const [minted, setMinted] = useState<{ secret: string; name: string } | null>(null);
@@ -16,7 +16,7 @@ export default function ApiKeys() {
   const create = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      const r = await post<{ secret: string }>('/api-keys', { name, kind, read_only: kind === 'admin' && readOnly, expires_at: expires ? new Date(expires).toISOString() : null, rate_limit_per_minute: limit ? Number(limit) : null });
+      const r = await post<{ secret: string }>('/api-keys', { name, kind, role: kind === 'admin' ? role : null, expires_at: expires ? new Date(expires).toISOString() : null, rate_limit_per_minute: limit ? Number(limit) : null });
       setMinted({ secret: r.secret, name });
       setName('');
       q.reload();
@@ -36,7 +36,7 @@ export default function ApiKeys() {
         </Field>
         <Field label="Expires" hint="optional"><input type="datetime-local" value={expires} onChange={(e) => setExpires(e.target.value)} /></Field>
         <Field label="Requests / min" hint="optional per-key quota"><input type="number" min={1} value={limit} onChange={(e) => setLimit(e.target.value)} placeholder="scope default" /></Field>
-        {kind === 'admin' && <div className="field fixed"><span className="label">Access</span><Toggle value={readOnly} onChange={setReadOnly} label={readOnly ? 'read-only' : 'full'} /></div>}
+        {kind === 'admin' && <label className="field fixed"><span className="label">Role</span><select value={role} onChange={(e) => setRole(e.target.value as typeof role)}><option value="admin">admin — everything</option><option value="editor">editor — no key management</option><option value="viewer">viewer — read only</option></select></label>}
         <div className="field fixed"><span className="label">&nbsp;</span><button className="btn">Create key</button></div>
       </form>
       {minted && (
@@ -50,7 +50,7 @@ export default function ApiKeys() {
         rowKey={(k) => k.id}
         cols={[
           { h: 'Name', c: (k) => <strong>{k.name}</strong> },
-          { h: 'Kind', c: (k) => <><Badge tone={k.kind === 'admin' ? 'bad' : k.kind === 'server' ? 'info' : 'muted'}>{k.kind}</Badge>{k.read_only && <Badge>read-only</Badge>}</> },
+          { h: 'Kind', c: (k) => <><Badge tone={k.kind === 'admin' ? 'bad' : k.kind === 'server' ? 'info' : 'muted'}>{k.kind}</Badge>{k.kind === 'admin' && k.role !== 'admin' && <Badge>{k.role}</Badge>}</> },
           { h: 'Limits', c: (k) => <span className="hint">{k.rate_limit_per_minute ? `${k.rate_limit_per_minute}/min` : 'default'}{k.expires_at ? ` · expires ${fmtDate(k.expires_at)}` : ''}</span> },
           { h: "Prefix", c: (k) => <span className="mono">{k.prefix}…</span> },
           { h: 'Created', c: (k) => fmtDate(k.created_at) },

@@ -2,7 +2,10 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use sqlx::{FromRow, PgPool};
 use uuid::Uuid;
-use zanshin_core::{apikey::ApiKeyKind, Error, Result};
+use zanshin_core::{
+    apikey::{ApiKeyKind, Role},
+    Error, Result,
+};
 
 use crate::map_sqlx;
 
@@ -18,16 +21,21 @@ pub struct ApiKeyRow {
     pub read_only: bool,
     pub expires_at: Option<DateTime<Utc>>,
     pub rate_limit_per_minute: Option<i32>,
+    pub role: String,
 }
 
 impl ApiKeyRow {
     pub fn kind(&self) -> ApiKeyKind {
         ApiKeyKind::parse(&self.kind).unwrap_or(ApiKeyKind::Client)
     }
+
+    pub fn role(&self) -> Role {
+        Role::parse(&self.role).unwrap_or(Role::Admin)
+    }
 }
 
 const COLS: &str =
-    "id, name, kind, prefix, created_at, last_used_at, revoked_at, read_only, expires_at, rate_limit_per_minute";
+    "id, name, kind, prefix, created_at, last_used_at, revoked_at, read_only, expires_at, rate_limit_per_minute, role";
 
 /// Optional restrictions applied to a new key.
 #[derive(Debug, Clone, Default)]
@@ -37,6 +45,18 @@ pub struct KeyOptions {
     pub expires_at: Option<DateTime<Utc>>,
     /// Per-key request budget overriding the global scope limit.
     pub rate_limit_per_minute: Option<i32>,
+    /// Admin keys only: console/admin role. `None` = admin (or viewer when `read_only`).
+    pub role: Option<Role>,
+}
+
+impl KeyOptions {
+    pub fn effective_role(&self) -> Role {
+        match self.role {
+            Some(r) => r,
+            None if self.read_only => Role::Viewer,
+            None => Role::Admin,
+        }
+    }
 }
 
 #[derive(Clone)]
@@ -58,8 +78,8 @@ impl ApiKeyRepo {
         opts: &KeyOptions,
     ) -> Result<ApiKeyRow> {
         sqlx::query_as(&format!(
-            "INSERT INTO api_keys (id, name, kind, prefix, key_hash, read_only, expires_at, rate_limit_per_minute) \
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING {COLS}"
+            "INSERT INTO api_keys (id, name, kind, prefix, key_hash, read_only, expires_at, rate_limit_per_minute, role) \
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING {COLS}"
         ))
         .bind(Uuid::now_v7())
         .bind(name)
@@ -69,6 +89,7 @@ impl ApiKeyRepo {
         .bind(opts.read_only)
         .bind(opts.expires_at)
         .bind(opts.rate_limit_per_minute)
+        .bind(opts.effective_role().as_str())
         .fetch_one(&self.pg)
         .await
         .map_err(map_sqlx)

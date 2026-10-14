@@ -66,4 +66,7 @@ console comes last once the model is stable.
 
 - Embedded React admin console served by the binary: flags, audiences, experiments with
   live results, live events calendar, message composer, identity explorer, dashboards
-- Role-based admin accounts (OIDC) in addition to API keys
+- [x] Role-based admin accounts (OIDC) in addition to API keys: `admin.oidc` (code + PKCE, JWKS
+      verification, claim → role map, domain allow-list), roles `viewer` / `editor` / `admin` on
+      API keys and console sessions, `GET /admin/v1/me`, role-aware console (SSO button, API keys
+      hidden from non-admins)

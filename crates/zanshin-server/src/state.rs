@@ -1,4 +1,4 @@
-use crate::services::{audit::AuditService, limits::RateLimiter};
+use crate::services::{audit::AuditService, limits::RateLimiter, oidc::OidcService};
 use std::sync::Arc;
 
 use zanshin_core::token::TokenIssuer;
@@ -32,6 +32,7 @@ pub struct AppState {
     pub stores: Stores,
     pub identity: IdentityService,
     pub api_keys: ApiKeyService,
+    pub oidc: OidcService,
     pub limits: RateLimiter,
     pub audit: AuditService,
     pub bus: ChangeBus,
@@ -110,6 +111,11 @@ impl AppState {
             stores.cache.clone(),
             cfg.admin.bootstrap_key.clone(),
         );
+        let oidc = OidcService::new(
+            cfg.admin.oidc.clone(),
+            &cfg.auth.jwt_secret,
+            cfg.admin.console_session_ttl,
+        );
         let limits = RateLimiter::new(stores.cache.clone(), cfg.limits.clone());
         let audit = AuditService::new(AuditRepo::new(stores.pg.clone()), cfg.audit.clone());
         let bus = ChangeBus::new(stores.cache.clone(), cfg.redis.url.clone());
@@ -153,6 +159,7 @@ impl AppState {
             stores,
             identity,
             api_keys,
+            oidc,
             limits,
             audit,
             bus,

@@ -69,6 +69,10 @@ pub async fn principal(parts: &mut Parts, state: &AppState) -> Result<Option<Pri
         return Ok(Some(p.clone()));
     }
     let Some(key) = api_key_from_parts(parts) else {
+        if let Some(p) = console_principal(parts, state) {
+            parts.extensions.insert(p.clone());
+            return Ok(Some(p));
+        }
         return Ok(None);
     };
     let p = state.api_keys.authenticate(&key).await?;
@@ -157,8 +161,18 @@ impl FromRequestParts<AppState> for AdminAuth {
             parts.method,
             axum::http::Method::GET | axum::http::Method::HEAD | axum::http::Method::OPTIONS
         );
-        if p.read_only && !reads_only {
-            return Err(Error::denied("this admin key is read-only").into());
+        if !reads_only && !p.role.can_write() {
+            return Err(Error::denied("viewer role: read-only access").into());
+        }
+        // Inside the nested `/admin/v1` router the request URI is already stripped.
+        let path = parts
+            .extensions
+            .get::<axum::extract::OriginalUri>()
+            .map(|u| u.path().to_string())
+            .unwrap_or_else(|| parts.uri.path().to_string());
+        let manages_keys = path.starts_with("/admin/v1/api-keys") || path.starts_with("/api-keys");
+        if !reads_only && manages_keys && !p.role.can_manage_keys() {
+            return Err(Error::denied("admin role required to manage api keys").into());
         }
         Ok(AdminAuth(p))
     }
@@ -182,4 +196,14 @@ impl FromRequestParts<AppState> for ServerAuth {
         }
         Ok(ServerAuth(p))
     }
+}
+
+/// Admin principal carried by the console's OIDC session cookie, if any.
+pub fn console_principal(parts: &Parts, state: &AppState) -> Option<Principal> {
+    if !state.oidc.enabled() {
+        return None;
+    }
+    let cookie = header_str(parts, header::COOKIE.as_str())?;
+    let token = crate::services::oidc::cookie_value(cookie, crate::services::oidc::SESSION_COOKIE)?;
+    state.oidc.verify_session(token).map(|u| u.principal())
 }
