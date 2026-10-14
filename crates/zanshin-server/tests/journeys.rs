@@ -168,6 +168,7 @@ async fn journeys_flow() {
     // Message immediately, then a 1s wait resumed by the worker, then the rest.
     let r = wait_runs(&c, &base, &jkey, |r| {
         status_count(r, "active") + status_count(r, "exited") >= 1
+            && r["items"].as_array().is_some_and(|a| !a.is_empty())
     })
     .await;
     assert_eq!(r["items"].as_array().unwrap().len(), 1, "{r}");
