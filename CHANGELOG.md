@@ -28,6 +28,22 @@ Release automation reads the section whose heading contains the tagged version.
   on admin API keys, key rotation with a grace period (`POST /admin/v1/api-keys/{id}/rotate`),
   `GET /admin/v1/permissions` catalog, Users and Account pages in the console with a permission
   matrix editor, navigation and controls that follow the caller's grants.
+||||||| constructed merge base
+- Analytics v3: events carry `country` / `platform` / `app_version` (denormalised from identity
+  defaults at ingest) and every event-based report accepts a dimension filter (`country`,
+  `platform`, `app_version`, `experiment` + `variant`); LiveOps **Status** board
+  (`GET /admin/v1/analytics/status`: online now, DAU today, events/min, running experiments /
+  live events / campaigns / journeys, upcoming live events, 24 h errors) and **Calendar**
+  (`GET /admin/v1/analytics/calendar`: live-event occurrences, experiments, cron campaign fire
+  windows, annotations, DAU overlay; 1 / 2 / 4-week views); **Explore** (`POST
+  /admin/v1/analytics/explore`: any event bucketed by day/hour, grouped by country / platform /
+  version / experiment variant / metadata field, with sums); **player map** (`/analytics/map`);
+  **playtime** (`/analytics/playtime`: sessions, avg / median length, playtime per player-day,
+  histogram); funnel models `unlimited` / `window` / `step` / `session`; cumulative retention +
+  install counts; **LTV / RoAS / CPI** per install cohort (`/analytics/ltv`) with advertising
+  spend import (`/analytics/ad-spend`, JSON or CSV); **errors** summary (`/analytics/errors`:
+  rejected events by reason, failed message / webhook / export deliveries). Dashboards honour
+  their `filters` as an event filter; funnel widgets accept `model`, retention widgets `cumulative`.
 
 ### Security
 - rustls 0.23.46 (RUSTSEC-2026-0346..0349), maxminddb 0.27 (RUSTSEC-2025-0132).

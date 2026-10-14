@@ -169,3 +169,23 @@ ol.chain { margin: 10px 0 0; padding-left: 18px; display: grid; gap: 6px; }
 .tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--border); }
 .tab { background: none; border: 0; padding: 8px 10px; cursor: pointer; color: var(--muted); border-bottom: 2px solid transparent; }
 .tab.active { color: var(--fg); border-bottom-color: var(--accent); }
+||||||| constructed merge base
+/* insights v3 */
+.filter-bar .field{margin-bottom:0}
+.calendar{position:relative;overflow:hidden}
+.cal-days,.cal-metrics{display:grid;margin-left:120px}
+.cal-day{font-size:11px;color:var(--muted);text-align:center;padding:2px 0;border-left:1px solid var(--line)}
+.cal-day.today{color:var(--fg);font-weight:600}
+.cal-bar{height:36px;display:flex;align-items:flex-end;border-left:1px solid var(--line)}
+.cal-bar>div{width:100%;background:rgba(26,95,180,.35)}
+.cal-lane{display:flex;border-top:1px solid var(--line);min-height:68px}
+.cal-lane-title{width:120px;flex:0 0 120px;font-size:12px;color:var(--muted);padding:6px 8px;text-transform:capitalize}
+.cal-lane-body{position:relative;flex:1;min-height:68px}
+.cal-item{position:absolute;height:16px;line-height:16px;font-size:11px;color:#fff;border-radius:3px;padding:0 6px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;text-decoration:none;margin-top:6px}
+.cal-today{position:absolute;top:0;bottom:0;width:0;border-left:2px dashed var(--bad);pointer-events:none}
+.map-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(92px,1fr));gap:6px}
+.map-cell{border-radius:6px;padding:8px 6px;text-align:center}
+.map-flag{font-size:22px;line-height:1}
+.map-cc{font-size:11px;font-weight:600;margin-top:2px}
+.map-n{font-size:14px;font-weight:600}
+.map-pct{font-size:11px;opacity:.8}

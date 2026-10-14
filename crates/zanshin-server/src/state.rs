@@ -18,7 +18,7 @@ use zanshin_store::taxonomy::TaxonomyRepo;
 use zanshin_core::token::TokenIssuer;
 use zanshin_store::audit::AuditRepo;
 use zanshin_store::{
-    analytics::{AnnotationRepo, DashboardRepo, PlayerMetricsRepo},
+    analytics::{AdSpendRepo, AnnotationRepo, DashboardRepo, PlayerMetricsRepo},
     api_keys::ApiKeyRepo,
     audiences::AudienceRepo,
     console_users::ConsoleUserRepo,
@@ -235,6 +235,7 @@ impl AppState {
             DashboardRepo::new(stores.pg.clone()),
             AnnotationRepo::new(stores.pg.clone()),
             taxonomy.clone(),
+            AdSpendRepo::new(stores.pg.clone()),
             bus.clone(),
         );
         let metrics = MetricService::new(MetricRepo::new(stores.pg.clone()), events.clone());

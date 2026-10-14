@@ -81,6 +81,13 @@ pub struct Event {
     pub session_id: Option<Uuid>,
     /// experiment key → variant the identity was assigned to when the event happened.
     pub experiments: Vec<(String, String)>,
+    /// Denormalised identity defaults at ingest time (filter dimensions). Empty when unknown.
+    #[serde(default)]
+    pub country: String,
+    #[serde(default)]
+    pub platform: String,
+    #[serde(default)]
+    pub app_version: String,
 }
 
 impl Event {
@@ -111,6 +118,9 @@ impl Event {
             metadata: input.metadata.map(Value::Object).unwrap_or(Value::Null),
             session_id,
             experiments,
+            country: String::new(),
+            platform: String::new(),
+            app_version: String::new(),
         }
     }
 
