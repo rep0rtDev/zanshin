@@ -10,6 +10,7 @@ import Messages from './pages/Messages';
 import Identities from './pages/Identities';
 import Analytics from './pages/Analytics';
 import ApiKeys from './pages/ApiKeys';
+import Audit from './pages/Audit';
 
 function Login({ onDone }: { onDone: () => void }) {
   const [key, setKey] = useState('');
@@ -55,10 +56,23 @@ const NAV: [string, string][] = [
   ['/identities', 'Identities'],
   ['/analytics', 'Analytics'],
   ['/api-keys', 'API keys'],
+  ['/audit', 'Audit log'],
 ];
+
+const THEME_KEY = 'zanshin.theme';
+function initialTheme(): 'light' | 'dark' {
+  const saved = localStorage.getItem(THEME_KEY);
+  if (saved === 'light' || saved === 'dark') return saved;
+  return window.matchMedia?.('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+}
 
 export default function App() {
   const [authed, setAuthed] = useState(!!auth.key());
+  const [theme, setTheme] = useState<'light' | 'dark'>(initialTheme);
+  useEffect(() => {
+    document.documentElement.dataset.theme = theme;
+    localStorage.setItem(THEME_KEY, theme);
+  }, [theme]);
   useEffect(() => {
     const h = () => { auth.clear(); setAuthed(false); };
     window.addEventListener('zanshin:unauthorized', h);
@@ -71,6 +85,7 @@ export default function App() {
         <div className="brand">Zanshin<small>admin console</small></div>
         {NAV.map(([to, label]) => <NavLink key={to} to={to} end={to === '/'}>{label}</NavLink>)}
         <div className="spacer" />
+        <button className="theme-btn" onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}>{theme === 'dark' ? 'Light theme' : 'Dark theme'}</button>
         <a href="#" onClick={(e) => { e.preventDefault(); auth.clear(); setAuthed(false); }}>Sign out</a>
       </nav>
       <main className="main">
@@ -84,6 +99,7 @@ export default function App() {
           <Route path="/identities/*" element={<Identities />} />
           <Route path="/analytics" element={<Analytics />} />
           <Route path="/api-keys" element={<ApiKeys />} />
+          <Route path="/audit" element={<Audit />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </main>

@@ -105,6 +105,7 @@ pub fn router() -> Router<AppState> {
                 .put(force_assignment)
                 .delete(delete_assignment),
         )
+        .route("/live-events/occurrences", get(live_event_occurrences))
         .route(
             "/live-events",
             get(list_live_events).post(create_live_event),
@@ -1102,4 +1103,75 @@ async fn list_audit(
         None
     };
     Ok(Json(Page { items, next }))
+}
+
+// ---- live event calendar ----------------------------------------------------
+
+#[derive(Debug, Default, Deserialize)]
+pub struct OccurrencesQuery {
+    #[serde(default)]
+    pub from: Option<chrono::DateTime<chrono::Utc>>,
+    #[serde(default)]
+    pub to: Option<chrono::DateTime<chrono::Utc>>,
+    #[serde(default)]
+    pub key: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct OccurrenceRow {
+    pub key: String,
+    pub name: String,
+    pub enabled: bool,
+    pub start: chrono::DateTime<chrono::Utc>,
+    pub end: chrono::DateTime<chrono::Utc>,
+}
+
+/// All occurrences of (enabled or disabled) live events overlapping `[from, to)` — the data behind
+/// the console calendar. Defaults to the next 31 days; at most 500 occurrences per event.
+async fn live_event_occurrences(
+    State(state): State<AppState>,
+    AdminAuth(_): AdminAuth,
+    Query(q): Query<OccurrencesQuery>,
+) -> ApiResult<Json<serde_json::Value>> {
+    let from = q.from.unwrap_or_else(chrono::Utc::now);
+    let to = q.to.unwrap_or(from + chrono::Duration::days(31));
+    if to <= from || to - from > chrono::Duration::days(400) {
+        return Err(Error::invalid("window must be positive and at most 400 days").into());
+    }
+    let mut rows = Vec::new();
+    for ev in state.live_events.list().await {
+        if q.key.as_ref().is_some_and(|k| k != &ev.key) {
+            continue;
+        }
+        let mut cursor = from;
+        if let Some(o) = ev.current(from) {
+            rows.push(OccurrenceRow {
+                key: ev.key.clone(),
+                name: ev.name.clone(),
+                enabled: ev.enabled,
+                start: o.start,
+                end: o.end,
+            });
+            cursor = o.start;
+        }
+        let mut n = 0;
+        while let Some(o) = ev.next(cursor) {
+            if o.start >= to || n >= 500 {
+                break;
+            }
+            rows.push(OccurrenceRow {
+                key: ev.key.clone(),
+                name: ev.name.clone(),
+                enabled: ev.enabled,
+                start: o.start,
+                end: o.end,
+            });
+            cursor = o.start;
+            n += 1;
+        }
+    }
+    rows.sort_by_key(|r| r.start);
+    Ok(Json(
+        serde_json::json!({ "from": from, "to": to, "occurrences": rows }),
+    ))
 }

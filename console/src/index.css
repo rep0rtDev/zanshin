@@ -53,3 +53,57 @@ pre.code{background:#f6f6f6;border:1px solid var(--line);border-radius:6px;paddi
 .bar{height:8px;background:#eee;border-radius:4px;overflow:hidden}.bar>i{display:block;height:100%;background:var(--fg)}
 .inline{display:inline-flex;gap:8px;align-items:center}
 strong+.badge{margin-left:6px}
+/* ---- rule builder ---- */
+.rb{border:1px solid var(--line);border-radius:var(--radius);padding:10px 12px;background:var(--bg)}
+.rb-tools{display:flex;justify-content:flex-end;gap:6px;margin-bottom:6px}
+.rb-empty{display:flex;align-items:center;gap:12px;padding:6px 0}
+.rb-group{border-left:3px solid var(--line);padding:6px 0 6px 12px;margin:6px 0}
+.rb-group.root{border-left:0;padding-left:0;margin:0}
+.rb-group.not{border-left-color:var(--bad)}
+.rb-head{display:flex;align-items:center;gap:6px;margin-bottom:6px}
+.rb-head .spacer{flex:1}
+.rb-mode{width:auto;font-weight:600;padding:4px 8px}
+.rb-row{display:flex;gap:6px;align-items:center;margin:4px 0}
+.rb-row input,.rb-row select{padding:5px 8px}
+.chips{display:flex;flex-wrap:wrap;gap:6px}
+.chip{border:1px solid var(--line);background:var(--card);border-radius:999px;padding:3px 10px;font:inherit;font-size:12px;cursor:pointer;color:var(--muted)}
+.chip.on{background:var(--fg);color:var(--bg);border-color:var(--fg)}
+.chip.missing{border-style:dashed;color:var(--bad)}
+.rules .rule{padding:14px 16px}
+.variants{display:flex;flex-direction:column;gap:4px;align-items:flex-start}
+.variants .rb-row{width:100%}
+input[type=range]{padding:0;height:28px}
+.btn.ghost.danger{color:var(--bad)}
+/* ---- dark theme ---- */
+:root[data-theme=dark]{--bg:#121212;--fg:#ececec;--muted:#9a9a9a;--line:#2a2a2a;--card:#1b1b1b;--accent:#ececec}
+:root[data-theme=dark] .btn{color:#111}
+:root[data-theme=dark] .btn.ghost{color:var(--fg)}
+:root[data-theme=dark] .btn.danger{color:#fff}
+:root[data-theme=dark] .side a.active,:root[data-theme=dark] .side a:hover{background:#242424}
+:root[data-theme=dark] .table th{background:#181818}
+:root[data-theme=dark] .table tr.clickable:hover td{background:#222}
+:root[data-theme=dark] input,:root[data-theme=dark] select,:root[data-theme=dark] textarea{background:#161616;color:var(--fg)}
+:root[data-theme=dark] input:focus,:root[data-theme=dark] select:focus,:root[data-theme=dark] textarea:focus{outline-color:#333;border-color:#444}
+:root[data-theme=dark] pre.code{background:#161616}
+:root[data-theme=dark] .bar{background:#2a2a2a}
+:root[data-theme=dark] .badge.ok{background:#15301c}:root[data-theme=dark] .badge.warn{background:#3a2a10}:root[data-theme=dark] .badge.bad{background:#3a1a1a}:root[data-theme=dark] .badge.muted{background:#262626}:root[data-theme=dark] .badge.info{background:#172538}
+:root[data-theme=dark] .error{background:#3a1a1a;border-color:#5a2a2a}
+:root[data-theme=dark] .toggle .knob{background:#444}
+:root[data-theme=dark] .chip.on{background:var(--fg);color:#111}
+.theme-btn{border:0;background:none;color:var(--muted);cursor:pointer;font:inherit;padding:7px 10px;text-align:left;border-radius:6px}
+.theme-btn:hover{background:#f1f1f1;color:var(--fg)}
+:root[data-theme=dark] .theme-btn:hover{background:#242424}
+/* ---- calendar ---- */
+.cal-head{display:flex;align-items:center;gap:8px;margin-bottom:10px}.cal-head .spacer{flex:1}
+.cal-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:2px}
+.cal-dow{font-size:11px;color:var(--muted);text-align:center;padding:4px 0}
+.cal-day{min-height:84px;border:1px solid var(--line);border-radius:4px;padding:4px;background:var(--card);display:flex;flex-direction:column;gap:2px}
+.cal-day.off{opacity:.45}.cal-day.today{border-color:var(--fg)}
+.cal-num{font-size:11px;color:var(--muted);text-align:right}
+.cal-ev{border:0;border-radius:3px;color:#fff;font:inherit;font-size:11px;text-align:left;padding:1px 5px;cursor:pointer;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.cal-ev.off{opacity:.45;text-decoration:line-through}
+.preview{border:1px solid var(--line);border-radius:10px;padding:12px 14px;background:var(--card);max-width:360px}
+.preview .t{font-weight:600;margin-bottom:4px}.preview img{max-width:100%;border-radius:6px;margin-top:8px}
+.legend{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:8px}.legend .chip{color:#fff}
+.tooltip{position:absolute;top:8px;transform:translateX(-50%);background:var(--card);border:1px solid var(--line);border-radius:6px;padding:6px 10px;font-size:12px;pointer-events:none;box-shadow:0 2px 8px rgba(0,0,0,.08);white-space:nowrap}
+.trunc{display:block;max-width:420px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}

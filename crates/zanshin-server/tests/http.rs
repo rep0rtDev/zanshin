@@ -1691,3 +1691,58 @@ async fn hardening_flow() {
         .unwrap();
     assert_eq!(r.status(), 200);
 }
+
+#[tokio::test]
+async fn live_event_occurrences_calendar() {
+    let Some((base, http)) = start().await else {
+        eprintln!("skipping: ZANSHIN_TEST_DATABASE_URL / ZANSHIN_TEST_REDIS_URL not set");
+        return;
+    };
+    let admin = |r: reqwest::RequestBuilder| r.header("x-api-key", ADMIN_KEY);
+    let key = format!("it_cal_{}", uuid::Uuid::new_v4().simple());
+    let start_at = chrono::Utc::now() - chrono::Duration::days(1);
+    let r = admin(http.post(format!("{base}/admin/v1/live-events")))
+        .json(&json!({
+            "key": key, "name": "Daily", "enabled": true,
+            "starts_at": start_at.to_rfc3339(), "duration_secs": 3600,
+            "recurrence": "0 0 12 * * * *", "payload": {"x": 1}
+        }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(r.status(), 201, "{}", r.text().await.unwrap());
+    let from = chrono::Utc::now();
+    let to = from + chrono::Duration::days(7);
+    let cal: Value = admin(http.get(format!(
+        "{base}/admin/v1/live-events/occurrences?key={key}&from={}&to={}",
+        from.to_rfc3339_opts(chrono::SecondsFormat::Millis, true),
+        to.to_rfc3339_opts(chrono::SecondsFormat::Millis, true)
+    )))
+    .send()
+    .await
+    .unwrap()
+    .json()
+    .await
+    .unwrap();
+    let occ = cal["occurrences"].as_array().unwrap();
+    assert!(occ.len() >= 6 && occ.len() <= 8, "{}", occ.len());
+    assert!(occ.iter().all(|o| o["key"] == key && o["name"] == "Daily"));
+    let starts: Vec<&str> = occ.iter().map(|o| o["start"].as_str().unwrap()).collect();
+    let mut sorted = starts.clone();
+    sorted.sort();
+    assert_eq!(starts, sorted, "occurrences are chronological");
+    // Invalid window is rejected.
+    let r = admin(http.get(format!(
+        "{base}/admin/v1/live-events/occurrences?from={}&to={}",
+        to.to_rfc3339_opts(chrono::SecondsFormat::Millis, true),
+        from.to_rfc3339_opts(chrono::SecondsFormat::Millis, true)
+    )))
+    .send()
+    .await
+    .unwrap();
+    assert_eq!(r.status(), 400);
+    admin(http.delete(format!("{base}/admin/v1/live-events/{key}")))
+        .send()
+        .await
+        .unwrap();
+}

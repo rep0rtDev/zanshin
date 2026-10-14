@@ -1,9 +1,11 @@
 import { useState } from 'react';
 import { get, post } from '../api';
-import { EntityPage, Text, Num, Tags, CONDITION_HINT } from '../crud';
+import { EntityPage, Text, Num, Tags } from '../crud';
+import { ConditionEditor } from '../RuleBuilder';
+import type { Cond } from '../RuleBuilder';
 import { Badge, ErrorBox, Field, JsonField, Toggle, fmtDate } from '../ui';
 
-type Audience = { key: string; name: string; description: string; condition: unknown; percentage: number; enabled: boolean; tags: string[]; version: number; updated_at: string };
+type Audience = { key: string; name: string; description: string; condition: Cond; percentage: number; enabled: boolean; tags: string[]; version: number; updated_at: string };
 
 function Check({ aud }: { aud: Audience }) {
   const [ext, setExt] = useState('');
@@ -53,7 +55,7 @@ export default function Audiences() {
             <Text label="Name" value={d.name} onChange={(name) => set({ name })} />
           </div>
           <Text label="Description" value={d.description} onChange={(description) => set({ description })} />
-          <Field label="Condition" hint={CONDITION_HINT}><JsonField value={d.condition} onChange={(condition) => set({ condition })} rows={8} /></Field>
+          <Field label="Condition" hint="who belongs to this audience"><ConditionEditor value={d.condition} onChange={(condition) => set({ condition: condition ?? { all: [] } })} /></Field>
           <div className="row">
             <Num label="Sampling %" value={d.percentage} onChange={(percentage) => set({ percentage: percentage ?? 100 })} min={0} max={100} hint="deterministic per identity" />
             <div className="field fixed"><span className="label">Enabled</span><Toggle value={!!d.enabled} onChange={(enabled) => set({ enabled })} label={d.enabled ? 'on' : 'off'} /></div>

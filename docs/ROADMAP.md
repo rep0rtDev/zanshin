@@ -43,6 +43,10 @@ console comes last once the model is stable.
       `/console`; every admin API surface has a screen (flags with overrides + dry run, experiments with
       lifecycle + results/lift, audiences with membership check, live events, campaigns with stats,
       identities with properties/events/inbox/direct send/push devices, analytics, API keys)
+- [x] **Console v2**: visual condition/rule builder (groups, 20 operators, typed values, weighted variants,
+      audience chips), live-event month calendar backed by `GET /admin/v1/live-events/occurrences`, message
+      template preview, comparative analytics chart with tooltips, audit log screen, API key scopes/quotas UI,
+      dark theme
 - [x] **Unity SDK** (`sdk/unity`): dependency-free UPM package (netstandard2.1, own JSON), async client
       with single-flight refresh, all client endpoints, reconnecting `ClientWebSocket` stream with
       local flag cache; compiled in CI with `dotnet build`, smoke-tested against a live server
