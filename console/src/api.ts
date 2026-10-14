@@ -37,6 +37,21 @@ export async function api<T = unknown>(method: string, path: string, body?: unkn
   return (text ? JSON.parse(text) : {}) as T;
 }
 
+/// Fetch a non-JSON admin resource (e.g. CSV) and save it through the browser.
+export async function download(path: string, filename: string): Promise<void> {
+  const headers: Record<string, string> = {};
+  const k = auth.key();
+  if (k) headers['x-api-key'] = k;
+  const res = await fetch('/admin/v1' + path, { headers, credentials: 'same-origin' });
+  if (!res.ok) throw new ApiError(res.status, res.statusText, await res.text());
+  const url = URL.createObjectURL(await res.blob());
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
 export const get = <T,>(p: string) => api<T>('GET', p);
 export const post = <T,>(p: string, b?: unknown) => api<T>('POST', p, b);
 export const put = <T,>(p: string, b?: unknown) => api<T>('PUT', p, b);
