@@ -7,3 +7,6 @@ node_modules/
 sdk/ts/dist/
 sdk/unity/**/bin/
 sdk/unity/**/obj/
+console/node_modules/
+console/dist/*
+!console/dist/.gitkeep

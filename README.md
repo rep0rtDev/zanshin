@@ -14,7 +14,7 @@ LiveOps features are landing module by module (see [docs/ROADMAP.md](docs/ROADMA
 
 * **Own your player data.** Everything runs on your infrastructure: PostgreSQL as the system of record,
   Redis for caching and fan-out, ClickHouse (optional) for analytics at scale.
-* **One binary.** Rust server, embedded migrations, embedded admin console (coming), no sidecars.
+* **One binary.** Rust server, embedded migrations, embedded admin console, no sidecars.
 * **Nakama-native.** A Go runtime module gives Nakama RPCs and hooks that evaluate flags, experiments and
   live events locally from a replicated cache — no extra network hop in the hot path.
 * **Not Nakama-only.** gRPC and REST speak the same JSON/protobuf model; SDKs are generated from `proto/`.
@@ -76,9 +76,9 @@ variables. `zanshin --check-config` prints the effective configuration with secr
 | Computed properties maintained from events: `session_count`, `first/last_seen_at`, `event_count`, per-event `count` / `sum` / `last_at` — targetable from rules | ✅ |
 | Go SDK `sdk/go` (server-key client with local cache + change-stream invalidation) | ✅ |
 | TypeScript SDK `sdk/ts` (browser + Node, zero deps): session with auto-refresh, flags, experiments, live events, inbox, events, WebSocket stream | ✅ |
+| Admin console (`console/`, React, embedded in the binary at `/console`): flags / experiments / audiences / live events / messages / identities / analytics / API keys | ✅ |
 | Unity C# SDK `sdk/unity` (UPM, zero deps, netstandard2.1): same surface as the TS SDK incl. push-token registration and WebSocket stream | ✅ |
 | Push notifications (FCM HTTP v1 / APNs token auth): device token registry, `push: true` on campaigns and direct messages, proactive campaign sweep | ✅ |
-| Embedded admin console | 🔜 |
 
 ## API at a glance
 
@@ -108,6 +108,12 @@ variables. `zanshin --check-config` prints the effective configuration with secr
 | `GET` | `/admin/v1/stats`, `/healthz`, `/readyz`, `/metrics` | — / admin | operations |
 
 Full reference: [docs/api.md](docs/api.md). Design: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
+
+## Admin console
+
+Open `http://localhost:7550/console/` and sign in with the bootstrap admin key (or any admin
+API key). The UI is a React app in [`console/`](console) compiled into the server binary — run
+`npm ci && npm run build` there before `cargo build` (the Dockerfile does this for you).
 
 ## SDKs
 

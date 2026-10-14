@@ -39,6 +39,10 @@ console comes last once the model is stable.
       direct messages opt in with `push: true`, proactive sweep delivers live push campaigns to
       every registered device (every minute, after campaign changes, or `POST /admin/v1/push/sweep`),
       dead tokens pruned on provider feedback
+- [x] **Admin console** (`console/`): React/Vite SPA embedded into the binary with `rust-embed` and served at
+      `/console`; every admin API surface has a screen (flags with overrides + dry run, experiments with
+      lifecycle + results/lift, audiences with membership check, live events, campaigns with stats,
+      identities with properties/events/inbox/direct send/push devices, analytics, API keys)
 - [x] **Unity SDK** (`sdk/unity`): dependency-free UPM package (netstandard2.1, own JSON), async client
       with single-flight refresh, all client endpoints, reconnecting `ClientWebSocket` stream with
       local flag cache; compiled in CI with `dotnet build`, smoke-tested against a live server
@@ -50,7 +54,7 @@ console comes last once the model is stable.
 - Multi-project (tenant) support with per-project keys
 - Rate limiting, audit log of admin actions
 
-## 0.3 — console
+## 0.3 — console (done, see above)
 
 - Embedded React admin console served by the binary: flags, audiences, experiments with
   live results, live events calendar, message composer, identity explorer, dashboards
