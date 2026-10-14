@@ -96,3 +96,16 @@ jobs:
           npm ci
           npm run lint
           npm test
+
+  unity:
+    name: unity sdk
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "8.0.x"
+      - working-directory: sdk/unity
+        run: |
+          dotnet build Zanshin.csproj -c Release
+          dotnet build Tests~/Smoke/Smoke.csproj -c Release
