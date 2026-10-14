@@ -54,6 +54,15 @@ async fn readiness_metrics_idempotency_and_locks() {
         return;
     };
 
+    // Build provenance is exposed on the root document.
+    let root: Value = http.get(&base).send().await.unwrap().json().await.unwrap();
+    assert!(root["build"]["commit"]
+        .as_str()
+        .is_some_and(|c| !c.is_empty()));
+    assert!(root["build"]["rustc"]
+        .as_str()
+        .is_some_and(|r| r.starts_with("rustc")));
+
     // Deep readiness reports every backend and the pool.
     let r = http.get(format!("{base}/readyz")).send().await.unwrap();
     assert_eq!(r.status(), 200);

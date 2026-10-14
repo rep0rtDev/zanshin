@@ -141,6 +141,17 @@ Full reference: [docs/api.md](docs/api.md). Design: [docs/ARCHITECTURE.md](docs/
   HSTS (`server.hsts`), a strict CSP on the console; `server.trust_proxy` controls whether
   `X-Forwarded-For` is believed.
 
+## Install
+
+- **Container**: `ghcr.io/rep0rtdev/zanshin:<version>` (linux/amd64, linux/arm64; signed, with SBOM
+  and provenance attestations — see [docs/releasing.md](docs/releasing.md) for verification).
+- **Binaries**: Linux / macOS / Windows archives on the
+  [Releases](https://github.com/rep0rtDev/zanshin/releases) page, with signed `SHA256SUMS`.
+- **Nakama**: `ghcr.io/rep0rtdev/zanshin-nakama:<version>-nakama<nakama version>` bundles the
+  runtime module into the official Nakama image.
+- `zanshin --version` and `GET /admin/v1/system` (`build`) report the exact commit, build time
+  and toolchain of a running server.
+
 ## Running in production
 
 * **Replicas**: run as many `zanshin` processes as you like behind a load balancer. Catalogs replicate

@@ -187,6 +187,7 @@ async fn root(State(state): State<AppState>) -> impl IntoResponse {
     Json(serde_json::json!({
         "name": "zanshin",
         "version": env!("CARGO_PKG_VERSION"),
+        "build": crate::build_info::json(),
         "started_at": state.started_at,
         "docs": "https://github.com/rep0rtDev/zanshin",
     }))

@@ -1,0 +1,269 @@
+name: release
+
+# Tag `vX.Y.Z` (matching the workspace version in Cargo.toml) to cut a release:
+#   * binaries for Linux (x86_64, aarch64), macOS (arm64, x86_64) and Windows (x86_64), with sha256
+#   * multi-arch server image ghcr.io/<owner>/zanshin:{X.Y.Z, X.Y, latest} with SBOM + provenance,
+#     signed with cosign (keyless, Sigstore)
+#   * ghcr.io/<owner>/zanshin-nakama:{X.Y.Z-nakamaN, X.Y.Z} — Nakama with the runtime module, signed
+#   * SPDX SBOM of the source tree, signed checksums, SDK archives (Unreal plugin, Godot addon)
+#   * GitHub Release with the matching CHANGELOG.md section
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: existing vX.Y.Z tag to rebuild
+        required: true
+
+permissions:
+  contents: write
+  packages: write
+  id-token: write
+  attestations: write
+
+env:
+  CARGO_TERM_COLOR: always
+  NAKAMA_VERSION: "3.22.0"
+
+jobs:
+  meta:
+    name: version
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.v.outputs.version }}
+      tag: ${{ steps.v.outputs.tag }}
+      image: ${{ steps.v.outputs.image }}
+      nakama_image: ${{ steps.v.outputs.nakama_image }}
+      build_time: ${{ steps.v.outputs.build_time }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag || github.ref }}
+      - id: v
+        run: |
+          tag="${{ inputs.tag || github.ref_name }}"
+          version="${tag#v}"
+          cargo_version="$(grep -m1 '^version' Cargo.toml | sed -E 's/.*"(.*)".*/\1/')"
+          test "$version" = "$cargo_version" || { echo "tag $tag does not match Cargo.toml version $cargo_version"; exit 1; }
+          owner="$(echo '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "image=ghcr.io/$owner/zanshin" >> "$GITHUB_OUTPUT"
+          echo "nakama_image=ghcr.io/$owner/zanshin-nakama" >> "$GITHUB_OUTPUT"
+          echo "build_time=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_OUTPUT"
+
+  binaries:
+    name: ${{ matrix.name }}
+    needs: meta
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { name: linux-amd64,   os: ubuntu-latest,      target: x86_64-unknown-linux-gnu,  ext: "" }
+          - { name: linux-arm64,   os: ubuntu-24.04-arm,   target: aarch64-unknown-linux-gnu, ext: "" }
+          - { name: darwin-arm64,  os: macos-14,           target: aarch64-apple-darwin,      ext: "" }
+          - { name: darwin-amd64,  os: macos-13,           target: x86_64-apple-darwin,       ext: "" }
+          - { name: windows-amd64, os: windows-latest,     target: x86_64-pc-windows-msvc,    ext: ".exe" }
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.meta.outputs.tag }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: console/package-lock.json
+      - name: console
+        working-directory: console
+        run: |
+          npm ci
+          npm run build
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: release-${{ matrix.target }}
+      - name: build
+        shell: bash
+        env:
+          ZANSHIN_BUILD_COMMIT: ${{ github.sha }}
+        run: |
+          export ZANSHIN_BUILD_TIME="$(date -u +%s)"
+          cargo build --release --locked -p zanshin-server --target ${{ matrix.target }}
+      - name: package
+        shell: bash
+        run: |
+          v="${{ needs.meta.outputs.version }}"
+          name="zanshin-${v}-${{ matrix.name }}"
+          mkdir -p "dist/$name" "dist/linux-${{ matrix.name }}"
+          cp "target/${{ matrix.target }}/release/zanshin${{ matrix.ext }}" "dist/$name/"
+          cp README.md LICENSE config/zanshin.example.yml "dist/$name/"
+          cd dist
+          if [ "${{ matrix.ext }}" = ".exe" ]; then 7z a -tzip "$name.zip" "$name" >/dev/null; f="$name.zip"; else tar czf "$name.tar.gz" "$name"; f="$name.tar.gz"; fi
+          (sha256sum "$f" 2>/dev/null || shasum -a 256 "$f") > "$f.sha256"
+          rm -rf "$name"
+          # raw binary for the container build (linux only)
+          case "${{ matrix.name }}" in linux-*) cp "../target/${{ matrix.target }}/release/zanshin" "linux-${{ matrix.name }}/" ;; esac
+      - uses: actions/upload-artifact@v4
+        with:
+          name: binary-${{ matrix.name }}
+          path: dist/
+          if-no-files-found: error
+
+  image:
+    name: server image
+    needs: [meta, binaries]
+    runs-on: ubuntu-latest
+    outputs:
+      digest: ${{ steps.push.outputs.digest }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.meta.outputs.tag }}
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: binary-linux-*
+          path: dist
+          merge-multiple: true
+      - name: layout binaries for Dockerfile.release
+        run: |
+          mkdir -p dist/linux-amd64 dist/linux-arm64
+          mv dist/linux-linux-amd64/zanshin dist/linux-amd64/zanshin
+          mv dist/linux-linux-arm64/zanshin dist/linux-arm64/zanshin
+          chmod +x dist/linux-*/zanshin
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - id: tags
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ needs.meta.outputs.image }}
+          tags: |
+            type=semver,pattern={{version}},value=${{ needs.meta.outputs.tag }}
+            type=semver,pattern={{major}}.{{minor}},value=${{ needs.meta.outputs.tag }}
+            type=raw,value=latest
+      - id: push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile.release
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.tags.outputs.tags }}
+          labels: ${{ steps.tags.outputs.labels }}
+          build-args: |
+            VERSION=${{ needs.meta.outputs.version }}
+            COMMIT=${{ github.sha }}
+            BUILD_TIME=${{ needs.meta.outputs.build_time }}
+          provenance: mode=max
+          sbom: true
+      - uses: sigstore/cosign-installer@v3
+      - name: sign image (keyless)
+        env:
+          DIGEST: ${{ steps.push.outputs.digest }}
+        run: cosign sign --yes "${{ needs.meta.outputs.image }}@${DIGEST}"
+      - uses: actions/attest-build-provenance@v1
+        with:
+          subject-name: ${{ needs.meta.outputs.image }}
+          subject-digest: ${{ steps.push.outputs.digest }}
+          push-to-registry: true
+
+  nakama-image:
+    name: nakama image
+    needs: meta
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.meta.outputs.tag }}
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - id: push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: nakama/Dockerfile
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: |
+            ${{ needs.meta.outputs.nakama_image }}:${{ needs.meta.outputs.version }}
+            ${{ needs.meta.outputs.nakama_image }}:${{ needs.meta.outputs.version }}-nakama${{ env.NAKAMA_VERSION }}
+            ${{ needs.meta.outputs.nakama_image }}:latest
+          build-args: |
+            NAKAMA_VERSION=${{ env.NAKAMA_VERSION }}
+            VERSION=${{ needs.meta.outputs.version }}
+            COMMIT=${{ github.sha }}
+          provenance: mode=max
+          sbom: true
+      - uses: sigstore/cosign-installer@v3
+      - run: cosign sign --yes "${{ needs.meta.outputs.nakama_image }}@${{ steps.push.outputs.digest }}"
+
+  release:
+    name: github release
+    needs: [meta, binaries, image, nakama-image]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.meta.outputs.tag }}
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: binary-*
+          path: dist
+          merge-multiple: true
+      - name: sdk archives
+        run: |
+          v="${{ needs.meta.outputs.version }}"
+          (cd sdk && zip -qr "../dist/zanshin-unreal-plugin-${v}.zip" unreal -x '*/bin/*' '*/obj/*')
+          (cd sdk/godot && zip -qr "../../dist/zanshin-godot-addon-${v}.zip" addons README.md)
+          (cd sdk && zip -qr "../dist/zanshin-unity-upm-${v}.zip" unity -x 'unity/bin/*' 'unity/obj/*' 'unity/Tests~/*')
+      - name: source sbom (spdx)
+        uses: anchore/sbom-action@v0
+        with:
+          path: .
+          format: spdx-json
+          output-file: dist/zanshin-${{ needs.meta.outputs.version }}.spdx.json
+          upload-artifact: false
+      - name: checksums
+        working-directory: dist
+        run: |
+          rm -rf linux-linux-amd64 linux-linux-arm64
+          find . -maxdepth 1 -type f ! -name '*.sha256' ! -name SHA256SUMS -exec sha256sum {} + | sed 's#\./##' > SHA256SUMS
+          rm -f *.sha256
+      - uses: sigstore/cosign-installer@v3
+      - name: sign checksums (keyless)
+        working-directory: dist
+        run: cosign sign-blob --yes --bundle SHA256SUMS.sigstore.json SHA256SUMS
+      - name: changelog section
+        run: |
+          v="${{ needs.meta.outputs.version }}"
+          awk -v v="$v" '/^## /{p = index($0, "[" v "]") > 0 || index($0, " " v " ") > 0 || $0 ~ ("^## " v "( |$)")} p' CHANGELOG.md > notes.md
+          [ -s notes.md ] || echo "Release $v" > notes.md
+          {
+            echo
+            echo "### Images"
+            echo '```'
+            echo "${{ needs.meta.outputs.image }}:$v (${{ needs.image.outputs.digest }})"
+            echo "${{ needs.meta.outputs.nakama_image }}:$v-nakama${{ env.NAKAMA_VERSION }}"
+            echo '```'
+            echo "Verify: \`cosign verify --certificate-identity-regexp 'https://github.com/${{ github.repository }}/' --certificate-oidc-issuer https://token.actions.githubusercontent.com ${{ needs.meta.outputs.image }}:$v\`"
+          } >> notes.md
+      - uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ needs.meta.outputs.tag }}
+          name: ${{ needs.meta.outputs.tag }}
+          body_path: notes.md
+          files: dist/*
+          fail_on_unmatched_files: true
