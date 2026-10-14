@@ -81,3 +81,5 @@ jobs:
           ignore-unfixed: true
           exit-code: "1"
           skip-dirs: target,console/node_modules,sdk/ts/node_modules
+        env:
+          TRIVY_IGNOREFILE: .trivyignore.yaml

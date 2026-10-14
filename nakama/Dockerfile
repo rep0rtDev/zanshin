@@ -11,7 +11,6 @@ RUN sed -i 's#=> ../sdk/go#=> /sdk/go#' go.mod && go mod download
 COPY nakama/ .
 RUN go build --trimpath --buildmode=plugin -o ./zanshin.so
 
-# trivy:ignore:AVD-DS-0002 the upstream Nakama image runs as root and owns /nakama/data; we only add the module.
 FROM heroiclabs/nakama:${NAKAMA_VERSION}
 ARG NAKAMA_VERSION
 ARG VERSION=dev

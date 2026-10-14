@@ -1,0 +1,5 @@
+# Accepted findings for `trivy fs` (security.yml). Keep each entry justified.
+misconfigurations:
+  - id: AVD-DS-0002
+    paths: ["nakama/Dockerfile"]
+    statement: The upstream heroiclabs/nakama image runs as root and owns /nakama/data; this image only adds the runtime module and inherits that choice.
