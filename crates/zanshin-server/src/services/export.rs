@@ -1,6 +1,6 @@
 //! Event export sinks: periodic delivery of new events to S3, an HTTP endpoint, or BigQuery.
 
-use std::io::Write;
+use std::{io::Write, sync::Arc};
 
 use chrono::{DateTime, Utc};
 use hmac::{Hmac, Mac};
@@ -60,6 +60,7 @@ pub struct ExportService {
     runs: ExportRunRepo,
     events: EventService,
     http: reqwest::Client,
+    notifier: std::sync::Arc<std::sync::RwLock<Option<super::notifications::NotificationService>>>,
 }
 
 pub fn mask_config(v: &Value) -> Value {
@@ -120,12 +121,18 @@ fn uri_encode(s: &str, keep_slash: bool) -> String {
 }
 
 impl ExportService {
+    /// Route failed runs to notification channels.
+    pub fn attach_notifier(&self, n: super::notifications::NotificationService) {
+        *self.notifier.write().unwrap() = Some(n);
+    }
+
     pub fn new(sinks: ExportSinkRepo, runs: ExportRunRepo, events: EventService) -> Self {
         let http = reqwest::Client::builder()
             .timeout(std::time::Duration::from_secs(60))
             .build()
             .unwrap_or_default();
         Self {
+            notifier: Default::default(),
             sinks,
             runs,
             events,
@@ -329,24 +336,59 @@ impl ExportService {
                 self.sinks.finish(s.id, None, &e.to_string()).await?;
                 metrics::counter!("zanshin_export_failures_total", "sink" => s.key.clone())
                     .increment(1);
+                if let Some(n) = self.notifier.read().unwrap().clone() {
+                    n.notify(
+                        zanshin_core::notifications::Notice::new(
+                            "export.failed",
+                            format!("Export sink `{}` failed", s.key),
+                            e.to_string(),
+                        )
+                        .field("sink", s.key.clone())
+                        .field("kind", s.kind.as_str()),
+                    );
+                }
             }
         }
         Ok(run)
     }
 
+    /// `$event_error` rows carry the validation reason as a top-level `_error` column so
+    /// warehouse users can filter rejected events without parsing metadata.
+    fn error_of(r: &ExportedEvent) -> Option<String> {
+        (r.name == zanshin_core::events::EV_EVENT_ERROR).then(|| {
+            r.metadata
+                .get("reason")
+                .and_then(|v| v.as_str())
+                .unwrap_or("rejected")
+                .to_string()
+        })
+    }
+
     fn encode(s: &ExportSink, rows: &[ExportedEvent]) -> Result<(Vec<u8>, &'static str)> {
+        if s.format == ExportFormat::Parquet {
+            return Ok((
+                Self::encode_parquet(rows)?,
+                "application/vnd.apache.parquet",
+            ));
+        }
         let mut raw: Vec<u8> = Vec::with_capacity(rows.len() * 256);
         let content_type = match s.format {
             ExportFormat::Jsonl => {
                 for r in rows {
-                    serde_json::to_writer(&mut raw, r)
+                    let mut v =
+                        serde_json::to_value(r).map_err(|e| Error::internal(anyhow::anyhow!(e)))?;
+                    if let (Some(err), Some(obj)) = (Self::error_of(r), v.as_object_mut()) {
+                        obj.insert("_error".into(), Value::String(err));
+                    }
+                    serde_json::to_writer(&mut raw, &v)
                         .map_err(|e| Error::internal(anyhow::anyhow!(e)))?;
                     raw.push(b'\n');
                 }
                 "application/x-ndjson"
             }
+            ExportFormat::Parquet => unreachable!(),
             ExportFormat::Csv => {
-                raw.extend_from_slice(b"id,event_time,received_at,identity_id,external_id,name,value,metadata,session_id,experiments\n");
+                raw.extend_from_slice(b"id,event_time,received_at,identity_id,external_id,name,value,metadata,session_id,experiments,_error\n");
                 let esc = |v: &str| -> String {
                     if v.contains([',', '"', '\n']) {
                         format!("\"{}\"", v.replace('"', "\"\""))
@@ -356,7 +398,7 @@ impl ExportService {
                 };
                 for r in rows {
                     let line = format!(
-                        "{},{},{},{},{},{},{},{},{},{}\n",
+                        "{},{},{},{},{},{},{},{},{},{},{}\n",
                         r.id,
                         r.event_time.to_rfc3339(),
                         r.received_at.to_rfc3339(),
@@ -367,13 +409,14 @@ impl ExportService {
                         esc(&r.metadata.to_string()),
                         r.session_id.map(|s| s.to_string()).unwrap_or_default(),
                         esc(&r.experiments.to_string()),
+                        esc(&Self::error_of(r).unwrap_or_default()),
                     );
                     raw.extend_from_slice(line.as_bytes());
                 }
                 "text/csv"
             }
         };
-        if s.gzip && s.kind != SinkKind::BigQuery {
+        if s.gzip && s.kind != SinkKind::BigQuery && s.format != ExportFormat::Parquet {
             let mut enc = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::default());
             enc.write_all(&raw)
                 .map_err(|e| Error::internal(anyhow::anyhow!(e)))?;
@@ -386,7 +429,172 @@ impl ExportService {
         Ok((raw, content_type))
     }
 
-    fn object_name(s: &ExportSink, rows: &[ExportedEvent], test: bool) -> String {
+    fn encode_parquet(rows: &[ExportedEvent]) -> Result<Vec<u8>> {
+        use parquet::{
+            basic::{Compression, ConvertedType, Repetition, Type as PhysicalType},
+            column::writer::ColumnWriter,
+            data_type::ByteArray,
+            file::{properties::WriterProperties, writer::SerializedFileWriter},
+            schema::types::Type,
+        };
+        let perr = |e: parquet::errors::ParquetError| Error::internal(anyhow::anyhow!(e));
+        let str_col = |name: &str, required: bool| -> Result<Arc<Type>> {
+            Type::primitive_type_builder(name, PhysicalType::BYTE_ARRAY)
+                .with_converted_type(ConvertedType::UTF8)
+                .with_repetition(if required {
+                    Repetition::REQUIRED
+                } else {
+                    Repetition::OPTIONAL
+                })
+                .build()
+                .map(Arc::new)
+                .map_err(perr)
+        };
+        let ts_col = |name: &str| -> Result<Arc<Type>> {
+            Type::primitive_type_builder(name, PhysicalType::INT64)
+                .with_converted_type(ConvertedType::TIMESTAMP_MILLIS)
+                .with_repetition(Repetition::REQUIRED)
+                .build()
+                .map(Arc::new)
+                .map_err(perr)
+        };
+        let schema = Arc::new(
+            Type::group_type_builder("event")
+                .with_fields(vec![
+                    str_col("id", true)?,
+                    ts_col("event_time")?,
+                    ts_col("received_at")?,
+                    str_col("identity_id", true)?,
+                    str_col("external_id", true)?,
+                    str_col("name", true)?,
+                    str_col("value", true)?,
+                    str_col("metadata", true)?,
+                    str_col("session_id", false)?,
+                    str_col("experiments", true)?,
+                    str_col("_error", false)?,
+                ])
+                .build()
+                .map_err(perr)?,
+        );
+        enum Col {
+            Str(Vec<Option<String>>),
+            Ts(Vec<i64>),
+        }
+        let cols = [
+            Col::Str(rows.iter().map(|r| Some(r.id.to_string())).collect()),
+            Col::Ts(
+                rows.iter()
+                    .map(|r| r.event_time.timestamp_millis())
+                    .collect(),
+            ),
+            Col::Ts(
+                rows.iter()
+                    .map(|r| r.received_at.timestamp_millis())
+                    .collect(),
+            ),
+            Col::Str(
+                rows.iter()
+                    .map(|r| Some(r.identity_id.to_string()))
+                    .collect(),
+            ),
+            Col::Str(rows.iter().map(|r| Some(r.external_id.clone())).collect()),
+            Col::Str(rows.iter().map(|r| Some(r.name.clone())).collect()),
+            Col::Str(rows.iter().map(|r| Some(r.value.clone())).collect()),
+            Col::Str(rows.iter().map(|r| Some(r.metadata.to_string())).collect()),
+            Col::Str(
+                rows.iter()
+                    .map(|r| r.session_id.map(|s| s.to_string()))
+                    .collect(),
+            ),
+            Col::Str(
+                rows.iter()
+                    .map(|r| Some(r.experiments.to_string()))
+                    .collect(),
+            ),
+            Col::Str(rows.iter().map(Self::error_of).collect()),
+        ];
+        let props = Arc::new(
+            WriterProperties::builder()
+                .set_compression(Compression::SNAPPY)
+                .set_created_by("zanshin".into())
+                .build(),
+        );
+        let mut out: Vec<u8> = Vec::with_capacity(rows.len() * 128);
+        let mut writer = SerializedFileWriter::new(&mut out, schema, props).map_err(perr)?;
+        let mut rg = writer.next_row_group().map_err(perr)?;
+        for col in cols.iter() {
+            let mut cw = rg.next_column().map_err(perr)?.ok_or_else(|| {
+                Error::internal(anyhow::anyhow!("parquet schema/column mismatch"))
+            })?;
+            match (cw.untyped(), col) {
+                (ColumnWriter::ByteArrayColumnWriter(w), Col::Str(vals)) => {
+                    let defs: Vec<i16> = vals.iter().map(|v| i16::from(v.is_some())).collect();
+                    let present: Vec<ByteArray> = vals
+                        .iter()
+                        .flatten()
+                        .map(|v| ByteArray::from(v.as_str()))
+                        .collect();
+                    w.write_batch(&present, Some(&defs), None).map_err(perr)?;
+                }
+                (ColumnWriter::Int64ColumnWriter(w), Col::Ts(vals)) => {
+                    w.write_batch(vals, None, None).map_err(perr)?;
+                }
+                _ => {
+                    return Err(Error::internal(anyhow::anyhow!(
+                        "parquet column type mismatch"
+                    )))
+                }
+            }
+            cw.close().map_err(perr)?;
+        }
+        rg.close().map_err(perr)?;
+        writer.close().map_err(perr)?;
+        Ok(out)
+    }
+
+    fn partition_by_event(s: &ExportSink) -> bool {
+        s.config.get("partition").and_then(|p| p.as_str()) == Some("event")
+    }
+
+    /// Upload rows to S3 as one object, or one object per event name when `partition = event`.
+    /// Returns (object names, bytes).
+    async fn stage_s3(
+        &self,
+        s: &ExportSink,
+        rows: &[ExportedEvent],
+        test: bool,
+    ) -> Result<(Vec<String>, i64)> {
+        let mut groups: Vec<(Option<String>, Vec<&ExportedEvent>)> = Vec::new();
+        if Self::partition_by_event(s) {
+            let mut by: std::collections::BTreeMap<&str, Vec<&ExportedEvent>> = Default::default();
+            for r in rows {
+                by.entry(r.name.as_str()).or_default().push(r);
+            }
+            for (name, g) in by {
+                groups.push((Some(name.to_string()), g));
+            }
+        } else {
+            groups.push((None, rows.iter().collect()));
+        }
+        let mut objects = Vec::with_capacity(groups.len());
+        let mut bytes = 0i64;
+        for (part, g) in groups {
+            let owned: Vec<ExportedEvent> = g.into_iter().cloned().collect();
+            let (body, ct) = Self::encode(s, &owned)?;
+            let object = Self::object_name(s, &owned, test, part.as_deref());
+            self.put_s3(&s.config, &object, &body, ct).await?;
+            bytes += body.len() as i64;
+            objects.push(object);
+        }
+        Ok((objects, bytes))
+    }
+
+    fn object_name(
+        s: &ExportSink,
+        rows: &[ExportedEvent],
+        test: bool,
+        partition: Option<&str>,
+    ) -> String {
         let prefix = s
             .config
             .get("prefix")
@@ -395,7 +603,23 @@ impl ExportService {
             .trim_matches('/')
             .to_string();
         let first = rows.first().map(|r| r.received_at).unwrap_or_else(Utc::now);
-        let ext = format!("{}{}", s.format.as_str(), if s.gzip { ".gz" } else { "" });
+        let gz = s.gzip && s.format != ExportFormat::Parquet;
+        let ext = format!("{}{}", s.format.as_str(), if gz { ".gz" } else { "" });
+        let part = partition
+            .map(|p| {
+                let safe: String = p
+                    .chars()
+                    .map(|c| {
+                        if c.is_ascii_alphanumeric() || c == '_' || c == '-' {
+                            c
+                        } else {
+                            '_'
+                        }
+                    })
+                    .collect();
+                format!("event={safe}/")
+            })
+            .unwrap_or_default();
         let stem = if test {
             "test".to_string()
         } else {
@@ -405,7 +629,7 @@ impl ExportService {
                 Uuid::now_v7().simple()
             )
         };
-        format!("{prefix}/{}/{stem}.{ext}", first.format("%Y/%m/%d"))
+        format!("{prefix}/{part}{}/{stem}.{ext}", first.format("%Y/%m/%d"))
     }
 
     /// Returns (object name or endpoint, bytes sent).
@@ -417,10 +641,18 @@ impl ExportService {
     ) -> Result<(String, i64)> {
         match s.kind {
             SinkKind::S3 => {
-                let (body, ct) = Self::encode(s, rows)?;
-                let object = Self::object_name(s, rows, test);
-                self.put_s3(&s.config, &object, &body, ct).await?;
-                Ok((object, body.len() as i64))
+                let (objects, bytes) = self.stage_s3(s, rows, test).await?;
+                Ok((Self::describe(&objects), bytes))
+            }
+            SinkKind::Snowflake => {
+                let (objects, bytes) = self.stage_s3(s, rows, test).await?;
+                self.snowflake_copy(s, &objects).await?;
+                Ok((Self::describe(&objects), bytes))
+            }
+            SinkKind::Redshift => {
+                let (objects, bytes) = self.stage_s3(s, rows, test).await?;
+                self.redshift_copy(s, &objects).await?;
+                Ok((Self::describe(&objects), bytes))
             }
             SinkKind::Http => {
                 let (body, ct) = Self::encode(s, rows)?;
@@ -478,6 +710,7 @@ impl ExportService {
                             "id": r.id, "event_time": r.event_time.to_rfc3339(), "received_at": r.received_at.to_rfc3339(),
                             "identity_id": r.identity_id, "external_id": r.external_id, "name": r.name, "value": r.value,
                             "metadata": r.metadata.to_string(), "session_id": r.session_id, "experiments": r.experiments.to_string(),
+                            "_error": Self::error_of(r),
                         }
                     })).collect::<Vec<_>>(),
                 });
@@ -512,6 +745,273 @@ impl ExportService {
                 Ok((format!("{project}.{dataset}.{table}"), body.len() as i64))
             }
         }
+    }
+
+    fn describe(objects: &[String]) -> String {
+        match objects {
+            [one] => one.clone(),
+            [first, rest @ ..] => format!("{first} (+{} more)", rest.len()),
+            [] => String::new(),
+        }
+    }
+
+    fn file_format_sql(s: &ExportSink, snowflake: bool) -> String {
+        let gz = s.gzip && s.format != ExportFormat::Parquet;
+        if snowflake {
+            match s.format {
+                ExportFormat::Jsonl => format!(
+                    "FILE_FORMAT = (TYPE = JSON COMPRESSION = {}) MATCH_BY_COLUMN_NAME = CASE_INSENSITIVE",
+                    if gz { "GZIP" } else { "NONE" }
+                ),
+                ExportFormat::Csv => format!(
+                    "FILE_FORMAT = (TYPE = CSV SKIP_HEADER = 1 FIELD_OPTIONALLY_ENCLOSED_BY = '\"' COMPRESSION = {})",
+                    if gz { "GZIP" } else { "NONE" }
+                ),
+                ExportFormat::Parquet => {
+                    "FILE_FORMAT = (TYPE = PARQUET) MATCH_BY_COLUMN_NAME = CASE_INSENSITIVE".into()
+                }
+            }
+        } else {
+            match s.format {
+                ExportFormat::Jsonl => format!(
+                    "FORMAT AS JSON 'auto' TIMEFORMAT 'auto'{}",
+                    if gz { " GZIP" } else { "" }
+                ),
+                ExportFormat::Csv => format!(
+                    "FORMAT AS CSV IGNOREHEADER 1 TIMEFORMAT 'auto'{}",
+                    if gz { " GZIP" } else { "" }
+                ),
+                ExportFormat::Parquet => "FORMAT AS PARQUET".into(),
+            }
+        }
+    }
+
+    fn ident(s: &str) -> Result<&str> {
+        if s.is_empty()
+            || !s
+                .chars()
+                .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '.' || c == '$')
+        {
+            return Err(Error::invalid(format!("invalid SQL identifier {s:?}")));
+        }
+        Ok(s)
+    }
+
+    /// `COPY INTO` the staged objects through the Snowflake SQL API (key-pair JWT auth). The
+    /// external stage must point at the sink's bucket + prefix.
+    async fn snowflake_copy(&self, s: &ExportSink, objects: &[String]) -> Result<()> {
+        let c = &s.config;
+        let get = |k: &str| c[k].as_str().unwrap_or_default().to_string();
+        let account = get("account").to_uppercase();
+        let user = get("user").to_uppercase();
+        let fp = get("public_key_fp");
+        let fp = if fp.starts_with("SHA256:") {
+            fp
+        } else {
+            format!("SHA256:{fp}")
+        };
+        let now = Utc::now().timestamp();
+        let claims = json!({
+            "iss": format!("{account}.{user}.{fp}"),
+            "sub": format!("{account}.{user}"),
+            "iat": now,
+            "exp": now + 55 * 60,
+        });
+        let key = jsonwebtoken::EncodingKey::from_rsa_pem(get("private_key").as_bytes())
+            .map_err(|e| Error::invalid(format!("snowflake private_key: {e}")))?;
+        let jwt = jsonwebtoken::encode(
+            &jsonwebtoken::Header::new(jsonwebtoken::Algorithm::RS256),
+            &claims,
+            &key,
+        )
+        .map_err(|e| Error::invalid(format!("snowflake jwt: {e}")))?;
+        let table = format!(
+            "{}.{}.{}",
+            Self::ident(&get("database"))?,
+            Self::ident(&get("schema"))?,
+            Self::ident(&get("table"))?
+        );
+        let stage = Self::ident(&get("stage"))?.to_string();
+        let prefix = c["prefix"]
+            .as_str()
+            .unwrap_or("zanshin/events")
+            .trim_matches('/')
+            .to_string();
+        let files = objects
+            .iter()
+            .map(|o| {
+                let rel = o.strip_prefix(&format!("{prefix}/")).unwrap_or(o);
+                format!("'{}'", rel.replace('\'', ""))
+            })
+            .collect::<Vec<_>>()
+            .join(", ");
+        let sql = format!(
+            "COPY INTO {table} FROM @{stage} FILES = ({files}) {} ON_ERROR = ABORT_STATEMENT",
+            Self::file_format_sql(s, true)
+        );
+        let mut body = json!({ "statement": sql, "timeout": 600, "database": get("database"), "schema": get("schema") });
+        for k in ["warehouse", "role"] {
+            if let Some(v) = c[k].as_str().filter(|v| !v.is_empty()) {
+                body[k] = Value::String(v.to_string());
+            }
+        }
+        let host = get("host");
+        let host = host
+            .trim_start_matches("https://")
+            .trim_end_matches('/')
+            .to_string();
+        let res = self
+            .http
+            .post(format!("https://{host}/api/v2/statements"))
+            .bearer_auth(jwt)
+            .header("X-Snowflake-Authorization-Token-Type", "KEYPAIR_JWT")
+            .header("accept", "application/json")
+            .header("user-agent", "zanshin")
+            .json(&body)
+            .send()
+            .await
+            .map_err(|e| Error::invalid(format!("snowflake: {e}")))?;
+        let st = res.status();
+        if !st.is_success() {
+            let txt = res.text().await.unwrap_or_default();
+            return Err(Error::invalid(format!(
+                "snowflake status {st}: {}",
+                txt.chars().take(400).collect::<String>()
+            )));
+        }
+        Ok(())
+    }
+
+    /// `COPY` the staged objects through the Redshift Data API (SigV4 with the sink's keys).
+    async fn redshift_copy(&self, s: &ExportSink, objects: &[String]) -> Result<()> {
+        let c = &s.config;
+        let get = |k: &str| c[k].as_str().unwrap_or_default().to_string();
+        let region = c["region"].as_str().unwrap_or("us-east-1").to_string();
+        let bucket = get("bucket");
+        let role = get("iam_role").replace('\'', "");
+        let table = Self::ident(&get("table"))?.to_string();
+        let fmt = Self::file_format_sql(s, false);
+        let mut statements = Vec::with_capacity(objects.len());
+        for o in objects {
+            statements.push(format!(
+                "COPY {table} FROM 's3://{bucket}/{}' IAM_ROLE '{role}' {fmt}",
+                o.replace('\'', "")
+            ));
+        }
+        let mut body = json!({ "Database": get("database") });
+        if statements.len() == 1 {
+            body["Sql"] = Value::String(statements.remove(0));
+        } else {
+            body["Sqls"] = Value::Array(statements.into_iter().map(Value::String).collect());
+        }
+        if let Some(v) = c["cluster_id"].as_str().filter(|v| !v.is_empty()) {
+            body["ClusterIdentifier"] = Value::String(v.to_string());
+        }
+        if let Some(v) = c["workgroup"].as_str().filter(|v| !v.is_empty()) {
+            body["WorkgroupName"] = Value::String(v.to_string());
+        }
+        if let Some(v) = c["db_user"].as_str().filter(|v| !v.is_empty()) {
+            body["DbUser"] = Value::String(v.to_string());
+        }
+        if let Some(v) = c["secret_arn"].as_str().filter(|v| !v.is_empty()) {
+            body["SecretArn"] = Value::String(v.to_string());
+        }
+        let payload = serde_json::to_vec(&body).map_err(|e| Error::internal(anyhow::anyhow!(e)))?;
+        let host = format!("redshift-data.{region}.amazonaws.com");
+        let target = if body.get("Sqls").is_some() {
+            "RedshiftData.BatchExecuteStatement"
+        } else {
+            "RedshiftData.ExecuteStatement"
+        };
+        let (auth, amz_date, _) = Self::sigv4(
+            "POST",
+            &host,
+            "/",
+            "redshift-data",
+            &region,
+            &get("access_key"),
+            &get("secret_key"),
+            &[
+                ("content-type", "application/x-amz-json-1.1"),
+                ("x-amz-target", target),
+            ],
+            &payload,
+        );
+        let res = self
+            .http
+            .post(format!("https://{host}/"))
+            .header("authorization", auth)
+            .header("content-type", "application/x-amz-json-1.1")
+            .header("x-amz-target", target)
+            .header("x-amz-date", amz_date)
+            .body(payload)
+            .send()
+            .await
+            .map_err(|e| Error::invalid(format!("redshift: {e}")))?;
+        let st = res.status();
+        if !st.is_success() {
+            let txt = res.text().await.unwrap_or_default();
+            return Err(Error::invalid(format!(
+                "redshift status {st}: {}",
+                txt.chars().take(400).collect::<String>()
+            )));
+        }
+        Ok(())
+    }
+
+    /// AWS SigV4 for a single request. `extra` are additional headers to sign (lowercase names,
+    /// sorted together with `host` and `x-amz-date`). Returns (authorization, x-amz-date, payload sha256).
+    #[allow(clippy::too_many_arguments)]
+    fn sigv4(
+        method: &str,
+        host: &str,
+        path: &str,
+        service: &str,
+        region: &str,
+        access: &str,
+        secret: &str,
+        extra: &[(&str, &str)],
+        payload: &[u8],
+    ) -> (String, String, String) {
+        let now = Utc::now();
+        let amz_date = now.format("%Y%m%dT%H%M%SZ").to_string();
+        let date = now.format("%Y%m%d").to_string();
+        let payload_hash = hex(&Sha256::digest(payload));
+        let mut headers: Vec<(String, String)> = extra
+            .iter()
+            .map(|(k, v)| (k.to_lowercase(), v.trim().to_string()))
+            .collect();
+        headers.push(("host".into(), host.to_string()));
+        headers.push(("x-amz-date".into(), amz_date.clone()));
+        headers.sort();
+        let canonical_headers = headers
+            .iter()
+            .map(|(k, v)| format!("{k}:{v}\n"))
+            .collect::<String>();
+        let signed = headers
+            .iter()
+            .map(|(k, _)| k.as_str())
+            .collect::<Vec<_>>()
+            .join(";");
+        let canonical = format!(
+            "{method}\n{}\n\n{canonical_headers}\n{signed}\n{payload_hash}",
+            uri_encode(path, true)
+        );
+        let scope = format!("{date}/{region}/{service}/aws4_request");
+        let to_sign = format!(
+            "AWS4-HMAC-SHA256\n{amz_date}\n{scope}\n{}",
+            hex(&Sha256::digest(canonical.as_bytes()))
+        );
+        let k = hmac(format!("AWS4{secret}").as_bytes(), date.as_bytes());
+        let k = hmac(&k, region.as_bytes());
+        let k = hmac(&k, service.as_bytes());
+        let k = hmac(&k, b"aws4_request");
+        let sig = hex(&hmac(&k, to_sign.as_bytes()));
+        (
+            format!("AWS4-HMAC-SHA256 Credential={access}/{scope}, SignedHeaders={signed}, Signature={sig}"),
+            amz_date,
+            payload_hash,
+        )
     }
 
     async fn put_s3(
@@ -550,27 +1050,19 @@ impl ExportService {
         } else {
             "https"
         };
-        let now = Utc::now();
-        let amz_date = now.format("%Y%m%dT%H%M%SZ").to_string();
-        let date = now.format("%Y%m%d").to_string();
-        let payload_hash = hex(&Sha256::digest(body));
-        let canonical_uri = uri_encode(&path, true);
-        let canonical_headers = format!("content-type:{content_type}\nhost:{host}\nx-amz-content-sha256:{payload_hash}\nx-amz-date:{amz_date}\n");
-        let signed = "content-type;host;x-amz-content-sha256;x-amz-date";
-        let canonical =
-            format!("PUT\n{canonical_uri}\n\n{canonical_headers}\n{signed}\n{payload_hash}");
-        let scope = format!("{date}/{region}/s3/aws4_request");
-        let to_sign = format!(
-            "AWS4-HMAC-SHA256\n{amz_date}\n{scope}\n{}",
-            hex(&Sha256::digest(canonical.as_bytes()))
-        );
-        let k = hmac(format!("AWS4{secret}").as_bytes(), date.as_bytes());
-        let k = hmac(&k, region.as_bytes());
-        let k = hmac(&k, b"s3");
-        let k = hmac(&k, b"aws4_request");
-        let sig = hex(&hmac(&k, to_sign.as_bytes()));
-        let auth = format!(
-            "AWS4-HMAC-SHA256 Credential={access}/{scope}, SignedHeaders={signed}, Signature={sig}"
+        let (auth, amz_date, payload_hash) = Self::sigv4(
+            "PUT",
+            &host,
+            &path,
+            "s3",
+            region,
+            access,
+            secret,
+            &[
+                ("content-type", content_type),
+                ("x-amz-content-sha256", &hex(&Sha256::digest(body))),
+            ],
+            body,
         );
         let res = self
             .http
@@ -645,5 +1137,138 @@ impl ExportService {
             .await
             .map_err(|e| Error::invalid(format!("google oauth: {e}")))?;
         Ok(t.access_token)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use chrono::TimeZone;
+    use parquet::file::reader::{FileReader, SerializedFileReader};
+
+    fn sink(format: ExportFormat, gzip: bool) -> ExportSink {
+        let now = Utc::now();
+        ExportSink {
+            id: Uuid::nil(),
+            key: "s".into(),
+            name: String::new(),
+            kind: SinkKind::S3,
+            config: json!({"bucket": "b", "region": "r", "access_key": "a", "secret_key": "s"}),
+            format,
+            gzip,
+            enabled: true,
+            events: vec![],
+            interval_secs: 300,
+            batch_size: 100,
+            cursor_at: None,
+            cursor_id: None,
+            next_run_at: None,
+            last_run_at: None,
+            last_error: String::new(),
+            tags: vec![],
+            version: 1,
+            created_at: now,
+            updated_at: now,
+        }
+    }
+
+    fn rows() -> Vec<ExportedEvent> {
+        let t = Utc.with_ymd_and_hms(2026, 1, 2, 3, 4, 5).unwrap();
+        vec![
+            ExportedEvent {
+                id: Uuid::now_v7(),
+                event_time: t,
+                received_at: t,
+                identity_id: Uuid::now_v7(),
+                external_id: "p1".into(),
+                name: "purchaseCompleted".into(),
+                value: "sku".into(),
+                metadata: json!({"amount": 1}),
+                session_id: None,
+                experiments: json!({}),
+            },
+            ExportedEvent {
+                id: Uuid::now_v7(),
+                event_time: t,
+                received_at: t,
+                identity_id: Uuid::now_v7(),
+                external_id: "p2".into(),
+                name: zanshin_core::events::EV_EVENT_ERROR.into(),
+                value: String::new(),
+                metadata: json!({"event": "bad", "reason": "unknown event"}),
+                session_id: Some(Uuid::now_v7()),
+                experiments: json!({}),
+            },
+        ]
+    }
+
+    #[test]
+    fn jsonl_and_csv_carry_error_column() {
+        let (body, _) = ExportService::encode(&sink(ExportFormat::Jsonl, false), &rows()).unwrap();
+        let text = String::from_utf8(body).unwrap();
+        let lines: Vec<&str> = text.lines().collect();
+        assert_eq!(lines.len(), 2);
+        assert!(!lines[0].contains("_error"));
+        assert!(lines[1].contains("\"_error\":\"unknown event\""));
+        let (body, _) = ExportService::encode(&sink(ExportFormat::Csv, false), &rows()).unwrap();
+        let text = String::from_utf8(body).unwrap();
+        assert!(text.lines().next().unwrap().ends_with(",_error"));
+        assert!(text.lines().nth(2).unwrap().ends_with(",unknown event"));
+    }
+
+    #[test]
+    fn parquet_roundtrip() {
+        let s = sink(ExportFormat::Parquet, true);
+        let (body, ct) = ExportService::encode(&s, &rows()).unwrap();
+        assert_eq!(ct, "application/vnd.apache.parquet");
+        assert_eq!(&body[..4], b"PAR1");
+        let reader = SerializedFileReader::new(bytes::Bytes::from(body)).unwrap();
+        let meta = reader.metadata();
+        assert_eq!(meta.file_metadata().num_rows(), 2);
+        let names: Vec<String> = meta
+            .file_metadata()
+            .schema_descr()
+            .columns()
+            .iter()
+            .map(|c| c.name().to_string())
+            .collect();
+        assert_eq!(names[0], "id");
+        assert_eq!(names.last().unwrap(), "_error");
+        let got: Vec<String> = reader
+            .get_row_iter(None)
+            .unwrap()
+            .map(|r| r.unwrap().to_string())
+            .collect();
+        assert!(got[1].contains("unknown event"), "{}", got[1]);
+        assert!(got[0].contains("purchaseCompleted"));
+        // object name: no .gz for parquet, event partition folder
+        let name = ExportService::object_name(&s, &rows(), false, Some("purchaseCompleted"));
+        assert!(
+            name.starts_with("zanshin/events/event=purchaseCompleted/2026/01/02/"),
+            "{name}"
+        );
+        assert!(name.ends_with(".parquet"));
+    }
+
+    #[test]
+    fn sigv4_is_deterministic_shape() {
+        let (auth, date, hash) = ExportService::sigv4(
+            "POST",
+            "redshift-data.us-east-1.amazonaws.com",
+            "/",
+            "redshift-data",
+            "us-east-1",
+            "AKIA",
+            "secret",
+            &[
+                ("content-type", "application/x-amz-json-1.1"),
+                ("x-amz-target", "RedshiftData.ExecuteStatement"),
+            ],
+            b"{}",
+        );
+        assert!(auth.starts_with("AWS4-HMAC-SHA256 Credential=AKIA/"));
+        assert!(auth.contains("SignedHeaders=content-type;host;x-amz-date;x-amz-target,"));
+        assert_eq!(date.len(), 16);
+        assert_eq!(hash.len(), 64);
     }
 }

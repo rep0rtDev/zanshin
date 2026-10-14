@@ -666,6 +666,33 @@ Ship raw events to external storage. Each sink keeps a `(received_at, id)` curso
 | GET | `/admin/v1/export-sinks/{key}/runs?limit` | Run log (`ok` / `empty` / `failed`, rows, bytes, object). |
 | POST | `/admin/v1/export-sinks/{key}/reset-cursor` | `{ "to": timestamp \| null }` — re-export from a point in time (or from the beginning). |
 
+### Data lakes v2
+
+- `format: parquet` (snappy, `gzip` ignored) for S3-backed sinks (`s3`, `snowflake`, `redshift`);
+  `config.partition = "event"` writes one object per event name:
+  `<prefix>/event=<name>/YYYY/MM/DD/<stamp>-<id>.<ext>`. Rejected events (`$event_error`) carry a
+  top-level `_error` column with the validation reason in every format.
+- `kind: snowflake` — files are staged in the sink's bucket, then `COPY INTO
+  <database>.<schema>.<table> FROM @<stage> FILES = (…)` runs through the SQL API
+  (`https://<host>/api/v2/statements`) with key-pair JWT auth. Config: S3 keys + `account`,
+  `host`, `user`, `private_key` (PEM), `public_key_fp` (`SHA256:…` from `DESCRIBE USER`),
+  `database`, `schema`, `table`, `stage` (external stage pointing at bucket + prefix), optional
+  `warehouse`, `role`.
+- `kind: redshift` — files are staged in S3, then `COPY <table> FROM 's3://…' IAM_ROLE '…'` runs
+  through the Redshift Data API (SigV4 with the sink's AWS keys). Config: S3 keys + `database`,
+  `table`, `iam_role`, exactly one of `cluster_id` / `workgroup`, optional `db_user`, `secret_arn`.
+
+### Notification channels (`integrations:*`)
+
+`GET/POST /admin/v1/notification-channels`, `GET/PUT/DELETE /admin/v1/notification-channels/{key}`,
+`POST …/{key}/test`, `GET /admin/v1/notification-channels/topics`. Body: `kind` (`slack` incoming
+webhook, `discord` webhook, `webhook` any HTTPS endpoint receiving `{topic, title, text, kind,
+fields, at}`), `url`, `topics` (`*`, `config.changed`, `config.deleted`, `export.failed`,
+`integration.unhealthy`, `alert`, `test`), `kinds` (limit config topics to entity kinds such as
+`flags`, `experiments`), `enabled`, `headers` (webhook only). Slack / Discord URLs are masked when
+read back; `last_status` / `last_error` / `last_sent_at` show the latest delivery. Config
+changes are derived from successful mutating admin calls (actor, method, path).
+
 ### Configuration bundles
 
 | Method | Path | Notes |

@@ -7,6 +7,14 @@ Release automation reads the section whose heading contains the tagged version.
 ## [Unreleased]
 
 ### Added
+- Data lakes v2: Parquet export format (snappy; Databricks / Athena / Spark), `partition: event`
+  (one object per event name under `event=<name>/`), Snowflake sink (S3 stage + `COPY INTO`
+  through the SQL API with key-pair JWT), Redshift sink (S3 + `COPY` through the Data API,
+  provisioned or serverless), `_error` column on exported `$event_error` rows (JSONL / CSV /
+  Parquet / BigQuery). Notification channels (`/admin/v1/notification-channels`): Slack, Discord
+  or generic webhook targets subscribed to `config.changed` / `config.deleted` (optionally only
+  some entity kinds), `export.failed`, `integration.unhealthy`, `alert`; test send, delivery
+  status, console page Platform → Notifications.
 - Core events + analytics v4: the rest of the standard core catalog (`adImpression`,
   `currencyGranted/Spent`, `itemGranted/Spent/Consumed`, `eventLeaderboardScore/Rank`,
   `achievementUnlocked`, `questStarted/Completed`, `inviteSent/Accepted`, `socialShare`,

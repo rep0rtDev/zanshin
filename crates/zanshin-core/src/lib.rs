@@ -16,6 +16,7 @@ pub mod journeys;
 pub mod live_events;
 pub mod messages;
 pub mod metrics;
+pub mod notifications;
 pub mod permissions;
 pub mod properties;
 pub mod push;

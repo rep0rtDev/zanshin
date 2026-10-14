@@ -14,6 +14,7 @@ pub mod journeys;
 pub mod limits;
 pub mod liveops;
 pub mod messaging_v2;
+pub mod notifications;
 pub mod overload;
 pub mod server_api;
 pub mod taxonomy;
@@ -124,6 +125,7 @@ pub fn router(state: AppState) -> Router {
                 .merge(experiments_v2::router())
                 .merge(messaging_v2::router())
                 .merge(webhooks::router())
+                .merge(notifications::router())
                 .merge(journeys::router())
                 .merge(analytics_v2::router())
                 .merge(data::router())
