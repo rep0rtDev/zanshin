@@ -12,6 +12,16 @@ Release automation reads the section whose heading contains the tagged version.
   signatures, signed checksums, SDK archives), `security.yml` (cargo-deny, cargo-audit, npm audit,
   govulncheck, trivy), `deny.toml`, npm publishing for the TypeScript SDK, build provenance in
   `zanshin --version`, `/` and `GET /admin/v1/system`.
+- Deployment kit (`deploy/`): hardened single-host Compose stack (Caddy TLS, two replicas, file
+  secrets, internal network, nightly PostgreSQL + ClickHouse backups with restore scripts, optional
+  Prometheus + Grafana profile), Helm chart (migration hook, probes, HPA, PDB, topology spread,
+  allow-listed admin Ingress, ServiceMonitor + PrometheusRule, NetworkPolicy), Grafana overview
+  dashboard and alert rules, k6 smoke / baseline / stream load tests, `docs/production.md`
+  (topology, sizing, upgrades, backup/restore, DR, observability, security checklist).
+- `zanshin_job_last_run_seconds` gauge per housekeeping job (feeds the stalled-housekeeping alert).
+
+### Security
+- rustls 0.23.46 (RUSTSEC-2026-0346..0349), maxminddb 0.27 (RUSTSEC-2025-0132).
 
 ## [0.1.0] - Unreleased
 

@@ -152,6 +152,10 @@ pub struct ServerConfig {
     /// Maximum concurrent in-flight gRPC requests per process (0 = unlimited).
     #[serde(default = "default_grpc_concurrency")]
     pub grpc_concurrency: usize,
+    /// Maximum concurrent in-flight HTTP requests per process before answering 503 (0 = unlimited).
+    /// Health probes, `/metrics` and WebSocket streams are not counted.
+    #[serde(default = "default_http_concurrency")]
+    pub http_concurrency: usize,
 }
 
 /// Distributed tracing. Spans are exported over OTLP/gRPC when `otlp_endpoint` is set
@@ -399,6 +403,9 @@ fn default_grpc_max_message() -> usize {
     4 * 1024 * 1024
 }
 fn default_grpc_concurrency() -> usize {
+    1024
+}
+fn default_http_concurrency() -> usize {
     1024
 }
 fn default_service_name() -> String {

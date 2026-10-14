@@ -1,0 +1,14 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "zanshin.fullname" . }}
+  labels: {{- include "zanshin.labels" . | nindent 4 }}
+  {{- with .Values.service.annotations }}
+  annotations: {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  type: {{ .Values.service.type }}
+  selector: {{- include "zanshin.selectorLabels" . | nindent 4 }}
+  ports:
+    - { name: http, port: {{ .Values.service.httpPort }}, targetPort: http, protocol: TCP, appProtocol: http }
+    - { name: grpc, port: {{ .Values.service.grpcPort }}, targetPort: grpc, protocol: TCP, appProtocol: grpc }

@@ -59,6 +59,12 @@ impl JobLock {
         let out = job().await;
         metrics::histogram!("zanshin_job_seconds", "job" => name.to_string())
             .record(started.elapsed().as_secs_f64());
+        metrics::gauge!("zanshin_job_last_run_seconds", "job" => name.to_string()).set(
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_secs_f64())
+                .unwrap_or(0.0),
+        );
         tx.rollback().await.map_err(map_sqlx)?;
         Ok(Lock::Ran(out))
     }

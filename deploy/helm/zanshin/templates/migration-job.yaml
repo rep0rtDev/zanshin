@@ -1,0 +1,40 @@
+{{- if .Values.migrations.enabled }}
+# Runs `zanshin --migrate` before the Deployment is (re)rolled. Migrations are additive and the
+# previous version keeps serving while this runs, so upgrades stay zero-downtime.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "zanshin.fullname" . }}-migrate-{{ .Release.Revision }}
+  labels: {{- include "zanshin.labels" . | nindent 4 }}
+  annotations:
+    helm.sh/hook: pre-install,pre-upgrade
+    helm.sh/hook-weight: "0"
+    helm.sh/hook-delete-policy: before-hook-creation,hook-succeeded
+spec:
+  backoffLimit: {{ .Values.migrations.backoffLimit }}
+  ttlSecondsAfterFinished: {{ .Values.migrations.ttlSecondsAfterFinished }}
+  template:
+    metadata:
+      labels: {{- include "zanshin.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: migrate
+    spec:
+      restartPolicy: Never
+      serviceAccountName: {{ include "zanshin.serviceAccountName" . }}
+      automountServiceAccountToken: false
+      securityContext: {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets: {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: migrate
+          image: {{ include "zanshin.image" . }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          args: ["--migrate"]
+          securityContext: {{- toYaml .Values.securityContext | nindent 12 }}
+          envFrom:
+            - configMapRef: { name: {{ include "zanshin.fullname" . }} }
+          env: {{- include "zanshin.env" . | nindent 12 }}
+          resources: {{- toYaml .Values.resources | nindent 12 }}
+          volumeMounts: {{- include "zanshin.volumeMounts" . | nindent 12 }}
+      volumes: {{- include "zanshin.volumes" . | nindent 8 }}
+{{- end }}

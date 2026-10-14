@@ -132,3 +132,35 @@ jobs:
           unzip -q godot.zip && mv Godot_v4.3-stable_linux.x86_64 godot && chmod +x godot
       - name: parse addon + smoke runner (skips the live flow without a server)
         run: ./godot --headless --path sdk/godot/smoke --script res://smoke.gd
+
+  deploy-kit:
+    name: deploy kit (helm / compose / alerts)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: azure/setup-helm@v4
+      - name: helm lint + template
+        run: |
+          set -e
+          args="--set secrets.values.databaseUrl=postgres://x --set secrets.values.redisUrl=redis://x \
+                --set secrets.values.jwtSecret=0123456789abcdef0123456789abcdef --set secrets.values.adminBootstrapKey=k \
+                --set metrics.serviceMonitor.enabled=true --set metrics.prometheusRule.enabled=true \
+                --set ingress.adminAllowCidrs={10.0.0.0/8} --set ingress.grpc.enabled=true --set networkPolicy.enabled=true"
+          helm lint deploy/helm/zanshin $args
+          helm template z deploy/helm/zanshin $args > /tmp/rendered.yaml
+          grep -c '^kind:' /tmp/rendered.yaml
+      - name: compose config
+        working-directory: deploy/compose
+        run: |
+          cp .env.example .env
+          ./init-secrets.sh >/dev/null
+          docker compose --profile observability config -q
+      - name: promtool check rules
+        run: docker run --rm -v "$PWD/deploy/helm/zanshin/alerts.yml:/alerts.yml:ro" --entrypoint promtool prom/prometheus:v2.55.1 check rules /alerts.yml
+      - name: grafana dashboard is valid json
+        run: python3 -c "import json,sys; d=json.load(open('deploy/observability/grafana/dashboards/zanshin-overview.json')); print(len(d['panels']), 'panels')"
+      - name: k6 scripts parse
+        run: |
+          curl -sL https://github.com/grafana/k6/releases/download/v0.55.0/k6-v0.55.0-linux-amd64.tar.gz | tar xz
+          for f in smoke baseline stream; do ./k6-v0.55.0-linux-amd64/k6 inspect deploy/k6/$f.js >/dev/null; done
+

@@ -1,0 +1,130 @@
+# Alerting rules for Zanshin — single source for the Helm PrometheusRule (templates/prometheusrule.yaml
+# embeds this file) and the Compose Prometheus (mounted from here).
+groups:
+  - name: zanshin.availability
+    rules:
+      - alert: ZanshinInstanceDown
+        expr: up{job="zanshin"} == 0
+        for: 2m
+        labels: { severity: critical }
+        annotations:
+          summary: "Zanshin instance {{ $labels.instance }} is not scraped"
+      - alert: ZanshinHigh5xxRate
+        expr: |
+          sum(rate(zanshin_http_requests_total{status=~"5.."}[5m]))
+            / clamp_min(sum(rate(zanshin_http_requests_total[5m])), 1) > 0.02
+        for: 5m
+        labels: { severity: critical }
+        annotations:
+          summary: "More than 2% of HTTP requests fail with 5xx"
+      - alert: ZanshinGrpcErrorRate
+        expr: |
+          sum(rate(zanshin_grpc_requests_total{code!~"OK|NotFound|InvalidArgument|Unauthenticated|PermissionDenied|AlreadyExists|ResourceExhausted"}[5m]))
+            / clamp_min(sum(rate(zanshin_grpc_requests_total[5m])), 1) > 0.02
+        for: 5m
+        labels: { severity: warning }
+        annotations:
+          summary: "gRPC server-side error rate above 2%"
+
+      - alert: ZanshinLoadShedding
+        expr: sum(rate(zanshin_http_shed_total[5m])) > 1
+        for: 5m
+        labels: { severity: warning }
+        annotations:
+          summary: "Replicas are shedding requests (server.http_concurrency reached) — scale out"
+
+  - name: zanshin.latency
+    rules:
+      - alert: ZanshinSlowClientApi
+        expr: |
+          histogram_quantile(0.99, sum by (le) (rate(zanshin_http_request_seconds_bucket{route=~"/v1/.*"}[5m]))) > 0.25
+        for: 10m
+        labels: { severity: warning }
+        annotations:
+          summary: "p99 latency of the client API above 250 ms"
+      - alert: ZanshinSlowAdminApi
+        expr: |
+          histogram_quantile(0.99, sum by (le) (rate(zanshin_http_request_seconds_bucket{route=~"/admin/.*"}[5m]))) > 2
+        for: 15m
+        labels: { severity: info }
+        annotations:
+          summary: "p99 latency of the admin API above 2 s"
+
+  - name: zanshin.ingest
+    rules:
+      - alert: ZanshinEventsDropped
+        expr: sum(increase(zanshin_events_dropped_total[10m])) > 0
+        for: 0m
+        labels: { severity: critical }
+        annotations:
+          summary: "Analytics events are being dropped (event store unreachable or queue full)"
+      - alert: ZanshinEventQueueBacklog
+        expr: max(zanshin_event_queue_depth) > 50000
+        for: 5m
+        labels: { severity: warning }
+        annotations:
+          summary: "Event write queue is backing up ({{ $value }} buffered)"
+      - alert: ZanshinSlowEventFlush
+        expr: histogram_quantile(0.95, sum by (le) (rate(zanshin_events_flush_seconds_bucket[5m]))) > 5
+        for: 10m
+        labels: { severity: warning }
+        annotations:
+          summary: "Event batches take more than 5 s to flush to the store"
+      - alert: ZanshinTaxonomyViolationsSpike
+        expr: sum(rate(zanshin_events_taxonomy_violations_total[15m])) > 5
+        for: 15m
+        labels: { severity: info }
+        annotations:
+          summary: "A client is sending events that violate the taxonomy (> 5/s)"
+
+  - name: zanshin.dependencies
+    rules:
+      - alert: ZanshinDbPoolSaturated
+        expr: |
+          zanshin_db_pool_connections{state="idle"} == 0
+            and zanshin_db_pool_connections{state="size"} >= zanshin_db_pool_connections{state="max"}
+        for: 5m
+        labels: { severity: warning }
+        annotations:
+          summary: "PostgreSQL pool on {{ $labels.instance }} has no idle connections"
+      - alert: ZanshinRateLimiterDegraded
+        expr: sum(rate(zanshin_rate_limiter_errors_total[5m])) > 0
+        for: 5m
+        labels: { severity: warning }
+        annotations:
+          summary: "Rate limiter cannot reach Redis (failing open)"
+      - alert: ZanshinHousekeepingStalled
+        expr: time() - max by (job) (zanshin_job_last_run_seconds) > 1800
+        for: 0m
+        labels: { severity: warning }
+        annotations:
+          summary: "Housekeeping job {{ $labels.job }} has not run for 30 minutes"
+
+  - name: zanshin.liveops
+    rules:
+      - alert: ZanshinPushFailures
+        expr: |
+          sum(rate(zanshin_push_failed_total[15m]))
+            / clamp_min(sum(rate(zanshin_push_sent_total[15m])) + sum(rate(zanshin_push_failed_total[15m])), 1) > 0.2
+        for: 15m
+        labels: { severity: warning }
+        annotations:
+          summary: "More than 20% of push deliveries fail"
+      - alert: ZanshinWebhookDeliveryFailures
+        expr: sum(rate(zanshin_webhook_deliveries_total{status="failed"}[15m])) > 0.1
+        for: 15m
+        labels: { severity: warning }
+        annotations:
+          summary: "Webhook deliveries are failing"
+      - alert: ZanshinExportFailures
+        expr: sum(increase(zanshin_export_failures_total[1h])) > 0
+        for: 0m
+        labels: { severity: warning }
+        annotations:
+          summary: "An export sink run failed in the last hour"
+      - alert: ZanshinRefreshTokenReplay
+        expr: sum(increase(zanshin_refresh_replays_total[10m])) > 10
+        for: 0m
+        labels: { severity: info }
+        annotations:
+          summary: "Refresh-token replays detected (possible token theft or a buggy client)"

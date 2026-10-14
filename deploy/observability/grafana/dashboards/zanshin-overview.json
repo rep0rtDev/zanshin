@@ -1,0 +1,1210 @@
+{
+ "uid": "zanshin-overview",
+ "title": "Zanshin / Overview",
+ "tags": [
+  "zanshin"
+ ],
+ "timezone": "utc",
+ "schemaVersion": 39,
+ "version": 1,
+ "editable": true,
+ "refresh": "30s",
+ "time": {
+  "from": "now-6h",
+  "to": "now"
+ },
+ "templating": {
+  "list": [
+   {
+    "name": "instance",
+    "label": "Instance",
+    "type": "query",
+    "datasource": {
+     "type": "prometheus",
+     "uid": "prometheus"
+    },
+    "query": "label_values(zanshin_uptime_seconds, instance)",
+    "includeAll": true,
+    "multi": true,
+    "current": {
+     "text": "All",
+     "value": "$__all"
+    },
+    "refresh": 2
+   }
+  ]
+ },
+ "panels": [
+  {
+   "type": "row",
+   "title": "Overview",
+   "collapsed": false,
+   "gridPos": {
+    "w": 24,
+    "h": 1,
+    "x": 0,
+    "y": 0
+   },
+   "id": 1
+  },
+  {
+   "type": "stat",
+   "title": "Requests / s (HTTP)",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "targets": [
+    {
+     "expr": "sum(rate(zanshin_http_requests_total{instance=~\"$instance\"}[$__rate_interval]))",
+     "legendFormat": "http",
+     "refId": "A"
+    }
+   ],
+   "gridPos": {
+    "w": 6,
+    "h": 4,
+    "x": 0,
+    "y": 1
+   },
+   "fieldConfig": {
+    "defaults": {
+     "unit": "reqps"
+    },
+    "overrides": []
+   },
+   "options": {
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ]
+    },
+    "colorMode": "value",
+    "graphMode": "area"
+   },
+   "id": 2
+  },
+  {
+   "type": "stat",
+   "title": "Requests / s (gRPC)",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "targets": [
+    {
+     "expr": "sum(rate(zanshin_grpc_requests_total{instance=~\"$instance\"}[$__rate_interval]))",
+     "legendFormat": "grpc",
+     "refId": "A"
+    }
+   ],
+   "gridPos": {
+    "w": 6,
+    "h": 4,
+    "x": 6,
+    "y": 1
+   },
+   "fieldConfig": {
+    "defaults": {
+     "unit": "reqps"
+    },
+    "overrides": []
+   },
+   "options": {
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ]
+    },
+    "colorMode": "value",
+    "graphMode": "area"
+   },
+   "id": 3
+  },
+  {
+   "type": "stat",
+   "title": "5xx ratio",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "targets": [
+    {
+     "expr": "sum(rate(zanshin_http_requests_total{instance=~\"$instance\",status=~\"5..\"}[$__rate_interval])) / clamp_min(sum(rate(zanshin_http_requests_total{instance=~\"$instance\"}[$__rate_interval])),1)",
+     "legendFormat": "5xx",
+     "refId": "A"
+    }
+   ],
+   "gridPos": {
+    "w": 6,
+    "h": 4,
+    "x": 12,
+    "y": 1
+   },
+   "fieldConfig": {
+    "defaults": {
+     "unit": "percentunit"
+    },
+    "overrides": []
+   },
+   "options": {
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ]
+    },
+    "colorMode": "value",
+    "graphMode": "area"
+   },
+   "id": 4
+  },
+  {
+   "type": "stat",
+   "title": "Live connections",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "targets": [
+    {
+     "expr": "sum(zanshin_ws_connections{instance=~\"$instance\"})",
+     "legendFormat": "websocket",
+     "refId": "A"
+    },
+    {
+     "expr": "sum(zanshin_server_stream_connections{instance=~\"$instance\"})",
+     "legendFormat": "grpc streams",
+     "refId": "B"
+    }
+   ],
+   "gridPos": {
+    "w": 6,
+    "h": 4,
+    "x": 18,
+    "y": 1
+   },
+   "fieldConfig": {
+    "defaults": {
+     "unit": "short"
+    },
+    "overrides": []
+   },
+   "options": {
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ]
+    },
+    "colorMode": "value",
+    "graphMode": "area"
+   },
+   "id": 5
+  },
+  {
+   "type": "row",
+   "title": "HTTP",
+   "collapsed": false,
+   "gridPos": {
+    "w": 24,
+    "h": 1,
+    "x": 0,
+    "y": 5
+   },
+   "id": 6
+  },
+  {
+   "type": "timeseries",
+   "title": "Requests by route",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "targets": [
+    {
+     "expr": "sum by (route) (rate(zanshin_http_requests_total{instance=~\"$instance\"}[$__rate_interval]))",
+     "legendFormat": "{{route}}",
+     "refId": "A"
+    }
+   ],
+   "gridPos": {
+    "w": 12,
+    "h": 8,
+    "x": 0,
+    "y": 6
+   },
+   "fieldConfig": {
+    "defaults": {
+     "unit": "reqps",
+     "custom": {
+      "stacking": {
+       "mode": "normal"
+      },
+      "fillOpacity": 20
+     }
+    },
+    "overrides": []
+   },
+   "options": {
+    "legend": {
+     "displayMode": "list",
+     "placement": "bottom"
+    },
+    "tooltip": {
+     "mode": "multi"
+    }
+   },
+   "id": 7
+  },
+  {
+   "type": "timeseries",
+   "title": "Latency p50 / p95 / p99 (client API)",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "targets": [
+    {
+     "expr": "histogram_quantile(0.5, sum by (le) (rate(zanshin_http_request_seconds_bucket{instance=~\"$instance\",route=~\"/v1/.*\"}[$__rate_interval])))",
+     "legendFormat": "p50",
+     "refId": "A"
+    },
+    {
+     "expr": "histogram_quantile(0.95, sum by (le) (rate(zanshin_http_request_seconds_bucket{instance=~\"$instance\",route=~\"/v1/.*\"}[$__rate_interval])))",
+     "legendFormat": "p95",
+     "refId": "B"
+    },
+    {
+     "expr": "histogram_quantile(0.99, sum by (le) (rate(zanshin_http_request_seconds_bucket{instance=~\"$instance\",route=~\"/v1/.*\"}[$__rate_interval])))",
+     "legendFormat": "p99",
+     "refId": "C"
+    }
+   ],
+   "gridPos": {
+    "w": 12,
+    "h": 8,
+    "x": 12,
+    "y": 6
+   },
+   "fieldConfig": {
+    "defaults": {
+     "unit": "s"
+    },
+    "overrides": []
+   },
+   "options": {
+    "legend": {
+     "displayMode": "list",
+     "placement": "bottom"
+    },
+    "tooltip": {
+     "mode": "multi"
+    }
+   },
+   "id": 8
+  },
+  {
+   "type": "timeseries",
+   "title": "Status codes",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "targets": [
+    {
+     "expr": "sum by (status) (rate(zanshin_http_requests_total{instance=~\"$instance\"}[$__rate_interval]))",
+     "legendFormat": "{{status}}",
+     "refId": "A"
+    }
+   ],
+   "gridPos": {
+    "w": 12,
+    "h": 8,
+    "x": 0,
+    "y": 14
+   },
+   "fieldConfig": {
+    "defaults": {
+     "unit": "reqps",
+     "custom": {
+      "stacking": {
+       "mode": "normal"
+      },
+      "fillOpacity": 20
+     }
+    },
+    "overrides": []
+   },
+   "options": {
+    "legend": {
+     "displayMode": "list",
+     "placement": "bottom"
+    },
+    "tooltip": {
+     "mode": "multi"
+    }
+   },
+   "id": 9
+  },
+  {
+   "type": "timeseries",
+   "title": "Rate limited / s",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "targets": [
+    {
+     "expr": "sum by (scope) (rate(zanshin_rate_limited_total{instance=~\"$instance\"}[$__rate_interval]))",
+     "legendFormat": "{{scope}}",
+     "refId": "A"
+    }
+   ],
+   "gridPos": {
+    "w": 12,
+    "h": 8,
+    "x": 12,
+    "y": 14
+   },
+   "fieldConfig": {
+    "defaults": {
+     "unit": "reqps"
+    },
+    "overrides": []
+   },
+   "options": {
+    "legend": {
+     "displayMode": "list",
+     "placement": "bottom"
+    },
+    "tooltip": {
+     "mode": "multi"
+    }
+   },
+   "id": 10
+  },
+  {
+   "type": "timeseries",
+   "title": "Load shed (503 overloaded) / s",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "targets": [
+    {
+     "expr": "sum(rate(zanshin_http_shed_total{instance=~\"$instance\"}[$__rate_interval]))",
+     "legendFormat": "shed",
+     "refId": "A"
+    }
+   ],
+   "gridPos": {
+    "w": 12,
+    "h": 8,
+    "x": 0,
+    "y": 22
+   },
+   "fieldConfig": {
+    "defaults": {
+     "unit": "reqps"
+    },
+    "overrides": []
+   },
+   "options": {
+    "legend": {
+     "displayMode": "list",
+     "placement": "bottom"
+    },
+    "tooltip": {
+     "mode": "multi"
+    }
+   },
+   "id": 34
+  },
+  {
+   "type": "row",
+   "title": "gRPC",
+   "collapsed": false,
+   "gridPos": {
+    "w": 24,
+    "h": 1,
+    "x": 0,
+    "y": 30
+   },
+   "id": 11
+  },
+  {
+   "type": "timeseries",
+   "title": "Calls by method",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "targets": [
+    {
+     "expr": "sum by (method) (rate(zanshin_grpc_requests_total{instance=~\"$instance\"}[$__rate_interval]))",
+     "legendFormat": "{{method}}",
+     "refId": "A"
+    }
+   ],
+   "gridPos": {
+    "w": 12,
+    "h": 8,
+    "x": 0,
+    "y": 31
+   },
+   "fieldConfig": {
+    "defaults": {
+     "unit": "reqps",
+     "custom": {
+      "stacking": {
+       "mode": "normal"
+      },
+      "fillOpacity": 20
+     }
+    },
+    "overrides": []
+   },
+   "options": {
+    "legend": {
+     "displayMode": "list",
+     "placement": "bottom"
+    },
+    "tooltip": {
+     "mode": "multi"
+    }
+   },
+   "id": 12
+  },
+  {
+   "type": "timeseries",
+   "title": "Latency p99 by method",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "targets": [
+    {
+     "expr": "histogram_quantile(0.99, sum by (le, method) (rate(zanshin_grpc_request_seconds_bucket{instance=~\"$instance\"}[$__rate_interval])))",
+     "legendFormat": "{{method}}",
+     "refId": "A"
+    }
+   ],
+   "gridPos": {
+    "w": 12,
+    "h": 8,
+    "x": 12,
+    "y": 31
+   },
+   "fieldConfig": {
+    "defaults": {
+     "unit": "s"
+    },
+    "overrides": []
+   },
+   "options": {
+    "legend": {
+     "displayMode": "list",
+     "placement": "bottom"
+    },
+    "tooltip": {
+     "mode": "multi"
+    }
+   },
+   "id": 13
+  },
+  {
+   "type": "row",
+   "title": "Events",
+   "collapsed": false,
+   "gridPos": {
+    "w": 24,
+    "h": 1,
+    "x": 0,
+    "y": 39
+   },
+   "id": 14
+  },
+  {
+   "type": "timeseries",
+   "title": "Ingested / stored / dropped / deduplicated per s",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "targets": [
+    {
+     "expr": "sum(rate(zanshin_events_ingested_total{instance=~\"$instance\"}[$__rate_interval]))",
+     "legendFormat": "ingested",
+     "refId": "A"
+    },
+    {
+     "expr": "sum(rate(zanshin_events_stored_total{instance=~\"$instance\"}[$__rate_interval]))",
+     "legendFormat": "stored",
+     "refId": "B"
+    },
+    {
+     "expr": "sum(rate(zanshin_events_dropped_total{instance=~\"$instance\"}[$__rate_interval]))",
+     "legendFormat": "dropped",
+     "refId": "C"
+    },
+    {
+     "expr": "sum(rate(zanshin_events_deduplicated_total{instance=~\"$instance\"}[$__rate_interval]))",
+     "legendFormat": "deduplicated",
+     "refId": "D"
+    }
+   ],
+   "gridPos": {
+    "w": 12,
+    "h": 8,
+    "x": 0,
+    "y": 40
+   },
+   "fieldConfig": {
+    "defaults": {
+     "unit": "ops"
+    },
+    "overrides": []
+   },
+   "options": {
+    "legend": {
+     "displayMode": "list",
+     "placement": "bottom"
+    },
+    "tooltip": {
+     "mode": "multi"
+    }
+   },
+   "id": 15
+  },
+  {
+   "type": "timeseries",
+   "title": "Queue depth",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "targets": [
+    {
+     "expr": "max by (instance) (zanshin_event_queue_depth{instance=~\"$instance\"})",
+     "legendFormat": "{{instance}}",
+     "refId": "A"
+    }
+   ],
+   "gridPos": {
+    "w": 12,
+    "h": 8,
+    "x": 12,
+    "y": 40
+   },
+   "fieldConfig": {
+    "defaults": {
+     "unit": "short"
+    },
+    "overrides": []
+   },
+   "options": {
+    "legend": {
+     "displayMode": "list",
+     "placement": "bottom"
+    },
+    "tooltip": {
+     "mode": "multi"
+    }
+   },
+   "id": 16
+  },
+  {
+   "type": "timeseries",
+   "title": "Flush p95",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "targets": [
+    {
+     "expr": "histogram_quantile(0.95, sum by (le) (rate(zanshin_events_flush_seconds_bucket{instance=~\"$instance\"}[$__rate_interval])))",
+     "legendFormat": "p95",
+     "refId": "A"
+    }
+   ],
+   "gridPos": {
+    "w": 12,
+    "h": 8,
+    "x": 0,
+    "y": 48
+   },
+   "fieldConfig": {
+    "defaults": {
+     "unit": "s"
+    },
+    "overrides": []
+   },
+   "options": {
+    "legend": {
+     "displayMode": "list",
+     "placement": "bottom"
+    },
+    "tooltip": {
+     "mode": "multi"
+    }
+   },
+   "id": 17
+  },
+  {
+   "type": "timeseries",
+   "title": "Taxonomy violations / s",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "targets": [
+    {
+     "expr": "sum by (reason) (rate(zanshin_events_taxonomy_violations_total{instance=~\"$instance\"}[$__rate_interval]))",
+     "legendFormat": "{{reason}}",
+     "refId": "A"
+    }
+   ],
+   "gridPos": {
+    "w": 12,
+    "h": 8,
+    "x": 12,
+    "y": 48
+   },
+   "fieldConfig": {
+    "defaults": {
+     "unit": "ops"
+    },
+    "overrides": []
+   },
+   "options": {
+    "legend": {
+     "displayMode": "list",
+     "placement": "bottom"
+    },
+    "tooltip": {
+     "mode": "multi"
+    }
+   },
+   "id": 18
+  },
+  {
+   "type": "row",
+   "title": "LiveOps",
+   "collapsed": false,
+   "gridPos": {
+    "w": 24,
+    "h": 1,
+    "x": 0,
+    "y": 56
+   },
+   "id": 19
+  },
+  {
+   "type": "timeseries",
+   "title": "Flag evaluations / s",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "targets": [
+    {
+     "expr": "sum(rate(zanshin_flag_evaluations_total{instance=~\"$instance\"}[$__rate_interval]))",
+     "legendFormat": "evaluations",
+     "refId": "A"
+    }
+   ],
+   "gridPos": {
+    "w": 12,
+    "h": 8,
+    "x": 0,
+    "y": 57
+   },
+   "fieldConfig": {
+    "defaults": {
+     "unit": "ops"
+    },
+    "overrides": []
+   },
+   "options": {
+    "legend": {
+     "displayMode": "list",
+     "placement": "bottom"
+    },
+    "tooltip": {
+     "mode": "multi"
+    }
+   },
+   "id": 20
+  },
+  {
+   "type": "timeseries",
+   "title": "Experiment assignments / exposures per s",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "targets": [
+    {
+     "expr": "sum(rate(zanshin_experiment_assignments_total{instance=~\"$instance\"}[$__rate_interval]))",
+     "legendFormat": "assignments",
+     "refId": "A"
+    },
+    {
+     "expr": "sum(rate(zanshin_experiment_exposures_total{instance=~\"$instance\"}[$__rate_interval]))",
+     "legendFormat": "exposures",
+     "refId": "B"
+    }
+   ],
+   "gridPos": {
+    "w": 12,
+    "h": 8,
+    "x": 12,
+    "y": 57
+   },
+   "fieldConfig": {
+    "defaults": {
+     "unit": "ops"
+    },
+    "overrides": []
+   },
+   "options": {
+    "legend": {
+     "displayMode": "list",
+     "placement": "bottom"
+    },
+    "tooltip": {
+     "mode": "multi"
+    }
+   },
+   "id": 21
+  },
+  {
+   "type": "timeseries",
+   "title": "Messages delivered / consumed per s",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "targets": [
+    {
+     "expr": "sum(rate(zanshin_messages_delivered_total{instance=~\"$instance\"}[$__rate_interval]))",
+     "legendFormat": "delivered",
+     "refId": "A"
+    },
+    {
+     "expr": "sum(rate(zanshin_messages_consumed_total{instance=~\"$instance\"}[$__rate_interval]))",
+     "legendFormat": "consumed",
+     "refId": "B"
+    }
+   ],
+   "gridPos": {
+    "w": 12,
+    "h": 8,
+    "x": 0,
+    "y": 65
+   },
+   "fieldConfig": {
+    "defaults": {
+     "unit": "ops"
+    },
+    "overrides": []
+   },
+   "options": {
+    "legend": {
+     "displayMode": "list",
+     "placement": "bottom"
+    },
+    "tooltip": {
+     "mode": "multi"
+    }
+   },
+   "id": 22
+  },
+  {
+   "type": "timeseries",
+   "title": "Push sent / failed per s",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "targets": [
+    {
+     "expr": "sum(rate(zanshin_push_sent_total{instance=~\"$instance\"}[$__rate_interval]))",
+     "legendFormat": "sent",
+     "refId": "A"
+    },
+    {
+     "expr": "sum(rate(zanshin_push_failed_total{instance=~\"$instance\"}[$__rate_interval]))",
+     "legendFormat": "failed",
+     "refId": "B"
+    }
+   ],
+   "gridPos": {
+    "w": 12,
+    "h": 8,
+    "x": 12,
+    "y": 65
+   },
+   "fieldConfig": {
+    "defaults": {
+     "unit": "ops"
+    },
+    "overrides": []
+   },
+   "options": {
+    "legend": {
+     "displayMode": "list",
+     "placement": "bottom"
+    },
+    "tooltip": {
+     "mode": "multi"
+    }
+   },
+   "id": 23
+  },
+  {
+   "type": "timeseries",
+   "title": "Webhook deliveries by status",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "targets": [
+    {
+     "expr": "sum by (status) (rate(zanshin_webhook_deliveries_total{instance=~\"$instance\"}[$__rate_interval]))",
+     "legendFormat": "{{status}}",
+     "refId": "A"
+    }
+   ],
+   "gridPos": {
+    "w": 12,
+    "h": 8,
+    "x": 0,
+    "y": 73
+   },
+   "fieldConfig": {
+    "defaults": {
+     "unit": "ops"
+    },
+    "overrides": []
+   },
+   "options": {
+    "legend": {
+     "displayMode": "list",
+     "placement": "bottom"
+    },
+    "tooltip": {
+     "mode": "multi"
+    }
+   },
+   "id": 24
+  },
+  {
+   "type": "timeseries",
+   "title": "Journeys: entries / finished per s",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "targets": [
+    {
+     "expr": "sum(rate(zanshin_journey_entries_total{instance=~\"$instance\"}[$__rate_interval]))",
+     "legendFormat": "entries",
+     "refId": "A"
+    },
+    {
+     "expr": "sum(rate(zanshin_journey_runs_finished_total{instance=~\"$instance\"}[$__rate_interval]))",
+     "legendFormat": "finished",
+     "refId": "B"
+    }
+   ],
+   "gridPos": {
+    "w": 12,
+    "h": 8,
+    "x": 12,
+    "y": 73
+   },
+   "fieldConfig": {
+    "defaults": {
+     "unit": "ops"
+    },
+    "overrides": []
+   },
+   "options": {
+    "legend": {
+     "displayMode": "list",
+     "placement": "bottom"
+    },
+    "tooltip": {
+     "mode": "multi"
+    }
+   },
+   "id": 25
+  },
+  {
+   "type": "row",
+   "title": "Identities & sessions",
+   "collapsed": false,
+   "gridPos": {
+    "w": 24,
+    "h": 1,
+    "x": 0,
+    "y": 81
+   },
+   "id": 26
+  },
+  {
+   "type": "timeseries",
+   "title": "Identities created / merged / deleted per s",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "targets": [
+    {
+     "expr": "sum(rate(zanshin_identities_created_total{instance=~\"$instance\"}[$__rate_interval]))",
+     "legendFormat": "created",
+     "refId": "A"
+    },
+    {
+     "expr": "sum(rate(zanshin_identities_merged_total{instance=~\"$instance\"}[$__rate_interval]))",
+     "legendFormat": "merged",
+     "refId": "B"
+    },
+    {
+     "expr": "sum(rate(zanshin_identities_deleted_total{instance=~\"$instance\"}[$__rate_interval]))",
+     "legendFormat": "deleted",
+     "refId": "C"
+    }
+   ],
+   "gridPos": {
+    "w": 12,
+    "h": 8,
+    "x": 0,
+    "y": 82
+   },
+   "fieldConfig": {
+    "defaults": {
+     "unit": "ops"
+    },
+    "overrides": []
+   },
+   "options": {
+    "legend": {
+     "displayMode": "list",
+     "placement": "bottom"
+    },
+    "tooltip": {
+     "mode": "multi"
+    }
+   },
+   "id": 27
+  },
+  {
+   "type": "timeseries",
+   "title": "Sessions created / s and refresh replays",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "targets": [
+    {
+     "expr": "sum(rate(zanshin_sessions_created_total{instance=~\"$instance\"}[$__rate_interval]))",
+     "legendFormat": "sessions",
+     "refId": "A"
+    },
+    {
+     "expr": "sum(rate(zanshin_refresh_replays_total{instance=~\"$instance\"}[$__rate_interval]))",
+     "legendFormat": "refresh replays",
+     "refId": "B"
+    }
+   ],
+   "gridPos": {
+    "w": 12,
+    "h": 8,
+    "x": 12,
+    "y": 82
+   },
+   "fieldConfig": {
+    "defaults": {
+     "unit": "ops"
+    },
+    "overrides": []
+   },
+   "options": {
+    "legend": {
+     "displayMode": "list",
+     "placement": "bottom"
+    },
+    "tooltip": {
+     "mode": "multi"
+    }
+   },
+   "id": 28
+  },
+  {
+   "type": "row",
+   "title": "Dependencies & housekeeping",
+   "collapsed": false,
+   "gridPos": {
+    "w": 24,
+    "h": 1,
+    "x": 0,
+    "y": 90
+   },
+   "id": 29
+  },
+  {
+   "type": "timeseries",
+   "title": "PostgreSQL pool",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "targets": [
+    {
+     "expr": "sum by (state) (zanshin_db_pool_connections{instance=~\"$instance\"})",
+     "legendFormat": "{{state}}",
+     "refId": "A"
+    }
+   ],
+   "gridPos": {
+    "w": 12,
+    "h": 8,
+    "x": 0,
+    "y": 91
+   },
+   "fieldConfig": {
+    "defaults": {
+     "unit": "short"
+    },
+    "overrides": []
+   },
+   "options": {
+    "legend": {
+     "displayMode": "list",
+     "placement": "bottom"
+    },
+    "tooltip": {
+     "mode": "multi"
+    }
+   },
+   "id": 30
+  },
+  {
+   "type": "timeseries",
+   "title": "Housekeeping job duration p95",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "targets": [
+    {
+     "expr": "histogram_quantile(0.95, sum by (le, job) (rate(zanshin_job_seconds_bucket{instance=~\"$instance\"}[$__rate_interval])))",
+     "legendFormat": "{{job}}",
+     "refId": "A"
+    }
+   ],
+   "gridPos": {
+    "w": 12,
+    "h": 8,
+    "x": 12,
+    "y": 91
+   },
+   "fieldConfig": {
+    "defaults": {
+     "unit": "s"
+    },
+    "overrides": []
+   },
+   "options": {
+    "legend": {
+     "displayMode": "list",
+     "placement": "bottom"
+    },
+    "tooltip": {
+     "mode": "multi"
+    }
+   },
+   "id": 31
+  },
+  {
+   "type": "timeseries",
+   "title": "Jobs skipped (lock held elsewhere) / s",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "targets": [
+    {
+     "expr": "sum by (job) (rate(zanshin_jobs_skipped_total{instance=~\"$instance\"}[$__rate_interval]))",
+     "legendFormat": "{{job}}",
+     "refId": "A"
+    }
+   ],
+   "gridPos": {
+    "w": 12,
+    "h": 8,
+    "x": 0,
+    "y": 99
+   },
+   "fieldConfig": {
+    "defaults": {
+     "unit": "ops"
+    },
+    "overrides": []
+   },
+   "options": {
+    "legend": {
+     "displayMode": "list",
+     "placement": "bottom"
+    },
+    "tooltip": {
+     "mode": "multi"
+    }
+   },
+   "id": 32
+  },
+  {
+   "type": "timeseries",
+   "title": "Export rows / s and failures",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "targets": [
+    {
+     "expr": "sum by (sink) (rate(zanshin_export_rows_total{instance=~\"$instance\"}[$__rate_interval]))",
+     "legendFormat": "{{sink}}",
+     "refId": "A"
+    },
+    {
+     "expr": "sum(rate(zanshin_export_failures_total{instance=~\"$instance\"}[$__rate_interval]))",
+     "legendFormat": "failures",
+     "refId": "B"
+    }
+   ],
+   "gridPos": {
+    "w": 12,
+    "h": 8,
+    "x": 12,
+    "y": 99
+   },
+   "fieldConfig": {
+    "defaults": {
+     "unit": "ops"
+    },
+    "overrides": []
+   },
+   "options": {
+    "legend": {
+     "displayMode": "list",
+     "placement": "bottom"
+    },
+    "tooltip": {
+     "mode": "multi"
+    }
+   },
+   "id": 33
+  }
+ ]
+}

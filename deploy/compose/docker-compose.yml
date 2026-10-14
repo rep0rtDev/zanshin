@@ -1,0 +1,267 @@
+# Production Compose stack for a single host: Caddy (automatic TLS) → 2× zanshin, PostgreSQL 16,
+# Redis 7, ClickHouse 24.8, nightly backups. Secrets come from files in ./secrets (see .env.example
+# and docs/production.md). `docker compose --profile observability up` adds Prometheus + Grafana.
+name: zanshin
+
+x-zanshin: &zanshin
+  image: ${ZANSHIN_IMAGE:-ghcr.io/rep0rtdev/zanshin:0.1.0}
+  restart: unless-stopped
+  read_only: true
+  tmpfs: [/tmp]
+  security_opt: [no-new-privileges:true]
+  cap_drop: [ALL]
+  environment: &zanshin-env
+    ZANSHIN__SERVER__PRODUCTION: "true"
+    ZANSHIN__SERVER__TRUST_PROXY: "true"
+    ZANSHIN__SERVER__HSTS: "true"
+    ZANSHIN__SERVER__CORS_ORIGINS: '["https://${ZANSHIN_DOMAIN:?set ZANSHIN_DOMAIN in .env}"]'
+    ZANSHIN__SERVER__SHUTDOWN_GRACE: 5s
+    ZANSHIN__SERVER__SHUTDOWN_TIMEOUT: 30s
+    # Full URL lives in a secret file (it carries the password); the backend network is internal,
+    # hence sslmode=disable — point at a TLS-enabled managed Postgres with sslmode=require instead.
+    ZANSHIN_FILE__DATABASE__URL: /run/secrets/database_url
+    ZANSHIN__DATABASE__MAX_CONNECTIONS: "32"
+    ZANSHIN__REDIS__URL: redis://redis:6379/0
+    ZANSHIN__CLICKHOUSE__ENABLED: "true"
+    ZANSHIN__CLICKHOUSE__URL: http://clickhouse:8123
+    ZANSHIN__CLICKHOUSE__USER: zanshin
+    ZANSHIN_FILE__CLICKHOUSE__PASSWORD: /run/secrets/clickhouse_password
+    ZANSHIN_FILE__AUTH__JWT_SECRET: /run/secrets/jwt_secret
+    ZANSHIN_FILE__ADMIN__BOOTSTRAP_KEY: /run/secrets/admin_bootstrap_key
+    ZANSHIN__LOG__JSON: "true"
+    ZANSHIN__LOG__LEVEL: ${ZANSHIN_LOG_LEVEL:-info}
+    ZANSHIN__TELEMETRY__OTLP_ENDPOINT: ${ZANSHIN_OTLP_ENDPOINT:-}
+    ZANSHIN__CLICKHOUSE__RETENTION_DAYS: ${ZANSHIN_RETENTION_DAYS:-400}
+  secrets: [database_url, clickhouse_password, jwt_secret, admin_bootstrap_key]
+  healthcheck:
+    test: ["CMD", "curl", "-fsS", "http://localhost:7550/readyz"]
+    interval: 10s
+    timeout: 3s
+    retries: 6
+    start_period: 20s
+  logging:
+    driver: json-file
+    options: { max-size: "50m", max-file: "5" }
+  deploy:
+    resources:
+      limits: { cpus: "2", memory: 1g }
+      reservations: { cpus: "0.25", memory: 256m }
+  networks: [backend, edge]
+
+services:
+  migrate:
+    <<: *zanshin
+    command: ["--migrate"]
+    restart: "no"
+    healthcheck: { disable: true }
+    networks: [backend]
+    depends_on:
+      postgres: { condition: service_healthy }
+      clickhouse: { condition: service_healthy }
+
+  zanshin-1:
+    <<: *zanshin
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+      redis: { condition: service_healthy }
+
+  zanshin-2:
+    <<: *zanshin
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+      redis: { condition: service_healthy }
+
+  caddy:
+    image: caddy:2.9-alpine
+    restart: unless-stopped
+    ports: ["80:80", "443:443", "443:443/udp"]
+    environment:
+      ZANSHIN_DOMAIN: ${ZANSHIN_DOMAIN}
+      ACME_EMAIL: ${ACME_EMAIL:?set ACME_EMAIL in .env}
+      ADMIN_ALLOW_CIDR: ${ADMIN_ALLOW_CIDR:-0.0.0.0/0 ::/0}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    cap_drop: [ALL]
+    cap_add: [NET_BIND_SERVICE]
+    security_opt: [no-new-privileges:true]
+    logging: { driver: json-file, options: { max-size: "50m", max-file: "5" } }
+    deploy: { resources: { limits: { cpus: "1", memory: 256m } } }
+    depends_on: [zanshin-1, zanshin-2]
+    networks: [edge]
+
+  postgres:
+    image: postgres:16.6-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: zanshin
+      POSTGRES_DB: zanshin
+      POSTGRES_PASSWORD_FILE: /run/secrets/postgres_password
+      POSTGRES_INITDB_ARGS: --data-checksums
+    command:
+      - postgres
+      - -c
+      - max_connections=200
+      - -c
+      - shared_buffers=${PG_SHARED_BUFFERS:-512MB}
+      - -c
+      - effective_cache_size=${PG_EFFECTIVE_CACHE:-1536MB}
+      - -c
+      - wal_level=replica
+      - -c
+      - checkpoint_completion_target=0.9
+      - -c
+      - log_min_duration_statement=500
+    secrets: [postgres_password]
+    volumes: [pgdata:/var/lib/postgresql/data]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U zanshin -d zanshin"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    shm_size: 256m
+    security_opt: [no-new-privileges:true]
+    logging: { driver: json-file, options: { max-size: "50m", max-file: "5" } }
+    deploy:
+      resources:
+        limits:
+          cpus: "2"
+          memory: ${PG_MEMORY_LIMIT:-2g}
+    networks: [backend]
+
+  redis:
+    image: redis:7.4-alpine
+    restart: unless-stopped
+    command:
+      - redis-server
+      - --save
+      - ""
+      - --appendonly
+      - "no"
+      - --maxmemory
+      - ${REDIS_MAXMEMORY:-512mb}
+      - --maxmemory-policy
+      - allkeys-lru
+      - --tcp-keepalive
+      - "60"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    security_opt: [no-new-privileges:true]
+    logging: { driver: json-file, options: { max-size: "20m", max-file: "3" } }
+    deploy: { resources: { limits: { cpus: "1", memory: 768m } } }
+    networks: [backend]
+
+  clickhouse:
+    image: clickhouse/clickhouse-server:24.8-alpine
+    restart: unless-stopped
+    environment:
+      CLICKHOUSE_USER: zanshin
+      CLICKHOUSE_PASSWORD_FILE: /run/secrets/clickhouse_password
+      CLICKHOUSE_DB: zanshin
+      CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: "1"
+    secrets: [clickhouse_password]
+    volumes:
+      - chdata:/var/lib/clickhouse
+      - ./clickhouse/config.d:/etc/clickhouse-server/config.d:ro
+    ulimits:
+      nofile: { soft: 262144, hard: 262144 }
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8123/ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+    security_opt: [no-new-privileges:true]
+    logging: { driver: json-file, options: { max-size: "50m", max-file: "5" } }
+    deploy:
+      resources:
+        limits:
+          cpus: "2"
+          memory: ${CH_MEMORY_LIMIT:-3g}
+    networks: [backend]
+
+  backup:
+    image: ${ZANSHIN_BACKUP_IMAGE:-ghcr.io/rep0rtdev/zanshin-backup:0.1.0}
+    build: ./backup
+    restart: unless-stopped
+    environment:
+      BACKUP_SCHEDULE: ${BACKUP_SCHEDULE:-0 3 * * *}
+      BACKUP_KEEP_DAYS: ${BACKUP_KEEP_DAYS:-14}
+      PGHOST: postgres
+      PGUSER: zanshin
+      PGDATABASE: zanshin
+      PGPASSWORD_FILE: /run/secrets/postgres_password
+      CH_URL: http://clickhouse:8123
+      CH_USER: zanshin
+      CH_PASSWORD_FILE: /run/secrets/clickhouse_password
+      S3_URL: ${BACKUP_S3_URL:-}
+      S3_ACCESS_KEY: ${BACKUP_S3_ACCESS_KEY:-}
+      S3_SECRET_KEY_FILE: /run/secrets/backup_s3_secret
+    secrets: [postgres_password, clickhouse_password, backup_s3_secret]
+    volumes: [backups:/backups]
+    depends_on:
+      postgres: { condition: service_healthy }
+      clickhouse: { condition: service_healthy }
+    security_opt: [no-new-privileges:true]
+    logging: { driver: json-file, options: { max-size: "20m", max-file: "3" } }
+    networks: [backend]
+
+  prometheus:
+    profiles: [observability]
+    image: prom/prometheus:v2.55.1
+    restart: unless-stopped
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.retention.time=30d
+      - --web.enable-lifecycle
+    volumes:
+      - ../observability/prometheus/prometheus.compose.yml:/etc/prometheus/prometheus.yml:ro
+      - ../helm/zanshin/alerts.yml:/etc/prometheus/alerts.yml:ro
+      - promdata:/prometheus
+    deploy: { resources: { limits: { cpus: "1", memory: 1g } } }
+    networks: [backend]
+
+  grafana:
+    profiles: [observability]
+    image: grafana/grafana:11.3.1
+    restart: unless-stopped
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD__FILE: /run/secrets/grafana_admin_password
+      GF_SERVER_ROOT_URL: https://${ZANSHIN_DOMAIN}/grafana/
+      GF_SERVER_SERVE_FROM_SUB_PATH: "true"
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_ANALYTICS_REPORTING_ENABLED: "false"
+    secrets: [grafana_admin_password]
+    volumes:
+      - ../observability/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ../observability/grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - grafanadata:/var/lib/grafana
+    deploy: { resources: { limits: { cpus: "1", memory: 512m } } }
+    networks: [backend, edge]
+
+secrets:
+  postgres_password: { file: ./secrets/postgres_password }
+  database_url: { file: ./secrets/database_url }
+  clickhouse_password: { file: ./secrets/clickhouse_password }
+  jwt_secret: { file: ./secrets/jwt_secret }
+  admin_bootstrap_key: { file: ./secrets/admin_bootstrap_key }
+  backup_s3_secret: { file: ./secrets/backup_s3_secret }
+  grafana_admin_password: { file: ./secrets/grafana_admin_password }
+
+volumes:
+  pgdata:
+  chdata:
+  backups:
+  caddy_data:
+  caddy_config:
+  promdata:
+  grafanadata:
+
+networks:
+  backend:
+    internal: true
+  edge:

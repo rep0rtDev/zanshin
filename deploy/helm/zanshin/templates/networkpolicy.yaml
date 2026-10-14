@@ -1,0 +1,16 @@
+{{- if .Values.networkPolicy.enabled }}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "zanshin.fullname" . }}
+  labels: {{- include "zanshin.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels: {{- include "zanshin.selectorLabels" . | nindent 6 }}
+  policyTypes: [Ingress]
+  ingress:
+    - from: {{- toYaml .Values.networkPolicy.ingressFrom | nindent 8 }}
+      ports:
+        - { port: {{ .Values.service.httpPort }}, protocol: TCP }
+        - { port: {{ .Values.service.grpcPort }}, protocol: TCP }
+{{- end }}
