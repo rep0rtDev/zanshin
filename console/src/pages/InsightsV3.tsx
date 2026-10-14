@@ -57,19 +57,19 @@ export function StatusBoard() {
         <div className="card" style={{ flex: 1 }}>
           <strong>Live now</strong>
           {d && d.running.live_events.length === 0 && <div className="hint">No live event is running.</div>}
-          {d?.running.live_events.map((e) => <div key={e.key} className="row" style={{ justifyContent: 'space-between' }}><Link to={`/live-events/${e.key}`}>{e.name}</Link><span className="hint">until {fmtDate(e.end)}</span></div>)}
+          {d?.running.live_events.map((e) => <div key={e.key} className="row" style={{ justifyContent: 'space-between' }}><Link to={`/live-events/${e.key}`}>{e.name || e.key}</Link><span className="hint">until {fmtDate(e.end)}</span></div>)}
           <div className="hint" style={{ marginTop: 8 }}>Next 7 days</div>
-          {d?.upcoming.live_events.map((e) => <div key={e.key + e.start} className="row" style={{ justifyContent: 'space-between' }}><Link to={`/live-events/${e.key}`}>{e.name}</Link><span className="hint">{fmtDate(e.start)}</span></div>)}
+          {d?.upcoming.live_events.map((e) => <div key={e.key + e.start} className="row" style={{ justifyContent: 'space-between' }}><Link to={`/live-events/${e.key}`}>{e.name || e.key}</Link><span className="hint">{fmtDate(e.start)}</span></div>)}
         </div>
         <div className="card" style={{ flex: 1 }}>
           <strong>Experiments</strong>
           {d && d.running.experiments.length === 0 && <div className="hint">Nothing running.</div>}
-          {d?.running.experiments.map((e) => <div key={e.key} className="row" style={{ justifyContent: 'space-between' }}><Link to={`/experiments/${e.key}`}>{e.name}</Link><span><Badge tone={e.status === 'running' ? 'ok' : 'warn'}>{e.status}</Badge>{e.ends_at && <span className="hint"> ends {fmtDate(e.ends_at)}</span>}</span></div>)}
+          {d?.running.experiments.map((e) => <div key={e.key} className="row" style={{ justifyContent: 'space-between' }}><Link to={`/experiments/${e.key}`}>{e.name || e.key}</Link><span><Badge tone={e.status === 'running' ? 'ok' : 'warn'}>{e.status}</Badge>{e.ends_at && <span className="hint"> ends {fmtDate(e.ends_at)}</span>}</span></div>)}
         </div>
         <div className="card" style={{ flex: 1 }}>
           <strong>Campaigns & journeys</strong>
-          {d?.running.campaigns.map((c) => <div key={c.key}><Link to={`/messages/${c.key}`}>{c.name}</Link> <Badge>campaign</Badge></div>)}
-          {d?.running.journeys.map((j) => <div key={j.key}><Link to={`/journeys/${j.key}`}>{j.name}</Link> <Badge tone="info">journey</Badge></div>)}
+          {d?.running.campaigns.map((c) => <div key={c.key}><Link to={`/messages/${c.key}`}>{c.name || c.key}</Link> <Badge>campaign</Badge></div>)}
+          {d?.running.journeys.map((j) => <div key={j.key}><Link to={`/journeys/${j.key}`}>{j.name || j.key}</Link> <Badge tone="info">journey</Badge></div>)}
           {d && d.running.campaigns.length + d.running.journeys.length === 0 && <div className="hint">Nothing enabled.</div>}
         </div>
       </div>
@@ -120,7 +120,7 @@ export function Calendar() {
                 const l = pos(it.start), r = it.end ? pos(it.end) : 1;
                 const w = Math.max(0.6, (r - l) * 100);
                 const to = kind === 'live_event' ? `/live-events/${it.key}` : kind === 'experiment' ? `/experiments/${it.key}` : kind === 'campaign' ? `/messages/${it.key}` : '#';
-                return <Link key={i} to={to} className="cal-item" title={`${it.name}\n${fmtDate(it.start)}${it.end ? ' → ' + fmtDate(it.end) : ''}`} style={{ left: `${l * 100}%`, width: `${w}%`, background: KIND_COLOR[kind], opacity: it.enabled === false ? 0.4 : 1, top: (i % 3) * 20 }}>{it.name}{it.open_ended ? ' →' : ''}</Link>;
+                return <Link key={i} to={to} className="cal-item" title={`${it.name}\n${fmtDate(it.start)}${it.end ? ' → ' + fmtDate(it.end) : ''}`} style={{ left: `${l * 100}%`, width: `${w}%`, background: KIND_COLOR[kind], opacity: it.enabled === false ? 0.4 : 1, top: (i % 3) * 20 }}>{it.name || it.key}{it.open_ended ? ' →' : ''}</Link>;
               })}
             </div>
           </div>
