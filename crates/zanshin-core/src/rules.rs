@@ -56,6 +56,10 @@ pub enum Op {
     SemverGte,
     SemverLt,
     SemverLte,
+    /// Timestamp property is within the last `value` seconds.
+    WithinLast,
+    /// Timestamp property is older than `value` seconds.
+    OlderThan,
 }
 
 /// Evaluation context: flattened properties plus the subject id (available as `identity.id`
@@ -124,6 +128,15 @@ impl Comparison {
                     .map_err(|e| Error::invalid(format!("{}: invalid regex: {e}", self.prop)))?;
                 Ok(())
             }
+            Op::WithinLast | Op::OlderThan => {
+                if !self.value.as_f64().is_some_and(|v| v >= 0.0) {
+                    return Err(Error::invalid(format!(
+                        "{}: time ops need a non-negative number of seconds",
+                        self.prop
+                    )));
+                }
+                Ok(())
+            }
             Op::SemverEq | Op::SemverGt | Op::SemverGte | Op::SemverLt | Op::SemverLte => {
                 let s = self.value.as_str().ok_or_else(|| {
                     Error::invalid(format!("{}: semver ops need a string value", self.prop))
@@ -180,9 +193,33 @@ impl Comparison {
             Op::SemverGte => semver_cmp(actual, &self.value).is_some_and(|o| o.is_ge()),
             Op::SemverLt => semver_cmp(actual, &self.value).is_some_and(|o| o.is_lt()),
             Op::SemverLte => semver_cmp(actual, &self.value).is_some_and(|o| o.is_le()),
+            Op::WithinLast => age_secs(actual).is_some_and(|age| {
+                self.value
+                    .as_f64()
+                    .is_some_and(|secs| age >= 0.0 && age <= secs)
+            }),
+            Op::OlderThan => age_secs(actual)
+                .is_some_and(|age| self.value.as_f64().is_some_and(|secs| age > secs)),
             Op::Exists | Op::NotExists => unreachable!(),
         }
     }
+}
+
+/// Seconds elapsed since a timestamp property (RFC 3339 string or unix seconds / millis).
+fn age_secs(actual: &Value) -> Option<f64> {
+    let now = chrono::Utc::now();
+    let ts = match actual {
+        Value::String(s) => chrono::DateTime::parse_from_rfc3339(s)
+            .ok()
+            .map(|d| d.with_timezone(&chrono::Utc)),
+        Value::Number(n) => {
+            let v = n.as_f64()?;
+            let secs = if v > 1e11 { v / 1000.0 } else { v };
+            chrono::DateTime::from_timestamp(secs as i64, 0)
+        }
+        _ => None,
+    }?;
+    Some((now - ts).num_milliseconds() as f64 / 1000.0)
 }
 
 /// Equality that tolerates `"5" == 5` and `"true" == true`, which is what JSON-ish clients send.

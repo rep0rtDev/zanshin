@@ -290,6 +290,37 @@ gRPC: `ServerGetFlags`, `ServerGetAudiences`, `ServerGetExperiments`, `ServerGet
 | `GET` | `/analytics/events/names?from=&to=&limit=` | — | event names by volume with unique identities |
 | `GET` | `/identities/{identity_id}/events?limit=` | — | most recent events of one identity (with `experiments` tags) |
 
+### Audiences v2
+
+Audience fields beyond the rule: `kind` (`dynamic` | `managed`), `recompute` (`live` | `scheduled`),
+`schedule_cron` (6-field cron, UTC), `source`, `copied_from`, `last_computed_at`, `member_count`.
+Create / update accept `expression` instead of `condition` (see *Expression language*). Membership is
+resolved per audience as **exclude list → include list → stored membership (managed / scheduled) → live rule**.
+
+| Route | Purpose |
+|-------|---------|
+| `GET /admin/v1/audiences/{key}/members?after&limit` | Current members with `joined_at` and `source` (`rule` / `include` / `managed`). Live audiences mirror rule results here as identities are evaluated. |
+| `POST` / `DELETE /admin/v1/audiences/{key}/members` `{ "external_ids": [...] }` | Managed membership (admin). Same on the server API: `POST` / `DELETE /server/v1/audiences/{key}/members` (server key, e.g. from Nakama). Unknown ids are returned in `missing`. |
+| `GET` / `PUT` / `DELETE /admin/v1/audiences/{key}/lists` | Include / exclude entries `{ "external_id", "mode": "include"|"exclude", "until"?, "reason"? }`; exclusions with `until` expire automatically. |
+| `POST /admin/v1/audiences/{key}/recompute` | Re-evaluate the rule for every identity and store the result; scheduled audiences also run on `schedule_cron`. |
+| `GET /admin/v1/audiences/{key}/usage` | Flags, experiments, live events and messages referencing the audience. |
+| `POST /admin/v1/audiences/{key}/copy` `{ "key", "name"? }` | Duplicate rule / sampling / labels as a disabled audience (`copied_from`). |
+| `GET /admin/v1/audiences/{key}/expression`, `POST /admin/v1/audiences/expression` | Convert between the expression language and the JSON condition. |
+
+Default audiences: `all_players`, `new_players` (first seen ≤ 7 d), `payers`, `inactive_7d`, `ios`, `android`.
+
+#### Expression language
+
+```text
+custom.level >= 10 and (default.country in ["DE", "FR"] or computed.session_count > 3)
+  and not custom.beta == true and computed.last_seen_at within_last 7d
+```
+
+Precedence `not` > `and` > `or`, parentheses group. Operators: `== != < <= > >= in not_in contains
+not_contains starts_with ends_with matches exists not_exists semver_* within_last older_than`; durations
+`30s 15m 2h 7d`. The new rule operators `within_last` / `older_than` (value in seconds) work on any
+timestamp property and are available everywhere conditions are.
+
 ### Taxonomy
 
 | Route | Purpose |

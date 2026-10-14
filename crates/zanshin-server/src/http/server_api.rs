@@ -29,6 +29,10 @@ pub fn router() -> Router<AppState> {
     Router::new()
         .route("/flags", get(flags))
         .route("/audiences", get(audiences))
+        .route(
+            "/audiences/{key}/members",
+            post(add_audience_members).delete(remove_audience_members),
+        )
         .route("/experiments", get(experiments))
         .route("/experiments/{key}/expose", post(expose))
         .route("/live-events", get(live_events))
@@ -278,6 +282,40 @@ async fn upsert_identity(
         identity: IdentityResponse::from(&i),
         properties: i.properties,
     }))
+}
+
+#[derive(Debug, Deserialize)]
+pub struct AudienceMembersRequest {
+    pub external_ids: Vec<String>,
+}
+
+/// Push membership of a managed audience from a trusted backend.
+async fn add_audience_members(
+    State(state): State<AppState>,
+    ServerAuth(_): ServerAuth,
+    Path(key): Path<String>,
+    Json(b): Json<AudienceMembersRequest>,
+) -> ApiResult<Json<serde_json::Value>> {
+    let (n, missing) = state
+        .audiences
+        .set_managed(&key, &b.external_ids, true)
+        .await?;
+    Ok(Json(serde_json::json!({ "added": n, "missing": missing })))
+}
+
+async fn remove_audience_members(
+    State(state): State<AppState>,
+    ServerAuth(_): ServerAuth,
+    Path(key): Path<String>,
+    Json(b): Json<AudienceMembersRequest>,
+) -> ApiResult<Json<serde_json::Value>> {
+    let (n, missing) = state
+        .audiences
+        .set_managed(&key, &b.external_ids, false)
+        .await?;
+    Ok(Json(
+        serde_json::json!({ "removed": n, "missing": missing }),
+    ))
 }
 
 #[derive(Debug, Deserialize)]

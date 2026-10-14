@@ -69,7 +69,7 @@ variables. `zanshin --check-config` prints the effective configuration with secr
 | PostgreSQL migrations, Redis cache, ClickHouse schema bootstrap | ✅ |
 | Prometheus `/metrics`, structured logs, request ids, graceful shutdown | ✅ |
 | Feature flags: typed values, targeting rules (`all`/`any`/`not`, 20 operators incl. semver), percentage rollouts, weighted variants, per-identity overrides, live push over WebSocket / gRPC stream, replicated via Redis | ✅ |
-| Audiences (rule-based segments with sampling) gating flags and experiments | ✅ |
+| Audiences: rule-based segments with sampling, stored membership (live mirror or scheduled recompute), member lists with join time, include / exclude lists with expiring exclusions, managed audiences pushed from the server API, usage references, copy, human-readable expression language, default audiences | ✅ |
 | A/B experiments: targeting, allocation %, weighted variants, sticky assignment, exposure tracking, lifecycle draft→running→paused→stopped, results per variant, optional flag linkage | ✅ |
 | Live events (schedules), in-app messages / inbox | ✅ |
 | Taxonomy: labels across every resource, event definitions with value types + metadata JSON Schema (off / warn / strict enforcement, auto-discovery, rejected-event debugger), read-only custom properties, JSON Schemas for structured flag values | ✅ |
