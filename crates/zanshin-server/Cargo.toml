@@ -17,6 +17,7 @@ zanshin-proto.workspace = true
 zanshin-store.workspace = true
 
 tokio.workspace = true
+semver.workspace = true
 tokio-stream.workspace = true
 futures.workspace = true
 async-trait.workspace = true

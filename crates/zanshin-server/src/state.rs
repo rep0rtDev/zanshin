@@ -94,6 +94,7 @@ pub struct AppState {
     pub currency: CurrencyService,
     pub notifications: NotificationService,
     pub started_at: chrono::DateTime<chrono::Utc>,
+    pub updates: Arc<crate::services::updates::UpdateChecker>,
     /// Cluster-wide job locks (Postgres advisory locks).
     pub locks: zanshin_store::locks::JobLock,
     /// Per-replica housekeeping job history (see `services::health`).
@@ -354,6 +355,7 @@ impl AppState {
             notifications.clone(),
             integrations.clone(),
         );
+        let updates = crate::services::updates::UpdateChecker::new(&cfg.updates);
         Ok(Self {
             cfg,
             project: project.to_string(),
@@ -388,6 +390,7 @@ impl AppState {
             notifications,
             metrics,
             started_at: chrono::Utc::now(),
+            updates,
             locks,
             jobs: Default::default(),
             shutdown: Arc::new(tokio::sync::watch::channel(false).0),

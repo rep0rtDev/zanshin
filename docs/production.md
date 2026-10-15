@@ -215,6 +215,16 @@ docker compose run --rm backup restore-drill.sh "/backups/$(docker compose exec 
 7. Rollback = redeploy the previous image (schema stays). Only if a migration itself must be undone,
    restore the step-3 backup.
 
+## Update check
+
+Each replica asks `updates.url` (default: the GitHub Releases API for this repository) for the
+latest stable release every `updates.interval` (default `6h`) and `GET /admin/v1/updates` reports
+the answer; the console Overview shows a dismissable banner when a newer version exists. Drafts
+and pre-releases are ignored. Only the request itself leaves the server — no instance identifier,
+no usage data (the `User-Agent` is `zanshin/<version>`). Air-gapped or policy-restricted
+deployments set `ZANSHIN__UPDATES__CHECK=false`; mirrors can serve the GitHub shape (a single
+release object or a list) at `ZANSHIN__UPDATES__URL`.
+
 ## Secret rotation
 
 | Secret | How | Effect |

@@ -1,6 +1,9 @@
 // Russian console strings, keyed by the English source text (see src/i18n.ts).
 // Identical values are kept so a key is visibly covered.
 export const ru: Record<string, string> = {
+  "is available": "доступна",
+  "you are running": "у вас",
+  "Release notes": "Что нового",
   "A play session ends after this long without events.": "Игровая сессия завершается после такого простоя без событий.",
   "ALL of": "ВСЕ из",
   "ANY of": "ЛЮБОЕ из",
