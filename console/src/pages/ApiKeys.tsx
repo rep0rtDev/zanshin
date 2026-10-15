@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { del, get, post, useLoad } from '../api';
 import { Badge, Confirm, ErrorBox, Field, Page, Table, fmtDate } from '../ui';
 import { PermissionEditor, type Permissions } from '../permissions';
+import { t } from '../i18n';
 
 type Key = { id: string; name: string; kind: string; prefix: string; created_at: string; last_used_at: string | null; revoked_at: string | null; read_only: boolean; role: 'admin' | 'editor' | 'viewer'; expires_at: string | null; rate_limit_per_minute: number | null; permissions: Permissions | null; rotated_from: string | null; rotated_to: string | null };
 
@@ -25,23 +26,23 @@ export default function ApiKeys() {
     } catch (e) { setErr(e as Error); }
   };
   return (
-    <Page title="API keys">
+    <Page title={t('API keys')}>
       <ErrorBox error={q.error ?? err} />
       <form className="card" onSubmit={create}>
        <div className="row">
-        <Field label="Name"><input value={name} onChange={(e) => setName(e.target.value)} placeholder="ios-prod" required /></Field>
-        <Field label="Kind">
+        <Field label={t('Name')}><input value={name} onChange={(e) => setName(e.target.value)} placeholder="ios-prod" required /></Field>
+        <Field label={t('Kind')}>
           <select value={kind} onChange={(e) => setKind(e.target.value)}>
-            <option value="client">client — game clients (/v1)</option>
-            <option value="server">server — trusted backends, Nakama (/server/v1)</option>
-            <option value="admin">admin — this console (/admin/v1)</option>
+            <option value="client">{t('client — game clients (/v1)')}</option>
+            <option value="server">{t('server — trusted backends, Nakama (/server/v1)')}</option>
+            <option value="admin">{t('admin — this console (/admin/v1)')}</option>
           </select>
         </Field>
-        <Field label="Expires" hint="optional"><input type="datetime-local" value={expires} onChange={(e) => setExpires(e.target.value)} /></Field>
-        <Field label="Requests / min" hint="optional per-key quota"><input type="number" min={1} value={limit} onChange={(e) => setLimit(e.target.value)} placeholder="scope default" /></Field>
-        <div className="field fixed"><span className="label">&nbsp;</span><button className="btn">Create key</button></div>
+        <Field label={t('Expires')} hint="optional"><input type="datetime-local" value={expires} onChange={(e) => setExpires(e.target.value)} /></Field>
+        <Field label={t('Requests / min')} hint={t('optional per-key quota')}><input type="number" min={1} value={limit} onChange={(e) => setLimit(e.target.value)} placeholder={t('scope default')} /></Field>
+        <div className="field fixed"><span className="label">&nbsp;</span><button className="btn">{t('Create key')}</button></div>
        </div>
-        {kind === 'admin' && <Field label="Permissions" hint="what this admin key may do in /admin/v1"><PermissionEditor archetype={archetype} permissions={permissions} onChange={(a, p) => { setArchetype(a); setPermissions(p); }} /></Field>}
+        {kind === 'admin' && <Field label={t('Permissions')} hint={t('what this admin key may do in /admin/v1')}><PermissionEditor archetype={archetype} permissions={permissions} onChange={(a, p) => { setArchetype(a); setPermissions(p); }} /></Field>}
       </form>
       {minted && (
         <div className="card">
@@ -54,12 +55,12 @@ export default function ApiKeys() {
         rowKey={(k) => k.id}
         cols={[
           { h: 'Name', c: (k) => <strong>{k.name}</strong> },
-          { h: 'Kind', c: (k) => <><Badge tone={k.kind === 'admin' ? 'bad' : k.kind === 'server' ? 'info' : 'muted'}>{k.kind}</Badge>{k.kind === 'admin' && (k.permissions ? <Badge>custom perms</Badge> : k.role !== 'admin' && <Badge>{k.role}</Badge>)}</> },
+          { h: 'Kind', c: (k) => <><Badge tone={k.kind === 'admin' ? 'bad' : k.kind === 'server' ? 'info' : 'muted'}>{k.kind}</Badge>{k.kind === 'admin' && (k.permissions ? <Badge>{t('custom perms')}</Badge> : k.role !== 'admin' && <Badge>{k.role}</Badge>)}</> },
           { h: 'Limits', c: (k) => <span className="hint">{k.rate_limit_per_minute ? `${k.rate_limit_per_minute}/min` : 'default'}{k.expires_at ? ` · expires ${fmtDate(k.expires_at)}` : ''}</span> },
           { h: "Prefix", c: (k) => <span className="mono">{k.prefix}…</span> },
           { h: 'Created', c: (k) => fmtDate(k.created_at) },
           { h: 'Last used', c: (k) => fmtDate(k.last_used_at) },
-          { h: '', w: '200px', c: (k) => k.revoked_at ? <Badge tone="bad">revoked</Badge> : k.rotated_to ? <Badge tone="warn">rotated · expires {fmtDate(k.expires_at)}</Badge> : <span className="row" style={{ gap: 6 }}><Confirm onConfirm={() => post<{ secret: string }>('/api-keys/' + k.id + '/rotate', { grace_hours: 24 }).then((r) => { setMinted({ secret: r.secret, name: k.name + ' (rotated — old key works 24 h)' }); q.reload(); }, setErr)}>Rotate</Confirm><Confirm danger onConfirm={() => del('/api-keys/' + k.id).then(q.reload, setErr)}>Revoke</Confirm></span> },
+          { h: '', w: '200px', c: (k) => k.revoked_at ? <Badge tone="bad">revoked</Badge> : k.rotated_to ? <Badge tone="warn">rotated · expires {fmtDate(k.expires_at)}</Badge> : <span className="row" style={{ gap: 6 }}><Confirm onConfirm={() => post<{ secret: string }>('/api-keys/' + k.id + '/rotate', { grace_hours: 24 }).then((r) => { setMinted({ secret: r.secret, name: k.name + ' (rotated — old key works 24 h)' }); q.reload(); }, setErr)}>{t('Rotate')}</Confirm><Confirm danger onConfirm={() => del('/api-keys/' + k.id).then(q.reload, setErr)}>{t('Revoke')}</Confirm></span> },
         ]}
       />
     </Page>

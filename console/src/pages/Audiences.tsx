@@ -4,6 +4,7 @@ import { EntityPage, Text, Num, Tags } from '../crud';
 import { ConditionEditor } from '../RuleBuilder';
 import type { Cond } from '../RuleBuilder';
 import { Badge, Confirm, ErrorBox, Field, JsonField, Table, Toggle, fmtDate, fmtNum } from '../ui';
+import { t } from '../i18n';
 
 type Audience = {
   key: string; name: string; description: string; condition: Cond; percentage: number; enabled: boolean; tags: string[]; version: number; updated_at: string;
@@ -20,13 +21,13 @@ function ExpressionEditor({ value, onChange }: { value: Cond; onChange: (c: Cond
   const toExpr = () => post<{ expression: string }>('/audiences/expression', { condition: value }).then((r) => { setText(r.expression); setMode('expr'); setErr(null); }, setErr);
   const apply = () => post<{ condition: Cond }>('/audiences/expression', { expression: text }).then((r) => { onChange(r.condition); setMode('builder'); setErr(null); }, setErr);
   return (
-    <Field label={<>Condition <a href="#" className="hint" onClick={(e) => { e.preventDefault(); mode === 'builder' ? toExpr() : setMode('builder'); }}>{mode === 'builder' ? 'edit as expression' : 'back to builder'}</a></>} hint="who belongs to this audience">
+    <Field label={<>Condition <a href="#" className="hint" onClick={(e) => { e.preventDefault(); mode === 'builder' ? toExpr() : setMode('builder'); }}>{mode === 'builder' ? 'edit as expression' : 'back to builder'}</a></>} hint={t('who belongs to this audience')}>
       <ErrorBox error={err} />
       {mode === 'builder'
         ? <ConditionEditor value={value} onChange={(condition) => onChange(condition ?? { all: [] })} />
         : <>
           <textarea className="mono" rows={4} value={text} onChange={(e) => setText(e.target.value)} placeholder='custom.level >= 10 and (default.country in ["DE", "FR"] or computed.session_count > 3) and computed.last_seen_at within_last 7d' />
-          <div className="actions"><button className="btn" type="button" onClick={apply}>Apply expression</button></div>
+          <div className="actions"><button className="btn" type="button" onClick={apply}>{t('Apply expression')}</button></div>
         </>}
     </Field>
   );
@@ -53,28 +54,28 @@ function Members({ aud }: { aud: Audience }) {
     <>
       <div className="card">
         <div className="row" style={{ alignItems: 'center' }}>
-          <strong>Members</strong> <Badge tone="info">{fmtNum(aud.member_count)}</Badge>
+          <strong>{t('Members')}</strong> <Badge tone="info">{fmtNum(aud.member_count)}</Badge>
           <span className="hint">{aud.last_computed_at ? `computed ${fmtDate(aud.last_computed_at)}` : aud.recompute === 'live' ? 'mirrored from live evaluation' : 'never computed'}</span>
           <div className="spacer" />
-          {aud.kind === 'dynamic' && <button className="btn ghost" onClick={() => run(() => post(`/audiences/${k}/recompute`), 'recomputed')}>Recompute now</button>}
+          {aud.kind === 'dynamic' && <button className="btn ghost" onClick={() => run(() => post(`/audiences/${k}/recompute`), 'recomputed')}>{t('Recompute now')}</button>}
           {sys.data?.console?.audience_delete_all_enabled && (
-            <button className="btn danger" title="Development servers only (admin.audience_delete_all_enabled)" onClick={() => confirm(`Permanently delete ALL ${aud.member_count} identities in "${aud.key}" and their events?`) && run(() => del(`/audiences/${k}/members/all`), 'all identities deleted')}>Delete all identities</button>
+            <button className="btn danger" title={t('Development servers only (admin.audience_delete_all_enabled)')} onClick={() => confirm(`Permanently delete ALL ${aud.member_count} identities in "${aud.key}" and their events?`) && run(() => del(`/audiences/${k}/members/all`), 'all identities deleted')}>{t('Delete all identities')}</button>
           )}
         </div>
         <ErrorBox error={err} />
         {msg && <div className="hint">{msg}</div>}
         <div className="row" style={{ alignItems: 'end', marginTop: 10 }}>
           <Field label={mode === 'managed' ? 'External ids (comma / space separated)' : 'External id'}><input value={ext} onChange={(e) => setExt(e.target.value)} placeholder="player-123" /></Field>
-          <Field label="Action">
+          <Field label={t('Action')}>
             <select value={mode} onChange={(e) => setMode(e.target.value as typeof mode)}>
-              {aud.kind === 'managed' && <option value="managed">add as managed members</option>}
-              <option value="include">always include</option>
+              {aud.kind === 'managed' && <option value="managed">{t('add as managed members')}</option>}
+              <option value="include">{t('always include')}</option>
               <option value="exclude">exclude</option>
             </select>
           </Field>
           {mode === 'exclude' && <Field label="For hours (blank = forever)"><input value={hours} onChange={(e) => setHours(e.target.value)} style={{ width: 90 }} /></Field>}
-          {mode !== 'managed' && <Field label="Reason"><input value={reason} onChange={(e) => setReason(e.target.value)} /></Field>}
-          <button className="btn" disabled={!ext} onClick={add}>Apply</button>
+          {mode !== 'managed' && <Field label={t('Reason')}><input value={reason} onChange={(e) => setReason(e.target.value)} /></Field>}
+          <button className="btn" disabled={!ext} onClick={add}>{t('Apply')}</button>
         </div>
         <Table<Member>
           rows={q.data?.items}
@@ -89,11 +90,11 @@ function Members({ aud }: { aud: Audience }) {
         />
       </div>
       <div className="card">
-        <strong>Include / exclude lists</strong>
+        <strong>{t('Include / exclude lists')}</strong>
         <Table<ListEntry>
           rows={lists.data}
           rowKey={(l) => l.identity_id}
-          empty="No manual entries"
+          empty={t('No manual entries')}
           cols={[
             { h: 'Player', c: (l) => <span className="mono">{l.external_id}</span> },
             { h: 'Mode', w: '100px', c: (l) => <Badge tone={l.mode === 'include' ? 'ok' : 'bad'}>{l.mode}</Badge> },
@@ -106,11 +107,11 @@ function Members({ aud }: { aud: Audience }) {
       <div className="card">
         <div className="row" style={{ alignItems: 'end' }}>
           <div className="grow">
-            <strong>Used by</strong>
-            <div style={{ marginTop: 6 }}>{usage.data?.length ? usage.data.map((u) => <Badge key={u.kind + u.key}>{u.kind}: {u.key}</Badge>) : <span className="muted">Not referenced by any flag, experiment, live event or campaign</span>}</div>
+            <strong>{t('Used by')}</strong>
+            <div style={{ marginTop: 6 }}>{usage.data?.length ? usage.data.map((u) => <Badge key={u.kind + u.key}>{u.kind}: {u.key}</Badge>) : <span className="muted">{t('Not referenced by any flag, experiment, live event or campaign')}</span>}</div>
           </div>
-          <Field label="Copy as"><input className="mono" value={copyKey} onChange={(e) => setCopyKey(e.target.value)} /></Field>
-          <Confirm onConfirm={() => run(() => post(`/audiences/${k}/copy`, { key: copyKey }), `copied to ${copyKey} (disabled)`)}>Copy audience</Confirm>
+          <Field label={t('Copy as')}><input className="mono" value={copyKey} onChange={(e) => setCopyKey(e.target.value)} /></Field>
+          <Confirm onConfirm={() => run(() => post(`/audiences/${k}/copy`, { key: copyKey }), `copied to ${copyKey} (disabled)`)}>{t('Copy audience')}</Confirm>
         </div>
       </div>
     </>
@@ -135,14 +136,14 @@ function Check({ aud }: { aud: Audience }) {
   const dry = () => post<{ member: boolean }>(`/audiences/${encodeURIComponent(aud.key)}/evaluate`, { properties: props }).then((r) => { setOut(`hypothetical identity is ${r.member ? '' : 'NOT '}a member`); setErr(null); }, setErr);
   return (
     <div className="card">
-      <strong>Membership check</strong>
+      <strong>{t('Membership check')}</strong>
       <ErrorBox error={err} />
       <div className="row" style={{ marginTop: 10 }}>
-        <Field label="External id"><input value={ext} onChange={(e) => setExt(e.target.value)} placeholder="player-123" /></Field>
-        <div className="field fixed"><span className="label">&nbsp;</span><button className="btn ghost" disabled={!ext} onClick={byId}>Check</button></div>
+        <Field label={t('External id')}><input value={ext} onChange={(e) => setExt(e.target.value)} placeholder="player-123" /></Field>
+        <div className="field fixed"><span className="label">&nbsp;</span><button className="btn ghost" disabled={!ext} onClick={byId}>{t('Check')}</button></div>
       </div>
       <Field label="…or hypothetical properties"><JsonField value={props} onChange={setProps} rows={4} /></Field>
-      <button className="btn ghost" onClick={dry}>Dry run</button>
+      <button className="btn ghost" onClick={dry}>{t('Dry run')}</button>
       {out && <div style={{ marginTop: 10 }}><Badge tone={out.includes('NOT') ? 'bad' : 'ok'}>{out}</Badge></div>}
     </div>
   );
@@ -151,7 +152,7 @@ function Check({ aud }: { aud: Audience }) {
 export default function Audiences() {
   return (
     <EntityPage<Audience>
-      title="Audiences"
+      title={t('Audiences')}
       path="/audiences"
       blurb="Reusable segments defined by rules over identity properties. Reference them from flags, experiments, live events and campaigns."
       cols={[
@@ -166,26 +167,26 @@ export default function Audiences() {
       form={(d, set, isNew) => (
         <>
           <div className="row">
-            <Text label="Key" value={d.key} onChange={(key) => set({ key })} disabled={!isNew} mono />
-            <Text label="Name" value={d.name} onChange={(name) => set({ name })} />
+            <Text label={t('Key')} value={d.key} onChange={(key) => set({ key })} disabled={!isNew} mono />
+            <Text label={t('Name')} value={d.name} onChange={(name) => set({ name })} />
           </div>
-          <Text label="Description" value={d.description} onChange={(description) => set({ description })} />
+          <Text label={t('Description')} value={d.description} onChange={(description) => set({ description })} />
           <div className="row">
-            <Field label="Kind" hint="managed: membership pushed via API / console, no rule">
-              <select value={d.kind ?? 'dynamic'} onChange={(e) => set({ kind: e.target.value as Audience['kind'] })}><option value="dynamic">dynamic (rule)</option><option value="managed">managed</option></select>
+            <Field label={t('Kind')} hint={t('managed: membership pushed via API / console, no rule')}>
+              <select value={d.kind ?? 'dynamic'} onChange={(e) => set({ kind: e.target.value as Audience['kind'] })}><option value="dynamic">{t('dynamic (rule)')}</option><option value="managed">managed</option></select>
             </Field>
             {d.kind !== 'managed' && (
-              <Field label="Evaluation" hint="live: rule checked on every request · scheduled: stored membership refreshed by cron">
+              <Field label={t('Evaluation')} hint={t('live: rule checked on every request · scheduled: stored membership refreshed by cron')}>
                 <select value={d.recompute ?? 'live'} onChange={(e) => set({ recompute: e.target.value as Audience['recompute'] })}><option value="live">live</option><option value="scheduled">scheduled</option></select>
               </Field>
             )}
-            {d.kind !== 'managed' && d.recompute === 'scheduled' && <Text label="Cron (UTC, 6 fields)" value={d.schedule_cron} onChange={(schedule_cron) => set({ schedule_cron })} mono placeholder="0 0 * * * *" />}
-            {d.kind === 'managed' && <Text label="Source" value={d.source} onChange={(source) => set({ source })} placeholder="nakama:guilds" />}
+            {d.kind !== 'managed' && d.recompute === 'scheduled' && <Text label={t('Cron (UTC, 6 fields)')} value={d.schedule_cron} onChange={(schedule_cron) => set({ schedule_cron })} mono placeholder="0 0 * * * *" />}
+            {d.kind === 'managed' && <Text label={t('Source')} value={d.source} onChange={(source) => set({ source })} placeholder="nakama:guilds" />}
           </div>
           {d.kind !== 'managed' && <ExpressionEditor value={d.condition ?? { all: [] }} onChange={(condition) => set({ condition })} />}
           <div className="row">
-            <Num label="Sampling %" value={d.percentage} onChange={(percentage) => set({ percentage: percentage ?? 100 })} min={0} max={100} hint="deterministic per identity" />
-            <div className="field fixed"><span className="label">Enabled</span><Toggle value={!!d.enabled} onChange={(enabled) => set({ enabled })} label={d.enabled ? 'on' : 'off'} /></div>
+            <Num label={t('Sampling %')} value={d.percentage} onChange={(percentage) => set({ percentage: percentage ?? 100 })} min={0} max={100} hint={t('deterministic per identity')} />
+            <div className="field fixed"><span className="label">{t('Enabled')}</span><Toggle value={!!d.enabled} onChange={(enabled) => set({ enabled })} label={d.enabled ? 'on' : 'off'} /></div>
           </div>
           <Tags value={d.tags} onChange={(tags) => set({ tags })} />
         </>

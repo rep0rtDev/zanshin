@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { get, post, useLoad } from '../api';
 import { EntityPage, Num, Tags, Text } from '../crud';
 import { Badge, ErrorBox, Field, JsonField, Table, Toggle, fmtDate, fmtNum } from '../ui';
+import { t } from '../i18n';
 
 type Webhook = {
   id: string; key: string; name: string; url: string; secret: string; events: string[]; enabled: boolean; batch_size: number; batch_window_secs: number;
@@ -26,8 +27,8 @@ function EventsPicker({ value, onChange }: { value: string[]; onChange: (v: stri
         {(q.data?.items ?? []).filter((t) => !t.includes('<')).map((t) => <button key={t} type="button" className={'chip' + (value.includes(t) ? ' on' : '')} onClick={() => toggle(t)}>{t}</button>)}
       </div>
       <div className="row" style={{ alignItems: 'end' }}>
-        <Text label="Custom pattern" value={custom} onChange={setCustom} mono placeholder="event.purchase" hint="analytics events arrive as event.<name>" />
-        <button className="btn ghost" disabled={!custom} onClick={() => { toggle(custom); setCustom(''); }}>Add</button>
+        <Text label={t('Custom pattern')} value={custom} onChange={setCustom} mono placeholder="event.purchase" hint="analytics events arrive as event.<name>" />
+        <button className="btn ghost" disabled={!custom} onClick={() => { toggle(custom); setCustom(''); }}>{t('Add')}</button>
       </div>
       <div className="hint">Subscribed: {value.map((v) => <code key={v} style={{ marginRight: 6 }}>{v}</code>)}</div>
     </div>
@@ -43,10 +44,10 @@ function Deliveries({ w }: { w: Webhook }) {
   return (
     <div className="card">
       <div className="row" style={{ alignItems: 'center' }}>
-        <strong>Deliveries</strong>
+        <strong>{t('Deliveries')}</strong>
         <select value={status} onChange={(e) => setStatus(e.target.value)}><option value="">all</option><option value="sent">sent</option><option value="failed">failed</option><option value="dead">dead</option><option value="pending">pending</option></select>
-        <button className="btn ghost sm" onClick={q.reload}>Refresh</button>
-        <button className="btn sm" style={{ marginLeft: 'auto' }} onClick={() => post<Delivery>(`/webhooks/${k}/test`).then((d) => { setTest(d); setErr(null); q.reload(); }, setErr)}>Send test event</button>
+        <button className="btn ghost sm" onClick={q.reload}>{t('Refresh')}</button>
+        <button className="btn sm" style={{ marginLeft: 'auto' }} onClick={() => post<Delivery>(`/webhooks/${k}/test`).then((d) => { setTest(d); setErr(null); q.reload(); }, setErr)}>{t('Send test event')}</button>
       </div>
       <ErrorBox error={err ?? q.error} />
       {test && <div style={{ marginTop: 8 }}><Badge tone={TONE[test.status]}>{test.status}</Badge> <span className="hint">{test.last_status ? `HTTP ${test.last_status}` : ''} {test.last_error}</span></div>}
@@ -54,13 +55,13 @@ function Deliveries({ w }: { w: Webhook }) {
       <Table<Delivery>
         rows={q.data?.items}
         rowKey={(d) => d.id}
-        empty="No deliveries yet"
+        empty={t('No deliveries yet')}
         cols={[
           { h: 'When', c: (d) => fmtDate(d.created_at) },
           { h: 'Events', c: (d) => d.event_types.map((t) => <code key={t} style={{ marginRight: 4 }}>{t}</code>) },
           { h: 'Status', c: (d) => <><Badge tone={TONE[d.status]}>{d.status}</Badge> <span className="hint">{d.attempts}× {d.last_status ? `HTTP ${d.last_status}` : ''}</span></> },
           { h: 'Detail', c: (d) => <span className="hint">{d.last_error || (d.next_attempt_at && d.status === 'failed' ? `retry ${fmtDate(d.next_attempt_at)}` : '')}</span> },
-          { h: '', c: (d) => d.status !== 'sent' ? <button className="btn ghost sm" onClick={() => post(`/webhooks/${k}/deliveries/${d.id}/retry`).then(q.reload, setErr)}>Retry</button> : null },
+          { h: '', c: (d) => d.status !== 'sent' ? <button className="btn ghost sm" onClick={() => post(`/webhooks/${k}/deliveries/${d.id}/retry`).then(q.reload, setErr)}>{t('Retry')}</button> : null },
         ]}
       />
     </div>
@@ -70,7 +71,7 @@ function Deliveries({ w }: { w: Webhook }) {
 export default function Webhooks() {
   return (
     <EntityPage<Webhook>
-      title="Webhooks"
+      title={t('Webhooks')}
       path="/webhooks"
       blurb="HTTP callbacks for things that happen in Zanshin: config changes, player lifecycle, analytics events, message deliveries. Requests are signed (HMAC-SHA256 over timestamp.body), optionally batched, and retried with backoff; every attempt is logged."
       cols={[
@@ -84,21 +85,21 @@ export default function Webhooks() {
       form={(d, set, isNew) => (
         <>
           <div className="row">
-            <Text label="Key" value={d.key} onChange={(key) => set({ key })} disabled={!isNew} mono />
-            <Text label="Name" value={d.name} onChange={(name) => set({ name })} />
-            <div className="field fixed"><span className="label">Enabled</span><Toggle value={!!d.enabled} onChange={(enabled) => set({ enabled })} label={d.enabled ? 'on' : 'off'} /></div>
+            <Text label={t('Key')} value={d.key} onChange={(key) => set({ key })} disabled={!isNew} mono />
+            <Text label={t('Name')} value={d.name} onChange={(name) => set({ name })} />
+            <div className="field fixed"><span className="label">{t('Enabled')}</span><Toggle value={!!d.enabled} onChange={(enabled) => set({ enabled })} label={d.enabled ? 'on' : 'off'} /></div>
           </div>
           <div className="row">
-            <Text label="URL" value={d.url} onChange={(url) => set({ url })} mono placeholder="https://example.com/zanshin" />
-            <Text label="Secret" value={d.secret} onChange={(secret) => set({ secret })} mono hint="HMAC key; masked after saving — leave the mask to keep it" />
+            <Text label={t('URL')} value={d.url} onChange={(url) => set({ url })} mono placeholder="https://example.com/zanshin" />
+            <Text label={t('Secret')} value={d.secret} onChange={(secret) => set({ secret })} mono hint="HMAC key; masked after saving — leave the mask to keep it" />
           </div>
-          <Field label="Events"><EventsPicker value={d.events ?? ['*']} onChange={(events) => set({ events })} /></Field>
+          <Field label={t('Events')}><EventsPicker value={d.events ?? ['*']} onChange={(events) => set({ events })} /></Field>
           <div className="row">
-            <Num label="Batch size" value={d.batch_size} onChange={(batch_size) => set({ batch_size: batch_size ?? 1 })} min={1} max={500} hint="1 = one request per event" />
-            <Num label="Batch window (s)" value={d.batch_window_secs} onChange={(batch_window_secs) => set({ batch_window_secs: batch_window_secs ?? 0 })} min={0} max={3600} hint="flush after this long even if the batch is not full" />
-            <Num label="Max attempts" value={d.max_attempts} onChange={(max_attempts) => set({ max_attempts: max_attempts ?? 5 })} min={1} max={20} hint="backoff 10s, 20s, 40s … up to 1h" />
+            <Num label={t('Batch size')} value={d.batch_size} onChange={(batch_size) => set({ batch_size: batch_size ?? 1 })} min={1} max={500} hint="1 = one request per event" />
+            <Num label={t('Batch window (s)')} value={d.batch_window_secs} onChange={(batch_window_secs) => set({ batch_window_secs: batch_window_secs ?? 0 })} min={0} max={3600} hint={t('flush after this long even if the batch is not full')} />
+            <Num label={t('Max attempts')} value={d.max_attempts} onChange={(max_attempts) => set({ max_attempts: max_attempts ?? 5 })} min={1} max={20} hint={t('backoff 10s, 20s, 40s … up to 1h')} />
           </div>
-          <Field label="Extra headers (JSON)"><JsonField value={d.headers} onChange={(headers) => set({ headers: (headers as Record<string, unknown>) ?? {} })} rows={2} /></Field>
+          <Field label={t('Extra headers (JSON)')}><JsonField value={d.headers} onChange={(headers) => set({ headers: (headers as Record<string, unknown>) ?? {} })} rows={2} /></Field>
           <Tags value={d.tags} onChange={(tags) => set({ tags })} />
         </>
       )}

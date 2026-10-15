@@ -3,6 +3,7 @@ import { del, get, post, qs, useLoad } from '../api';
 import { EntityPage, Num, Tags, Text } from '../crud';
 import { ErrorBox, Field, JsonField, Page, Stat, Table, Toggle, fmtDate, fmtNum } from '../ui';
 import { Calendar, Errors, Explore, FilterBar, Ltv, PlayerMap, Playtime, StatusBoard, filterQs, type Filter } from './InsightsV3';
+import { t as tr } from '../i18n';
 
 type Totals = Record<string, number>;
 type Day = { day: string; dau: number; new_users: number; sessions: number; avg_session_secs: number; revenue: number; payers: number; purchases: number };
@@ -56,29 +57,29 @@ function GameMetrics({ filter }: { filter: Filter }) {
       <div className="row" style={{ alignItems: 'center' }}>{r.picker}<span className="hint">backend: {q.data?.backend ?? '…'} · revenue events: {q.data?.revenue_events.join(', ')}</span></div>
       <ErrorBox error={q.error ?? ann.error} />
       <div className="stats">
-        <Stat label="DAU (latest)" value={fmtNum(t.dau ?? 0)} sub={`avg ${fmtNum(Math.round(t.dau_avg ?? 0))}`} />
-        <Stat label="WAU / MAU" value={`${fmtNum(t.wau ?? 0)} / ${fmtNum(t.mau ?? 0)}`} sub={`stickiness ${pct(t.stickiness)}`} />
-        <Stat label="New players" value={fmtNum(t.new_users ?? 0)} sub={`${fmtNum(t.total_players ?? 0)} total`} />
-        <Stat label="Sessions" value={fmtNum(t.sessions ?? 0)} sub={`avg ${Math.round((t.avg_session_secs ?? 0) / 60)} min`} />
-        <Stat label="Revenue" value={money(t.revenue ?? 0)} sub={`${fmtNum(t.purchases ?? 0)} purchases`} />
-        <Stat label="ARPDAU / ARPPU" value={`${money(t.arpdau ?? 0)} / ${money(t.arppu ?? 0)}`} sub={`paying share ${pct(t.paying_share)}`} />
+        <Stat label={tr('DAU (latest)')} value={fmtNum(t.dau ?? 0)} sub={`avg ${fmtNum(Math.round(t.dau_avg ?? 0))}`} />
+        <Stat label={tr('WAU / MAU')} value={`${fmtNum(t.wau ?? 0)} / ${fmtNum(t.mau ?? 0)}`} sub={`stickiness ${pct(t.stickiness)}`} />
+        <Stat label={tr('New players')} value={fmtNum(t.new_users ?? 0)} sub={`${fmtNum(t.total_players ?? 0)} total`} />
+        <Stat label={tr('Sessions')} value={fmtNum(t.sessions ?? 0)} sub={`avg ${Math.round((t.avg_session_secs ?? 0) / 60)} min`} />
+        <Stat label={tr('Revenue')} value={money(t.revenue ?? 0)} sub={`${fmtNum(t.purchases ?? 0)} purchases`} />
+        <Stat label={tr('ARPDAU / ARPPU')} value={`${money(t.arpdau ?? 0)} / ${money(t.arppu ?? 0)}`} sub={`paying share ${pct(t.paying_share)}`} />
       </div>
       {q.data && <>
-        <div className="card"><strong>Daily active players</strong><Bars series={q.data.series} field="dau" annotations={ann.data?.items} /></div>
+        <div className="card"><strong>{tr('Daily active players')}</strong><Bars series={q.data.series} field="dau" annotations={ann.data?.items} /></div>
         <div className="row">
-          <div className="card" style={{ flex: 1 }}><strong>New players</strong><Bars series={q.data.series} field="new_users" color="#1e8e3e" annotations={ann.data?.items} /></div>
-          <div className="card" style={{ flex: 1 }}><strong>Revenue</strong><Bars series={q.data.series} field="revenue" color="#1a5fb4" annotations={ann.data?.items} money /></div>
+          <div className="card" style={{ flex: 1 }}><strong>{tr('New players')}</strong><Bars series={q.data.series} field="new_users" color="#1e8e3e" annotations={ann.data?.items} /></div>
+          <div className="card" style={{ flex: 1 }}><strong>{tr('Revenue')}</strong><Bars series={q.data.series} field="revenue" color="#1a5fb4" annotations={ann.data?.items} money /></div>
         </div>
       </>}
       <div className="card">
         <div className="row" style={{ alignItems: 'end' }}>
-          <strong>Annotations</strong>
-          <Text label="Add a note" value={note} onChange={setNote} placeholder="Soft launch in DE" />
-          <button className="btn sm" disabled={!note} onClick={() => post('/analytics/annotations', { title: note }).then(() => { setNote(''); ann.reload(); })}>Add</button>
+          <strong>{tr('Annotations')}</strong>
+          <Text label={tr('Add a note')} value={note} onChange={setNote} placeholder={tr('Soft launch in DE')} />
+          <button className="btn sm" disabled={!note} onClick={() => post('/analytics/annotations', { title: note }).then(() => { setNote(''); ann.reload(); })}>{tr('Add')}</button>
         </div>
-        <Table<Annotation> rows={ann.data?.items} rowKey={(a) => a.id} empty="No changes in this range" cols={[
+        <Table<Annotation> rows={ann.data?.items} rowKey={(a) => a.id} empty={tr('No changes in this range')} cols={[
           { h: 'When', c: (a) => fmtDate(a.at) }, { h: 'Kind', c: (a) => <code>{a.kind}</code> }, { h: 'Title', c: (a) => a.title },
-          { h: '', c: (a) => <button className="btn ghost sm" onClick={() => del(`/analytics/annotations/${a.id}`).then(ann.reload)}>Delete</button> },
+          { h: '', c: (a) => <button className="btn ghost sm" onClick={() => del(`/analytics/annotations/${a.id}`).then(ann.reload)}>{tr('Delete')}</button> },
         ]} />
       </div>
     </div>
@@ -96,9 +97,9 @@ function Retention({ filter }: { filter: Filter }) {
   const q = useLoad(() => get<{ days: number[]; cohorts: Cohort[]; installs: number }>('/analytics/retention' + qs({ from: r.from, days, cumulative, ...filterQs(opFilter) })), [r.from, days, cumulative, opKind, opKey, opVariant, JSON.stringify(filter)]);
   return (
     <div className="stack">
-      <div className="row" style={{ alignItems: 'end' }}>{r.picker}<Text label="Days" value={days} onChange={setDays} mono hint="comma-separated, 1..90" /><Field label="Operation" hint="retention of participants of a live event or experiment"><select value={opKind} onChange={(e) => setOpKind(e.target.value as typeof opKind)}><option value="">all players</option><option value="live">live event</option><option value="experiment">experiment</option></select></Field>{opKind && <Text label="Key" value={opKey} onChange={setOpKey} mono />}{opKind && <Text label="Variant" value={opVariant} onChange={setOpVariant} mono hint="optional" />}<Field label="Model"><Toggle value={cumulative} onChange={setCumulative} label={cumulative ? 'cumulative — returned by day N' : 'classic — returned on day N'} /></Field><span className="hint">{fmtNum(q.data?.installs ?? 0)} installs in range</span></div>
+      <div className="row" style={{ alignItems: 'end' }}>{r.picker}<Text label={tr('Days')} value={days} onChange={setDays} mono hint={tr('comma-separated, 1..90')} /><Field label={tr('Operation')} hint={tr('retention of participants of a live event or experiment')}><select value={opKind} onChange={(e) => setOpKind(e.target.value as typeof opKind)}><option value="">{tr('all players')}</option><option value="live">{tr('live event')}</option><option value="experiment">experiment</option></select></Field>{opKind && <Text label={tr('Key')} value={opKey} onChange={setOpKey} mono />}{opKind && <Text label={tr('Variant')} value={opVariant} onChange={setOpVariant} mono hint="optional" />}<Field label={tr('Model')}><Toggle value={cumulative} onChange={setCumulative} label={cumulative ? 'cumulative — returned by day N' : 'classic — returned on day N'} /></Field><span className="hint">{fmtNum(q.data?.installs ?? 0)} installs in range</span></div>
       <ErrorBox error={q.error} />
-      <Table<Cohort> rows={q.data?.cohorts} rowKey={(c) => c.cohort} empty="No sign-ups in this range" cols={[
+      <Table<Cohort> rows={q.data?.cohorts} rowKey={(c) => c.cohort} empty={tr('No sign-ups in this range')} cols={[
         { h: 'Cohort', c: (c) => <code>{c.cohort}</code> }, { h: 'Players', c: (c) => fmtNum(c.size) },
         ...(q.data?.days ?? []).map((d) => ({ h: `D${d}`, c: (c: Cohort) => { const v = c.retained[`d${d}`]; return v == null ? <span className="hint">—</span> : <span style={{ background: `rgba(26,95,180,${Math.min(1, v.rate + 0.05)})`, color: v.rate > 0.4 ? '#fff' : undefined, padding: '2px 6px', borderRadius: 4 }}>{pct(v.rate)}</span>; } })),
       ]} />
@@ -113,14 +114,14 @@ function StepsEditor({ value, onChange }: { value: FunnelStep[]; onChange: (v: F
       {value.map((s, i) => (
         <div key={i} className="row" style={{ alignItems: 'end' }}>
           <span className="hint" style={{ width: 20 }}>{i + 1}.</span>
-          <Text label="Event" value={s.name} onChange={(name) => upd(i, { name })} mono />
-          <Text label="Field (optional)" value={s.field ?? ''} onChange={(field) => upd(i, { field: field || null })} mono />
-          <Field label="Op"><select value={s.op ?? 'eq'} onChange={(e) => upd(i, { op: e.target.value })}>{['eq', 'neq', 'exists', 'gt', 'gte', 'lt', 'lte', 'contains'].map((o) => <option key={o}>{o}</option>)}</select></Field>
-          <Field label="Value (JSON)"><JsonField value={s.value ?? null} onChange={(value) => upd(i, { value })} rows={1} /></Field>
-          <button className="btn ghost sm" disabled={value.length <= 1} onClick={() => onChange(value.filter((_, j) => j !== i))}>Remove</button>
+          <Text label={tr('Event')} value={s.name} onChange={(name) => upd(i, { name })} mono />
+          <Text label={tr('Field (optional)')} value={s.field ?? ''} onChange={(field) => upd(i, { field: field || null })} mono />
+          <Field label={tr('Op')}><select value={s.op ?? 'eq'} onChange={(e) => upd(i, { op: e.target.value })}>{['eq', 'neq', 'exists', 'gt', 'gte', 'lt', 'lte', 'contains'].map((o) => <option key={o}>{o}</option>)}</select></Field>
+          <Field label={tr('Value (JSON)')}><JsonField value={s.value ?? null} onChange={(value) => upd(i, { value })} rows={1} /></Field>
+          <button className="btn ghost sm" disabled={value.length <= 1} onClick={() => onChange(value.filter((_, j) => j !== i))}>{tr('Remove')}</button>
         </div>
       ))}
-      <div><button className="btn ghost sm" onClick={() => onChange([...value, { name: '' }])}>Add step</button></div>
+      <div><button className="btn ghost sm" onClick={() => onChange([...value, { name: '' }])}>{tr('Add step')}</button></div>
     </div>
   );
 }
@@ -149,23 +150,23 @@ function Lifetime() {
   };
   return (
     <div className="stack">
-      <div className="row" style={{ alignItems: 'end' }}>{r.picker}<span className="hint">Players who installed in the range · lifetime figures from computed properties</span></div>
+      <div className="row" style={{ alignItems: 'end' }}>{r.picker}<span className="hint">{tr('Players who installed in the range · lifetime figures from computed properties')}</span></div>
       <ErrorBox error={q.error} />
       <div className="stats">
-        <Stat label="Players" value={fmtNum(q.data?.players ?? 0)} />
-        <Stat label="Avg sessions" value={(a.sessions ?? 0).toFixed(1)} />
-        <Stat label="Avg play time" value={dur(a.play_time_sec ?? 0)} />
-        <Stat label="Avg lifetime" value={`${(a.lifetime_days ?? 0).toFixed(1)} d`} />
-        <Stat label="Payers" value={pct((a.payers_pct ?? 0) / 100)} />
-        <Stat label="Avg spend" value={money(a.spend_usd ?? 0)} />
-        <Stat label="ARPPU" value={money(a.arppu_usd ?? 0)} />
+        <Stat label={tr('Players')} value={fmtNum(q.data?.players ?? 0)} />
+        <Stat label={tr('Avg sessions')} value={(a.sessions ?? 0).toFixed(1)} />
+        <Stat label={tr('Avg play time')} value={dur(a.play_time_sec ?? 0)} />
+        <Stat label={tr('Avg lifetime')} value={`${(a.lifetime_days ?? 0).toFixed(1)} d`} />
+        <Stat label={tr('Payers')} value={pct((a.payers_pct ?? 0) / 100)} />
+        <Stat label={tr('Avg spend')} value={money(a.spend_usd ?? 0)} />
+        <Stat label={tr('ARPPU')} value={money(a.arppu_usd ?? 0)} />
       </div>
-      {q.data?.truncated && <div className="hint">Computed on the first 200k players of the range.</div>}
+      {q.data?.truncated && <div className="hint">{tr('Computed on the first 200k players of the range.')}</div>}
       <div className="row" style={{ alignItems: 'stretch', flexWrap: 'wrap' }}>
-        <Buckets title="Sessions" rows={q.data?.buckets.sessions} />
-        <Buckets title="Play time" rows={q.data?.buckets.play_time} />
-        <Buckets title="Lifetime" rows={q.data?.buckets.lifetime_days} />
-        <Buckets title="Spend (USD)" rows={q.data?.buckets.spend_usd} />
+        <Buckets title={tr('Sessions')} rows={q.data?.buckets.sessions} />
+        <Buckets title={tr('Play time')} rows={q.data?.buckets.play_time} />
+        <Buckets title={tr('Lifetime')} rows={q.data?.buckets.lifetime_days} />
+        <Buckets title={tr('Spend (USD)')} rows={q.data?.buckets.spend_usd} />
       </div>
     </div>
   );
@@ -189,12 +190,12 @@ function Funnels({ filter }: { filter: Filter }) {
   const toAudience = () => post<{ audience: string; matched: number; members: number }>('/analytics/funnel/cohort', { steps, window_secs: windowSecs, from: r.from, model, count, cohort, filter, step: cohortStep, reached: cohortReached, audience_key: cohortKey }).then((d) => { setCohortMsg(`${d.matched} players → audience ${d.audience} (${d.members} members)`); setErr(null); }, setErr);
   return (
     <div className="stack">
-      <div className="row" style={{ alignItems: 'end' }}>{r.picker}<Field label="Count" hint="unique: once per player · total: every entry"><select value={count} onChange={(e) => setCount(e.target.value as typeof count)}><option value="unique">unique players</option><option value="total">total entries</option></select></Field><Field label="Cohort" hint="static: entered in range · shifting: conversions in range, entry may be earlier"><select value={cohort} onChange={(e) => setCohort(e.target.value as typeof cohort)}><option value="static">static</option><option value="shifting">shifting</option></select></Field><Field label="Model"><select value={model} onChange={(e) => setModel(e.target.value as typeof model)}><option value="window">window — all steps within N s of the first</option><option value="step">step — each step within N s of the previous</option><option value="session">session — all steps in one play session</option><option value="unlimited">unlimited — any time in range</option></select></Field>{model !== 'session' && model !== 'unlimited' && <Num label="Window (s)" value={windowSecs} onChange={(v) => setWindowSecs(v ?? 86400)} min={1} />}<button className="btn" onClick={run} disabled={steps.some((s) => !s.name)}>Run</button></div>
+      <div className="row" style={{ alignItems: 'end' }}>{r.picker}<Field label={tr('Count')} hint={tr('unique: once per player · total: every entry')}><select value={count} onChange={(e) => setCount(e.target.value as typeof count)}><option value="unique">{tr('unique players')}</option><option value="total">{tr('total entries')}</option></select></Field><Field label={tr('Cohort')} hint={tr('static: entered in range · shifting: conversions in range, entry may be earlier')}><select value={cohort} onChange={(e) => setCohort(e.target.value as typeof cohort)}><option value="static">static</option><option value="shifting">shifting</option></select></Field><Field label={tr('Model')}><select value={model} onChange={(e) => setModel(e.target.value as typeof model)}><option value="window">{tr('window — all steps within N s of the first')}</option><option value="step">{tr('step — each step within N s of the previous')}</option><option value="session">{tr('session — all steps in one play session')}</option><option value="unlimited">{tr('unlimited — any time in range')}</option></select></Field>{model !== 'session' && model !== 'unlimited' && <Num label={tr('Window (s)')} value={windowSecs} onChange={(v) => setWindowSecs(v ?? 86400)} min={1} />}<button className="btn" onClick={run} disabled={steps.some((s) => !s.name)}>{tr('Run')}</button></div>
       <StepsEditor value={steps} onChange={setSteps} />
       <ErrorBox error={err} />
       {res && (
         <div className="card">
-          {res.truncated && <div className="hint">Result computed on a capped sample of events.</div>}
+          {res.truncated && <div className="hint">{tr('Result computed on a capped sample of events.')}</div>}
           {res.steps.map((s, i) => (
             <div key={i} className="row" style={{ alignItems: 'center', margin: '6px 0' }}>
               <span style={{ width: 180 }} className="mono">{i + 1}. {s.name}{s.field ? ` [${s.field} ${s.op} ${JSON.stringify(s.value)}]` : ''}</span>
@@ -203,10 +204,10 @@ function Funnels({ filter }: { filter: Filter }) {
             </div>
           ))}
           <div className="row" style={{ alignItems: 'end', marginTop: 10 }}>
-            <Field label="Step"><select value={cohortStep} onChange={(e) => setCohortStep(parseInt(e.target.value, 10))}>{res.steps.map((_, i) => <option key={i} value={i + 1}>{i + 1}</option>)}</select></Field>
-            <Field label="Who"><select value={cohortReached ? 'reached' : 'dropped'} onChange={(e) => setCohortReached(e.target.value === 'reached')}><option value="reached">reached the step</option><option value="dropped">dropped before it</option></select></Field>
-            <Text label="Audience key" value={cohortKey} onChange={setCohortKey} mono />
-            <button className="btn ghost sm" disabled={!cohortKey} onClick={toAudience}>Save as audience</button>
+            <Field label={tr('Step')}><select value={cohortStep} onChange={(e) => setCohortStep(parseInt(e.target.value, 10))}>{res.steps.map((_, i) => <option key={i} value={i + 1}>{i + 1}</option>)}</select></Field>
+            <Field label={tr('Who')}><select value={cohortReached ? 'reached' : 'dropped'} onChange={(e) => setCohortReached(e.target.value === 'reached')}><option value="reached">{tr('reached the step')}</option><option value="dropped">{tr('dropped before it')}</option></select></Field>
+            <Text label={tr('Audience key')} value={cohortKey} onChange={setCohortKey} mono />
+            <button className="btn ghost sm" disabled={!cohortKey} onClick={toAudience}>{tr('Save as audience')}</button>
             {cohortMsg && <span className="hint">{cohortMsg}</span>}
           </div>
         </div>
@@ -226,20 +227,20 @@ function WidgetEditor({ value, onChange }: { value: Widget[]; onChange: (v: Widg
       {value.map((w, i) => (
         <div key={i} className="card" style={{ padding: 10 }}>
           <div className="row" style={{ alignItems: 'end' }}>
-            <Text label="Id" value={w.id} onChange={(id) => upd(i, { id })} mono />
-            <Field label="Kind"><select value={w.kind} onChange={(e) => upd(i, { kind: e.target.value, config: {} })}>{Object.keys(WKINDS).map((k) => <option key={k} value={k}>{WKINDS[k]}</option>)}</select></Field>
-            <Text label="Title" value={w.title} onChange={(title) => upd(i, { title })} />
-            <Num label="Width (1–4)" value={w.width} onChange={(width) => upd(i, { width: width ?? 2 })} min={1} max={4} />
-            <button className="btn ghost sm" onClick={() => onChange(value.filter((_, j) => j !== i))}>Remove</button>
+            <Text label={tr('Id')} value={w.id} onChange={(id) => upd(i, { id })} mono />
+            <Field label={tr('Kind')}><select value={w.kind} onChange={(e) => upd(i, { kind: e.target.value, config: {} })}>{Object.keys(WKINDS).map((k) => <option key={k} value={k}>{WKINDS[k]}</option>)}</select></Field>
+            <Text label={tr('Title')} value={w.title} onChange={(title) => upd(i, { title })} />
+            <Num label={tr('Width (1–4)')} value={w.width} onChange={(width) => upd(i, { width: width ?? 2 })} min={1} max={4} />
+            <button className="btn ghost sm" onClick={() => onChange(value.filter((_, j) => j !== i))}>{tr('Remove')}</button>
           </div>
-          {w.kind === 'number' && <div className="row"><Field label="Metric"><select value={(w.config.metric as string) ?? 'dau'} onChange={(e) => cfg(i, { metric: e.target.value })}>{METRICS.map((m) => <option key={m}>{m}</option>)}</select></Field>{w.config.metric === 'event_count' && <Text label="Event" value={(w.config.event as string) ?? ''} onChange={(event) => cfg(i, { event })} mono />}</div>}
-          {w.kind === 'timeseries' && <Text label="Event" value={(w.config.event as string) ?? ''} onChange={(event) => cfg(i, { event })} mono />}
-          {w.kind === 'funnel' && <><StepsEditor value={(w.config.steps as FunnelStep[]) ?? [{ name: '' }]} onChange={(steps) => cfg(i, { steps })} /><Num label="Window (s)" value={(w.config.window_secs as number) ?? 604800} onChange={(v) => cfg(i, { window_secs: v })} min={1} /></>}
-          {w.kind === 'retention' && <Text label="Days" value={((w.config.days as number[]) ?? [1, 7, 30]).join(',')} onChange={(v) => cfg(i, { days: v.split(',').map((x) => parseInt(x, 10)).filter((x) => !isNaN(x)) })} mono />}
-          {w.kind === 'top_events' && <Num label="Limit" value={(w.config.limit as number) ?? 10} onChange={(limit) => cfg(i, { limit })} min={1} max={100} />}
+          {w.kind === 'number' && <div className="row"><Field label={tr('Metric')}><select value={(w.config.metric as string) ?? 'dau'} onChange={(e) => cfg(i, { metric: e.target.value })}>{METRICS.map((m) => <option key={m}>{m}</option>)}</select></Field>{w.config.metric === 'event_count' && <Text label={tr('Event')} value={(w.config.event as string) ?? ''} onChange={(event) => cfg(i, { event })} mono />}</div>}
+          {w.kind === 'timeseries' && <Text label={tr('Event')} value={(w.config.event as string) ?? ''} onChange={(event) => cfg(i, { event })} mono />}
+          {w.kind === 'funnel' && <><StepsEditor value={(w.config.steps as FunnelStep[]) ?? [{ name: '' }]} onChange={(steps) => cfg(i, { steps })} /><Num label={tr('Window (s)')} value={(w.config.window_secs as number) ?? 604800} onChange={(v) => cfg(i, { window_secs: v })} min={1} /></>}
+          {w.kind === 'retention' && <Text label={tr('Days')} value={((w.config.days as number[]) ?? [1, 7, 30]).join(',')} onChange={(v) => cfg(i, { days: v.split(',').map((x) => parseInt(x, 10)).filter((x) => !isNaN(x)) })} mono />}
+          {w.kind === 'top_events' && <Num label={tr('Limit')} value={(w.config.limit as number) ?? 10} onChange={(limit) => cfg(i, { limit })} min={1} max={100} />}
         </div>
       ))}
-      <div><button className="btn ghost sm" onClick={() => onChange([...value, { id: `w${value.length + 1}`, kind: 'number', title: '', width: 1, config: { metric: 'dau' } }])}>Add widget</button></div>
+      <div><button className="btn ghost sm" onClick={() => onChange([...value, { id: `w${value.length + 1}`, kind: 'number', title: '', width: 1, config: { metric: 'dau' } }])}>{tr('Add widget')}</button></div>
     </div>
   );
 }
@@ -263,7 +264,7 @@ function DashboardView({ d }: { d: Dashboard }) {
   const q = useLoad(() => get<{ widgets: WidgetData[] }>(`/dashboards/${encodeURIComponent(d.key)}/data` + qs({ from: r.from })), [d.key, d.version, r.from]);
   return (
     <div className="card">
-      <div className="row" style={{ alignItems: 'center' }}><strong>Preview</strong>{r.picker}<button className="btn ghost sm" onClick={q.reload}>Refresh</button></div>
+      <div className="row" style={{ alignItems: 'center' }}><strong>{tr('Preview')}</strong>{r.picker}<button className="btn ghost sm" onClick={q.reload}>{tr('Refresh')}</button></div>
       <ErrorBox error={q.error} />
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 10, marginTop: 8 }}>
         {(q.data?.widgets ?? []).map((w) => <div key={w.id} className="card" style={{ gridColumn: `span ${Math.min(4, Math.max(1, w.width))}` }}><div className="hint">{w.title || w.id}</div><WidgetView w={w} /></div>)}
@@ -275,16 +276,16 @@ function DashboardView({ d }: { d: Dashboard }) {
 function Dashboards() {
   return (
     <EntityPage<Dashboard>
-      title="Dashboards"
+      title={tr('Dashboards')}
       path="/dashboards"
       blurb="Custom dashboards: numbers, event timeseries, funnels, retention and top-events widgets, evaluated for a time range."
       cols={[{ h: 'Key', c: (d) => <><strong>{d.key}</strong><div className="hint">{d.name}</div></> }, { h: 'Widgets', c: (d) => d.widgets.length }, { h: 'Updated', c: (d) => fmtDate(d.updated_at) }]}
       blank={() => ({ key: '', name: '', description: '', widgets: [{ id: 'dau', kind: 'number', title: 'DAU', width: 1, config: { metric: 'dau' } }], filters: {}, tags: [] })}
       form={(d, set, isNew) => (
         <>
-          <div className="row"><Text label="Key" value={d.key} onChange={(key) => set({ key })} disabled={!isNew} mono /><Text label="Name" value={d.name} onChange={(name) => set({ name })} /></div>
-          <Text label="Description" value={d.description} onChange={(description) => set({ description })} />
-          <Field label="Widgets"><WidgetEditor value={d.widgets ?? []} onChange={(widgets) => set({ widgets })} /></Field>
+          <div className="row"><Text label={tr('Key')} value={d.key} onChange={(key) => set({ key })} disabled={!isNew} mono /><Text label={tr('Name')} value={d.name} onChange={(name) => set({ name })} /></div>
+          <Text label={tr('Description')} value={d.description} onChange={(description) => set({ description })} />
+          <Field label={tr('Widgets')}><WidgetEditor value={d.widgets ?? []} onChange={(widgets) => set({ widgets })} /></Field>
           <Tags value={d.tags} onChange={(tags) => set({ tags })} />
         </>
       )}
@@ -305,7 +306,7 @@ export default function Insights() {
   const chips = <div className="chips" style={{ marginBottom: 12 }}>{tabs.map(([k, l]) => <button key={k} className={'chip' + (k === tab ? ' on' : '')} onClick={() => pick(k)}>{l}</button>)}</div>;
   if (tab === 'dashboards') return <>{chips}<Dashboards /></>;
   return (
-    <Page title="Insights">
+    <Page title={tr('Insights')}>
       {chips}
       {FILTERED.includes(tab) && <div className="card" style={{ padding: '8px 12px', marginBottom: 12 }}><FilterBar value={filter} onChange={setF} /></div>}
       {tab === 'status' && <StatusBoard />}

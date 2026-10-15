@@ -6,6 +6,7 @@ import { useCanEdit } from './me';
 import { toast } from './toast';
 import { Badge, Confirm, Empty, ErrorBox, Menu, Page, Pager, Table, fmtDate } from './ui';
 import type { Col } from './ui';
+import { locale, t } from './i18n';
 
 export type Keyed = { key: string; version?: number; updated_at?: string; name?: string; description?: string; tags?: string[]; status?: string; enabled?: boolean };
 
@@ -110,23 +111,23 @@ function List<T extends Keyed>({ title, path, blurb, cols, sort, above, copy, st
   const showUpdated = all.some((x) => x.updated_at) && !cols.some((c) => c.h === 'Updated');
   const filtered = !!(search || tag || status);
   return (
-    <Page title={<span>{title}{q.data && <span className="count">{rows.length}{filtered ? ` / ${all.length}` : ''}</span>}</span>} actions={canEdit && <button className="btn" onClick={() => nav('new')}>New {title.replace(/s$/, '').toLowerCase()}</button>}>
+    <Page title={<span>{title}{q.data && <span className="count">{rows.length}{filtered ? ` / ${all.length}` : ''}</span>}</span>} actions={canEdit && <button className="btn" onClick={() => nav('new')}>{locale === 'en' ? `New ${title.replace(/s$/, '').toLowerCase()}` : t('Create')}</button>}>
       {blurb && <p className="muted" style={{ marginTop: -8 }}>{blurb}</p>}
       {above}
       <ErrorBox error={q.error} />
       {(all.length > 0 || filtered) && (
         <div className="toolbar">
-          <input className="search" placeholder={`Search ${title.toLowerCase()}…`} value={search} onChange={(e) => setSearch(e.target.value)} />
+          <input className="search" placeholder={locale === 'en' ? `Search ${title.toLowerCase()}…` : t('Search…')} value={search} onChange={(e) => setSearch(e.target.value)} />
           {statuses.length > 1 && <div className="chips">{statuses.map((s) => <button key={s} className={'chip' + (status === s ? ' on' : '')} onClick={() => setStatus(status === s ? null : s)}>{s}</button>)}</div>}
           {tags.length > 0 && <div className="chips">{tags.slice(0, 12).map((t) => <button key={t} className={'chip' + (tag === t ? ' on' : '')} onClick={() => setTag(tag === t ? null : t)}>#{t}</button>)}</div>}
           <div className="spacer" />
-          <select value={sortBy} onChange={(e) => setSortBy(e.target.value as 'key' | 'updated')} style={{ width: 'auto' }}><option value="key">Sort: key</option><option value="updated">Sort: recently updated</option></select>
+          <select value={sortBy} onChange={(e) => setSortBy(e.target.value as 'key' | 'updated')} style={{ width: 'auto' }}><option value="key">{t('Sort: key')}</option><option value="updated">{t('Sort: recently updated')}</option></select>
         </div>
       )}
       {q.data && all.length === 0 ? (
         <Empty title={`No ${title.toLowerCase()} yet`} hint={blurb ? undefined : 'Create the first one to get started.'} action={canEdit && <button className="btn" onClick={() => nav('new')}>Create {title.replace(/s$/, '').toLowerCase()}</button>} />
       ) : q.data && rows.length === 0 ? (
-        <Empty title="Nothing matches" action={<button className="btn ghost" onClick={() => { setSearch(''); setTag(null); setStatus(null); }}>Clear filters</button>} />
+        <Empty title={t('Nothing matches')} action={<button className="btn ghost" onClick={() => { setSearch(''); setTag(null); setStatus(null); }}>{t('Clear filters')}</button>} />
       ) : (
         <Table<T> cols={showUpdated ? [...cols, updatedCol, menuCol] : [...cols, menuCol]} rows={q.data ? slice : null} rowKey={(r) => r.key} onRow={(r) => nav(encodeURIComponent(r.key))} />
       )}
@@ -142,13 +143,13 @@ function HistoryTab({ kind, k, reload }: { kind: string; k: string; reload: () =
   const q = useLoad(() => get<{ items: Snapshot[] }>(`/config/history?kind=${encodeURIComponent(kind)}&key=${encodeURIComponent(k)}&limit=100`), [kind, k]);
   const canEdit = useCanEdit();
   const [open, setOpen] = useState<string | null>(null);
-  const revert = (id: string) => post(`/config/history/${id}/revert`, {}).then(() => { toast('Reverted'); q.reload(); reload(); }, (e: Error) => toast(e.message, 'bad'));
+  const revert = (id: string) => post(`/config/history/${id}/revert`, {}).then(() => { toast(t('Reverted')); q.reload(); reload(); }, (e: Error) => toast(e.message, 'bad'));
   return (
     <>
       <ErrorBox error={q.error} />
-      <Table<Snapshot> rows={q.data?.items} rowKey={(s) => s.id} empty="No recorded changes yet" cols={[
+      <Table<Snapshot> rows={q.data?.items} rowKey={(s) => s.id} empty={t('No recorded changes yet')} cols={[
         { h: 'When', c: (s) => fmtDate(s.at) }, { h: 'Change', c: (s) => s.deleted ? <Badge tone="bad">deleted</Badge> : <span>v{s.version}</span> }, { h: 'By', c: (s) => <span className="hint">{s.actor}</span> },
-        { h: '', c: (s) => <span className="inline"><button className="btn ghost sm" onClick={() => setOpen(open === s.id ? null : s.id)}>{open === s.id ? 'Hide' : 'Show'}</button>{canEdit && <button className="btn ghost sm" onClick={() => revert(s.id)}>Revert</button>}</span> },
+        { h: '', c: (s) => <span className="inline"><button className="btn ghost sm" onClick={() => setOpen(open === s.id ? null : s.id)}>{open === s.id ? 'Hide' : 'Show'}</button>{canEdit && <button className="btn ghost sm" onClick={() => revert(s.id)}>{t('Revert')}</button>}</span> },
       ]} />
       {open && <pre className="code" style={{ marginTop: 10, maxHeight: 360 }}>{JSON.stringify(q.data?.items.find((s) => s.id === open)?.body, null, 2)}</pre>}
     </>
@@ -160,7 +161,7 @@ function ActivityTab({ path, k }: { path: string; k: string }) {
   return (
     <>
       <ErrorBox error={q.error} />
-      <Table<AuditEntry> rows={q.data?.items} rowKey={(e) => e.id} empty="No admin activity recorded" cols={[
+      <Table<AuditEntry> rows={q.data?.items} rowKey={(e) => e.id} empty={t('No admin activity recorded')} cols={[
         { h: 'When', c: (e) => fmtDate(e.at) }, { h: 'Actor', c: (e) => e.actor }, { h: 'Action', c: (e) => <span className="mono">{e.method} {e.path.replace('/admin/v1', '')}</span> },
         { h: 'Status', c: (e) => <Badge tone={e.status < 300 ? 'ok' : e.status < 500 ? 'warn' : 'bad'}>{e.status}</Badge> },
       ]} />
@@ -229,14 +230,14 @@ function Detail<T extends Keyed>({ title, path, blank, form, extra, tabs = [], t
       title={<span className="inline"><a href="#" className="muted" onClick={(e) => { e.preventDefault(); back(); }}>{title}</a><span className="muted">/</span><span>{isNew ? 'new' : key}</span>{st && <Badge tone={/running|enabled|active|live|ok/.test(st) ? 'ok' : /paused|draft|pending/.test(st) ? 'warn' : /stopped|failed|disabled/.test(st) ? 'muted' : 'info'}>{st}</Badge>}{(item?.tags ?? []).map((t) => <span key={t} className="chip" style={{ cursor: 'default' }}>#{t}</span>)}</span>}
       actions={
         <>
-          {dirty && <span className="hint">Unsaved changes</span>}
-          {!isNew && canEdit && <Confirm danger onConfirm={remove}>Delete</Confirm>}
+          {dirty && <span className="hint">{t('Unsaved changes')}</span>}
+          {!isNew && canEdit && <Confirm danger onConfirm={remove}>{t('Delete')}</Confirm>}
           {canEdit && !(isNew && wizard) && <button className="btn" disabled={busy || !draft || (!isNew && !dirty)} onClick={save} title="⌘S">{isNew ? 'Create' : 'Save'}</button>}
         </>
       }
     >
       <ErrorBox error={err} />
-      {!draft ? <div className="muted">Loading…</div> : (
+      {!draft ? <div className="muted">{t('Loading…')}</div> : (
         <>
           {(item || isNew) && allTabs.length > 1 && !isNew && (
             <div className="tabs">{allTabs.map((t) => <button key={t.id} className={t.id === current.id ? 'active' : ''} onClick={() => setTab(t.id)}>{t.label}</button>)}</div>
@@ -244,12 +245,12 @@ function Detail<T extends Keyed>({ title, path, blank, form, extra, tabs = [], t
           <fieldset disabled={!canEdit} style={{ border: 0, padding: 0, margin: 0, minWidth: 0 }}>
             {isNew && wizard ? (
               <div className="wizard">
-                <ol className="steps">{[...wizard.map((w) => w.label), 'Review'].map((l, i) => <li key={l} className={i === step ? 'on' : i < step ? 'done' : ''} onClick={() => i < step && setStep(i)}>{l}</li>)}</ol>
+                <ol className="steps">{[...wizard.map((w) => w.label), t('Review')].map((l, i) => <li key={l} className={i === step ? 'on' : i < step ? 'done' : ''} onClick={() => i < step && setStep(i)}>{l}</li>)}</ol>
                 <div className="card">
-                  {step < wizard.length ? wizard[step].render(draft, set) : <><p className="hint">Everything below will be created as <strong>{draft.key || '(no key)'}</strong>.</p><pre className="code" style={{ maxHeight: 360 }}>{JSON.stringify(toBody ? toBody(draft, true) : strip(draft as Record<string, unknown>), null, 2)}</pre></>}
+                  {step < wizard.length ? wizard[step].render(draft, set) : <><p className="hint">{t('Everything below will be created as') + ' '}<strong>{draft.key || '(no key)'}</strong>.</p><pre className="code" style={{ maxHeight: 360 }}>{JSON.stringify(toBody ? toBody(draft, true) : strip(draft as Record<string, unknown>), null, 2)}</pre></>}
                   <div className="inline" style={{ marginTop: 14, justifyContent: 'space-between', width: '100%' }}>
-                    <button className="btn ghost" disabled={step === 0} onClick={() => setStep(step - 1)}>Back</button>
-                    {step < wizard.length ? <button className="btn" disabled={step === 0 && !draft.key} onClick={() => setStep(step + 1)}>Next</button> : <button className="btn" disabled={busy} onClick={save}>Create</button>}
+                    <button className="btn ghost" disabled={step === 0} onClick={() => setStep(step - 1)}>{t('Back')}</button>
+                    {step < wizard.length ? <button className="btn" disabled={step === 0 && !draft.key} onClick={() => setStep(step + 1)}>{t('Next')}</button> : <button className="btn" disabled={busy} onClick={save}>{t('Create')}</button>}
                   </div>
                 </div>
               </div>
@@ -291,7 +292,7 @@ export const DateTime = ({ label, value, onChange, hint }: { label: ReactNode; v
 };
 
 export const Tags = ({ value, onChange }: { value: string[] | undefined; onChange: (v: string[]) => void }) => (
-  <Text label="Tags" value={(value ?? []).join(', ')} onChange={(v) => onChange(v.split(',').map((s) => s.trim()).filter(Boolean))} hint="comma-separated" />
+  <Text label={t('Tags')} value={(value ?? []).join(', ')} onChange={(v) => onChange(v.split(',').map((s) => s.trim()).filter(Boolean))} hint="comma-separated" />
 );
 
 export const CONDITION_HINT = (

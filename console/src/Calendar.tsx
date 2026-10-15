@@ -1,3 +1,4 @@
+import { intlLocale } from './i18n';
 import { useState } from 'react';
 import { get, qs, useLoad } from './api';
 import { ErrorBox } from './ui';
@@ -32,7 +33,7 @@ export function Calendar({ onPick }: { onPick?: (key: string) => void }) {
     <div className="card cal">
       <div className="cal-head">
         <button className="btn ghost sm" onClick={() => setMonth(new Date(month.getFullYear(), month.getMonth() - 1, 1))}>‹</button>
-        <strong>{month.toLocaleDateString(undefined, { month: 'long', year: 'numeric' })}</strong>
+        <strong>{month.toLocaleDateString(intlLocale, { month: 'long', year: 'numeric' })}</strong>
         <button className="btn ghost sm" onClick={() => setMonth(new Date(month.getFullYear(), month.getMonth() + 1, 1))}>›</button>
         <button className="btn ghost sm" onClick={() => { const d = new Date(); setMonth(new Date(d.getFullYear(), d.getMonth(), 1)); }}>today</button>
         <span className="spacer" />

@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import type { ReactNode } from 'react';
 import { get, post } from './api';
 import { JsonField, KeyPicker } from './ui';
+import { t } from './i18n';
 
 export type Cmp = { prop: string; op: string; value?: unknown };
 export type Cond = { all: Cond[] } | { any: Cond[] } | { not: Cond } | Cmp;
@@ -49,7 +50,7 @@ function CmpRow({ c, onChange, onRemove }: { c: Cmp; onChange: (c: Cmp) => void;
         {OPS.map(([k, l]) => <option key={k} value={k}>{l}</option>)}
       </select>
       {arity === 'one' && <input className="mono" value={showScalar(c.value)} placeholder='value — 42, true, "text"' onChange={(e) => onChange({ ...c, value: parseScalar(e.target.value) })} style={{ flex: 2 }} />}
-      {arity === 'many' && <input className="mono" value={many} placeholder="DE, FR, AT" onChange={(e) => { setMany(e.target.value); onChange({ ...c, value: e.target.value.split(',').map((s) => s.trim()).filter(Boolean).map(parseScalar) }); }} style={{ flex: 2 }} />}
+      {arity === 'many' && <input className="mono" value={many} placeholder={t('DE, FR, AT')} onChange={(e) => { setMany(e.target.value); onChange({ ...c, value: e.target.value.split(',').map((s) => s.trim()).filter(Boolean).map(parseScalar) }); }} style={{ flex: 2 }} />}
       {arity === 'none' && <span style={{ flex: 2 }} />}
       <button type="button" className="btn ghost sm" onClick={onRemove} title="remove">×</button>
     </div>
@@ -61,7 +62,7 @@ function Node({ c, onChange, onRemove, root }: { c: Cond; onChange: (c: Cond) =>
     return (
       <div className="rb-group not">
         <div className="rb-head">
-          <span className="badge bad">NOT</span>
+          <span className="badge bad">{t('NOT')}</span>
           <span className="spacer" />
           <button type="button" className="btn ghost sm" onClick={() => onChange(c.not)}>unwrap</button>
           {onRemove && <button type="button" className="btn ghost sm" onClick={onRemove}>×</button>}
@@ -78,10 +79,10 @@ function Node({ c, onChange, onRemove, root }: { c: Cond; onChange: (c: Cond) =>
       <div className={'rb-group' + (root ? ' root' : '')}>
         <div className="rb-head">
           <select value={mode} onChange={(e) => onChange(e.target.value === 'all' ? { all: list } : { any: list })} className="rb-mode">
-            <option value="all">ALL of</option>
-            <option value="any">ANY of</option>
+            <option value="all">{t('ALL of')}</option>
+            <option value="any">{t('ANY of')}</option>
           </select>
-          {list.length === 0 && <span className="hint">no conditions — matches everyone</span>}
+          {list.length === 0 && <span className="hint">{t('no conditions — matches everyone')}</span>}
           <span className="spacer" />
           <button type="button" className="btn ghost sm" onClick={() => set([...list, { prop: '', op: 'eq', value: '' }])}>+ condition</button>
           <button type="button" className="btn ghost sm" onClick={() => set([...list, { all: [] }])}>+ group</button>
@@ -110,7 +111,7 @@ function ExpressionMode({ value, onChange, onBack }: { value: Cond | null | unde
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
   const apply = () => post<{ condition: Cond }>('/audiences/expression', { expression: text ?? '' })
     .then((r) => { onChange(text?.trim() ? r.condition : null); setErr(null); onBack(); }, setErr);
-  if (text === null) return <span className="hint">Loading…</span>;
+  if (text === null) return <span className="hint">{t('Loading…')}</span>;
   return (
     <>
       <textarea className="mono" rows={4} value={text} onChange={(e) => setText(e.target.value)} placeholder={EXPR_PLACEHOLDER} />
@@ -118,7 +119,7 @@ function ExpressionMode({ value, onChange, onBack }: { value: Cond | null | unde
         <code>and</code> / <code>or</code> / <code>not</code>, parentheses; operators <code>== != &lt; &lt;= &gt; &gt;= in not_in contains starts_with ends_with matches exists semver_gte within_last older_than</code>; durations <code>30s 15m 2h 7d 4w</code>.
       </div>
       {err && <div className="error" style={{ marginTop: 6 }}>{err.message}</div>}
-      <div className="actions"><button className="btn sm" type="button" onClick={apply}>Apply expression</button></div>
+      <div className="actions"><button className="btn sm" type="button" onClick={apply}>{t('Apply expression')}</button></div>
     </>
   );
 }
@@ -130,7 +131,7 @@ export function ConditionEditor({ value, onChange, optional }: { value: Cond | n
     <div className="rb">
       <datalist id="rb-props">{PROP_SUGGESTIONS.map((p) => <option key={p} value={p} />)}</datalist>
       <div className="rb-tools">
-        {optional && !empty && <button type="button" className="btn ghost sm" onClick={() => onChange(null)}>clear (everyone)</button>}
+        {optional && !empty && <button type="button" className="btn ghost sm" onClick={() => onChange(null)}>{t('clear (everyone)')}</button>}
         {(['visual', 'expr', 'json'] as const).filter((m) => m !== mode).map((m) => (
           <button key={m} type="button" className="btn ghost sm" onClick={() => setMode(m)}>{{ visual: 'visual', expr: 'expression', json: 'JSON' }[m]}</button>
         ))}
@@ -156,7 +157,7 @@ export function AudiencePicker({ value, onChange }: { value: string[]; onChange:
   value = value ?? [];
   const [opts, setOpts] = useState<{ key: string; name: string }[] | null>(null);
   useEffect(() => { get<{ key: string; name: string }[]>('/audiences').then(setOpts, () => setOpts([])); }, []);
-  return <KeyPicker value={value} onChange={onChange} options={opts} placeholder="Add audience…" empty="no audiences defined yet" />;
+  return <KeyPicker value={value} onChange={onChange} options={opts} placeholder={t('Add audience…')} empty={t('no audiences defined yet')} />;
 }
 
 export type ValueType = 'bool' | 'string' | 'number' | 'json';
@@ -203,7 +204,7 @@ export function RulesEditor({ type, value, onChange }: { type: ValueType; value:
   const move = (i: number, d: number) => { const j = i + d; if (j < 0 || j >= value.length) return; const l = [...value]; [l[i], l[j]] = [l[j], l[i]]; onChange(l); };
   return (
     <div className="rules">
-      {value.length === 0 && <div className="muted empty">No rules — every identity gets the default value.</div>}
+      {value.length === 0 && <div className="muted empty">{t('No rules — every identity gets the default value.')}</div>}
       {value.map((r, i) => {
         const variants = r.variants ?? [];
         const audiences = r.audiences ?? [];
@@ -212,30 +213,30 @@ export function RulesEditor({ type, value, onChange }: { type: ValueType; value:
           <div key={r.id || i} className="rule card">
             <div className="rb-head">
               <span className="badge info">#{i + 1}</span>
-              <input value={r.name} placeholder="rule name" onChange={(e) => set(i, { name: e.target.value })} style={{ flex: 1 }} />
+              <input value={r.name} placeholder={t('rule name')} onChange={(e) => set(i, { name: e.target.value })} style={{ flex: 1 }} />
               <button type="button" className="btn ghost sm" disabled={i === 0} onClick={() => move(i, -1)}>↑</button>
               <button type="button" className="btn ghost sm" disabled={i === value.length - 1} onClick={() => move(i, 1)}>↓</button>
               <button type="button" className="btn ghost sm danger" onClick={() => onChange(value.filter((_, j) => j !== i))}>remove</button>
             </div>
-            <Label>Condition</Label>
+            <Label>{t('Condition')}</Label>
             <ConditionEditor value={r.condition ?? { all: [] }} onChange={(c) => set(i, { condition: c ?? { all: [] } })} />
-            <Label>Audiences <span className="hint">(identity must belong to all selected)</span></Label>
+            <Label>{t('Audiences') + ' '}<span className="hint">(identity must belong to all selected)</span></Label>
             <AudiencePicker value={audiences} onChange={(audiences) => set(i, { audiences })} />
             <div className="row" style={{ marginTop: 10 }}>
               <label className="field" style={{ flex: 1 }}>
-                <span className="label">Rollout %</span>
+                <span className="label">{t('Rollout %')}</span>
                 <div className="inline"><input type="range" min={0} max={100} value={r.percentage} onChange={(e) => set(i, { percentage: Number(e.target.value) })} /><input type="number" min={0} max={100} value={r.percentage} onChange={(e) => set(i, { percentage: Number(e.target.value) })} style={{ width: 72 }} /></div>
               </label>
               <label className="field" style={{ flex: 1 }}>
-                <span className="label">Serve</span>
+                <span className="label">{t('Serve')}</span>
                 <select value={weighted ? 'variants' : 'value'} onChange={(e) => (e.target.value === 'variants' ? set(i, { value: undefined, variants: [{ key: 'a', value: r.value ?? true, weight: 1 }, { key: 'b', value: type === 'bool' ? false : r.value ?? '', weight: 1 }] }) : set(i, { variants: [], value: variants[0]?.value ?? true }))}>
-                  <option value="value">a single value</option>
-                  <option value="variants">weighted variants</option>
+                  <option value="value">{t('a single value')}</option>
+                  <option value="variants">{t('weighted variants')}</option>
                 </select>
               </label>
             </div>
             {weighted ? <VariantsEditor type={type} value={variants} onChange={(variants) => set(i, { variants })} /> : (
-              <label className="field"><span className="label">Value</span><TypedValue type={type} value={r.value} onChange={(value) => set(i, { value })} /></label>
+              <label className="field"><span className="label">{t('Value')}</span><TypedValue type={type} value={r.value} onChange={(value) => set(i, { value })} /></label>
             )}
           </div>
         );

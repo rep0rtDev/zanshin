@@ -33,6 +33,7 @@ import Recipes from './pages/Recipes';
 import ApiKeys from './pages/ApiKeys';
 import Audit from './pages/Audit';
 import Health from './pages/Health';
+import { LOCALES, locale, setLocale, t, type Locale } from './i18n';
 
 function Login({ onDone, cfg }: { onDone: () => void; cfg: AuthConfig }) {
   const params = new URLSearchParams(window.location.search);
@@ -62,7 +63,7 @@ function Login({ onDone, cfg }: { onDone: () => void; cfg: AuthConfig }) {
     await passwordLogin(email, password);
     onDone();
   }); };
-  const reset = (e: React.FormEvent) => { e.preventDefault(); void run(async () => { await resetPassword(resetToken!, password); window.history.replaceState(null, '', '/console/'); setTab('password'); setPassword(''); toast('Password set — sign in'); }); };
+  const reset = (e: React.FormEvent) => { e.preventDefault(); void run(async () => { await resetPassword(resetToken!, password); window.history.replaceState(null, '', '/console/'); setTab('password'); setPassword(''); toast(t('Password set — sign in')); }); };
   const tabs: [typeof tab, string][] = [];
   if (cfg.password) tabs.push(['password', 'Email & password']);
   if (cfg.needs_bootstrap) tabs.push(['bootstrap', 'Create first admin']);
@@ -70,48 +71,49 @@ function Login({ onDone, cfg }: { onDone: () => void; cfg: AuthConfig }) {
   return (
     <div className="login">
       <div className="card">
-        <div className="brand">Zanshin<small>admin console</small></div>
-        {cfg.saml && (<a className="btn" href="/console/auth/saml/login" style={{ width: '100%', display: 'block', textAlign: 'center', boxSizing: 'border-box', marginBottom: 8 }}>Sign in with SAML</a>)}
-        {cfg.oidc && (<><a className="btn" href="/console/auth/login" style={{ width: '100%', display: 'block', textAlign: 'center', boxSizing: 'border-box' }}>Sign in with SSO</a><div className="hint" style={{ textAlign: 'center', margin: '12px 0' }}>or</div></>)}
-        {tab !== 'reset' && tabs.length > 1 && <div className="tabs" style={{ marginBottom: 12 }}>{tabs.map(([t, l]) => <button key={t} type="button" className={'tab' + (tab === t ? ' active' : '')} onClick={() => { setTab(t); setErr(null); }}>{l}</button>)}</div>}
+        <div className="brand">{t('Zanshin')}<small>{t('admin console')}</small></div>
+        <div className="hint lang-switch">{LOCALES.map(([k, n]) => <button key={k} type="button" className={'link' + (k === locale ? ' active' : '')} onClick={() => setLocale(k as Locale)}>{n}</button>)}</div>
+        {cfg.saml && (<a className="btn" href="/console/auth/saml/login" style={{ width: '100%', display: 'block', textAlign: 'center', boxSizing: 'border-box', marginBottom: 8 }}>{t('Sign in with SAML')}</a>)}
+        {cfg.oidc && (<><a className="btn" href="/console/auth/login" style={{ width: '100%', display: 'block', textAlign: 'center', boxSizing: 'border-box' }}>{t('Sign in with SSO')}</a><div className="hint" style={{ textAlign: 'center', margin: '12px 0' }}>or</div></>)}
+        {tab !== 'reset' && tabs.length > 1 && <div className="tabs" style={{ marginBottom: 12 }}>{tabs.map(([k, l]) => <button key={k} type="button" className={'tab' + (tab === k ? ' active' : '')} onClick={() => { setTab(k); setErr(null); }}>{t(l)}</button>)}</div>}
         {tab === 'password' && (
           <form onSubmit={withPassword}>
-            <label className="field"><span className="label">Email</span><input type="email" autoFocus value={email} onChange={(e) => setEmail(e.target.value)} required autoComplete="username" disabled={needCode} /></label>
-            <label className="field"><span className="label">Password</span><input type="password" value={password} onChange={(e) => setPassword(e.target.value)} required autoComplete="current-password" disabled={needCode} /></label>
-            {needCode && <label className="field"><span className="label">One-time code</span><input autoFocus value={code} onChange={(e) => setCode(e.target.value)} inputMode="numeric" required autoComplete="one-time-code" /><span className="hint">From your authenticator app, or a recovery code.</span></label>}
+            <label className="field"><span className="label">{t('Email')}</span><input type="email" autoFocus value={email} onChange={(e) => setEmail(e.target.value)} required autoComplete="username" disabled={needCode} /></label>
+            <label className="field"><span className="label">{t('Password')}</span><input type="password" value={password} onChange={(e) => setPassword(e.target.value)} required autoComplete="current-password" disabled={needCode} /></label>
+            {needCode && <label className="field"><span className="label">{t('One-time code')}</span><input autoFocus value={code} onChange={(e) => setCode(e.target.value)} inputMode="numeric" required autoComplete="one-time-code" /><span className="hint">{t('From your authenticator app, or a recovery code.')}</span></label>}
             {err && <div className="error">{err}</div>}
-            <button className="btn" disabled={busy} style={{ width: '100%' }}>{needCode ? 'Verify' : 'Sign in'}</button>
-            <div className="hint" style={{ marginTop: 10 }}>Forgot the password? Ask an admin for a reset link.</div>
+            <button className="btn" disabled={busy} style={{ width: '100%' }}>{needCode ? t('Verify') : t('Sign in')}</button>
+            <div className="hint" style={{ marginTop: 10 }}>{t('Forgot the password? Ask an admin for a reset link.')}</div>
           </form>
         )}
         {tab === 'bootstrap' && (
           <form onSubmit={bootstrap}>
-            <div className="hint" style={{ marginBottom: 10 }}>No console users exist yet. Use the bootstrap admin key from the server config once to create the first admin account.</div>
-            <label className="field"><span className="label">Bootstrap admin key</span><input type="password" autoFocus value={key} onChange={(e) => setKey(e.target.value)} required /></label>
-            <label className="field"><span className="label">Your name</span><input value={name} onChange={(e) => setName(e.target.value)} required /></label>
-            <label className="field"><span className="label">Email</span><input type="email" value={email} onChange={(e) => setEmail(e.target.value)} required /></label>
-            <label className="field"><span className="label">Password</span><input type="password" value={password} onChange={(e) => setPassword(e.target.value)} required minLength={12} autoComplete="new-password" /><span className="hint">At least 12 characters.</span></label>
+            <div className="hint" style={{ marginBottom: 10 }}>{t('No console users exist yet. Use the bootstrap admin key from the server config once to create the first admin account.')}</div>
+            <label className="field"><span className="label">{t('Bootstrap admin key')}</span><input type="password" autoFocus value={key} onChange={(e) => setKey(e.target.value)} required /></label>
+            <label className="field"><span className="label">{t('Your name')}</span><input value={name} onChange={(e) => setName(e.target.value)} required /></label>
+            <label className="field"><span className="label">{t('Email')}</span><input type="email" value={email} onChange={(e) => setEmail(e.target.value)} required /></label>
+            <label className="field"><span className="label">{t('Password')}</span><input type="password" value={password} onChange={(e) => setPassword(e.target.value)} required minLength={12} autoComplete="new-password" /><span className="hint">{t('At least 12 characters.')}</span></label>
             {err && <div className="error">{err}</div>}
-            <button className="btn" disabled={busy} style={{ width: '100%' }}>Create admin & sign in</button>
+            <button className="btn" disabled={busy} style={{ width: '100%' }}>{t('Create admin & sign in')}</button>
           </form>
         )}
         {tab === 'key' && (
           <form onSubmit={withKey}>
             <label className="field">
-              <span className="label">Admin API key</span>
+              <span className="label">{t('Admin API key')}</span>
               <input type="password" autoFocus value={key} onChange={(e) => setKey(e.target.value)} placeholder="zk_a_…" />
-              <span className="hint">The bootstrap key from config or an admin key minted via /admin/v1/api-keys. Stored in this browser only.</span>
+              <span className="hint">{t('The bootstrap key from config or an admin key minted via /admin/v1/api-keys. Stored in this browser only.')}</span>
             </label>
             {err && <div className="error">{err}</div>}
-            <button className="btn" disabled={busy} style={{ width: '100%' }}>Sign in</button>
+            <button className="btn" disabled={busy} style={{ width: '100%' }}>{t('Sign in')}</button>
           </form>
         )}
         {tab === 'reset' && (
           <form onSubmit={reset}>
-            <div className="hint" style={{ marginBottom: 10 }}>Choose a new password for your account.</div>
-            <label className="field"><span className="label">New password</span><input type="password" autoFocus value={password} onChange={(e) => setPassword(e.target.value)} required minLength={12} autoComplete="new-password" /></label>
+            <div className="hint" style={{ marginBottom: 10 }}>{t('Choose a new password for your account.')}</div>
+            <label className="field"><span className="label">{t('New password')}</span><input type="password" autoFocus value={password} onChange={(e) => setPassword(e.target.value)} required minLength={12} autoComplete="new-password" /></label>
             {err && <div className="error">{err}</div>}
-            <button className="btn" disabled={busy} style={{ width: '100%' }}>Set password</button>
+            <button className="btn" disabled={busy} style={{ width: '100%' }}>{t('Set password')}</button>
           </form>
         )}
       </div>
@@ -152,7 +154,7 @@ function Crumbs() {
   const item = GROUPS.flatMap((g) => g.items.map((it) => [g.name, it] as const)).find(([, it]) => it[0] === '/' + (parts[0] ?? ''));
   return (
     <div className="crumbs">
-      {item?.[0] && <span className="muted">{item[0]} /</span>}
+      {item?.[0] && <span className="muted">{t(item[0])} /</span>}
       <span>{item?.[1][1] ?? (parts[0] === 'account' ? 'Your account' : 'Overview')}</span>
       {parts.slice(1).map((p, i) => <span key={i} className="muted">/ {decodeURIComponent(p)}</span>)}
     </div>
@@ -172,7 +174,7 @@ function ProjectSwitcher() {
   return (
     <select
       className="project-switcher"
-      title="Project"
+      title={t('Project')}
       value={cur}
       onChange={(e) => {
         project.set(e.target.value);
@@ -220,11 +222,11 @@ export default function App() {
     window.addEventListener('keydown', k);
     return () => { window.removeEventListener('zanshin:unauthorized', h); window.removeEventListener('zanshin:forbidden', f); window.removeEventListener('keydown', k); };
   }, []);
-  if (me === undefined) return <div className="login"><div className="card">Loading…</div></div>;
+  if (me === undefined) return <div className="login"><div className="card">{t('Loading…')}</div></div>;
   if (!me) return <Login cfg={cfg} onDone={() => { authConfig().then(setCfg); void loadMe(); }} />;
   const RES: Record<string, string> = { '/health': 'settings', '/flags': 'flags', '/audiences': 'audiences', '/experiments': 'experiments', '/change-requests': 'approvals', '/live-events': 'live_events', '/messages': 'messages', '/templates': 'templates', '/journeys': 'journeys', '/integrations': 'integrations', '/identities': 'identities', '/taxonomy': 'taxonomy', '/insights': 'analytics', '/explorer': 'sql', '/analytics': 'analytics', '/metrics': 'metrics', '/webhooks': 'webhooks', '/data': 'data', '/api-keys': 'api_keys', '/users': 'users', '/audit': 'audit', '/settings': 'settings' };
   const groups = GROUPS.map((g) => ({ ...g, items: g.items.filter(([to]) => !RES[to] || allows(me.permissions, RES[to], 'read')) }));
-  const pages: PaletteItem[] = groups.flatMap((g) => g.items.map(([to, label]) => ({ label, to, group: g.name || 'Pages' })));
+  const pages: PaletteItem[] = groups.flatMap((g) => g.items.map(([to, label]) => ({ label: t(label), to, group: t(g.name) || t('Pages') })));
   const signOut = async (e: React.MouseEvent) => {
     e.preventDefault();
     auth.clear();
@@ -235,37 +237,37 @@ export default function App() {
     <MeContext.Provider value={me}>
       <div className={'shell' + (collapsed ? ' collapsed' : '') + (navOpen ? ' nav-open' : '')}>
         <div className="mob-bar">
-          <button className="mob-menu" onClick={() => setNavOpen((o) => !o)} aria-label="Menu"><Icon d={navOpen ? 'M6 6l12 12M18 6L6 18' : 'M3 6h18M3 12h18M3 18h18'} /></button>
-          <span className="logo">残</span><strong>Zanshin</strong>
+          <button className="mob-menu" onClick={() => setNavOpen((o) => !o)} aria-label={t('Menu')}><Icon d={navOpen ? 'M6 6l12 12M18 6L6 18' : 'M3 6h18M3 12h18M3 18h18'} /></button>
+          <span className="logo">残</span><strong>{t('Zanshin')}</strong>
           <div className="spacer" />
           <ProjectSwitcher />
         </div>
         {navOpen && <div className="mob-scrim" onClick={() => setNavOpen(false)} />}
         <nav className="side" onClick={(e) => { if ((e.target as HTMLElement).closest('a')) setNavOpen(false); }}>
-          <div className="brand" onClick={() => setCollapsed((c) => !c)} title="Toggle sidebar">
-            <span className="logo">残</span><span className="brand-text">Zanshin<small>LiveOps console</small></span>
+          <div className="brand" onClick={() => setCollapsed((c) => !c)} title={t('Toggle sidebar')}>
+            <span className="logo">残</span><span className="brand-text">{t('Zanshin')}<small>{t('LiveOps console')}</small></span>
           </div>
-          <button className="search-btn" onClick={() => setPalette(true)}><Icon d="M11 4a7 7 0 1 0 0 14 7 7 0 0 0 0-14zM21 21l-5-5" /><span className="brand-text">Search…<kbd>⌘K</kbd></span></button>
+          <button className="search-btn" onClick={() => setPalette(true)}><Icon d="M11 4a7 7 0 1 0 0 14 7 7 0 0 0 0-14zM21 21l-5-5" /><span className="brand-text">{t('Search…')}<kbd>⌘K</kbd></span></button>
           <div className="nav-scroll">
             {groups.map((g) => (
               <div key={g.name} className="nav-group">
-                {g.name && <div className="nav-title">{g.name}</div>}
-                {g.items.map(([to, label, d]) => <NavLink key={to} to={to} end={to === '/'} title={label}><Icon d={d} /><span className="brand-text">{label}</span></NavLink>)}
+                {g.name && <div className="nav-title">{t(g.name)}</div>}
+                {g.items.map(([to, label, d]) => <NavLink key={to} to={to} end={to === '/'} title={t(label)}><Icon d={d} /><span className="brand-text">{t(label)}</span></NavLink>)}
               </div>
             ))}
           </div>
           <div className="side-foot">
             <div className="whoami" title={me.auth}>
               <span className="avatar">{(me.name || '?').slice(0, 1).toUpperCase()}</span>
-              <NavLink to="/account" className="brand-text trunc" title="Your account">{me.name}</NavLink>
+              <NavLink to="/account" className="brand-text trunc" title={t('Your account')}>{me.name}</NavLink>
               <span className={'role role-' + me.role + ' brand-text'}>{me.role}</span>
             </div>
             <button className="theme-btn" onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}>{theme === 'dark' ? 'Light theme' : 'Dark theme'}</button>
-            <a href="#" onClick={signOut}>Sign out</a>
+            <a href="#" onClick={signOut}>{t('Sign out')}</a>
           </div>
         </nav>
         <div className="main-col">
-          <header className="topbar"><Crumbs /><div className="spacer" /><ProjectSwitcher />{me.read_only && <span className="badge warn">read-only</span>}{me.must_change_password && <NavLink to="/account" className="badge warn">change your password</NavLink>}</header>
+          <header className="topbar"><Crumbs /><div className="spacer" /><ProjectSwitcher />{me.read_only && <span className="badge warn">read-only</span>}{me.must_change_password && <NavLink to="/account" className="badge warn">{t('change your password')}</NavLink>}</header>
           <main className="main">
             <Routes>
               <Route path="/" element={<Dashboard />} />

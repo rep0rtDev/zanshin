@@ -3,6 +3,7 @@ import { Route, Routes, useNavigate, useParams, Link } from 'react-router-dom';
 import { del, get, post, put, qs, useLoad } from '../api';
 import { Badge, Confirm, ErrorBox, Field, JsonField, Page, Table, fmtDate } from '../ui';
 import { DirectSend } from './Messages';
+import { t } from '../i18n';
 
 type Identity = { id: string; external_id: string; created_at: string; updated_at: string; last_seen_at: string; properties: { default: Record<string, unknown>; custom: Record<string, unknown>; computed: Record<string, unknown> } };
 type Ev = { id: string; event_time: string; name: string; value?: unknown; metadata?: unknown; experiments?: Record<string, string> };
@@ -30,7 +31,7 @@ function List() {
     try { const id = await get<Identity>(`/identities/by-external-id/${encodeURIComponent(search.trim())}`); nav(id.id); } catch (e) { setErr(e as Error); }
   };
   return (
-    <Page title="Identities" actions={<form onSubmit={find} className="inline"><input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="find by external id" style={{ width: 260 }} /><button className="btn ghost">Open</button></form>}>
+    <Page title={t('Identities')} actions={<form onSubmit={find} className="inline"><input value={search} onChange={(e) => setSearch(e.target.value)} placeholder={t('find by external id')} style={{ width: 260 }} /><button className="btn ghost">{t('Open')}</button></form>}>
       <ErrorBox error={err ?? q.error} />
       <Table<Identity>
         rows={q.data?.items}
@@ -45,8 +46,8 @@ function List() {
         ]}
       />
       <div className="actions" style={{ marginTop: 12 }}>
-        <button className="btn ghost" disabled={!stack.length} onClick={() => { const s = [...stack]; const prev = s.pop(); setStack(s); setAfter(prev ?? null); }}>Previous</button>
-        <button className="btn ghost" disabled={!q.data?.next} onClick={() => { setStack([...stack, after ?? '']); setAfter(q.data!.next); }}>Next</button>
+        <button className="btn ghost" disabled={!stack.length} onClick={() => { const s = [...stack]; const prev = s.pop(); setStack(s); setAfter(prev ?? null); }}>{t('Previous')}</button>
+        <button className="btn ghost" disabled={!q.data?.next} onClick={() => { setStack([...stack, after ?? '']); setAfter(q.data!.next); }}>{t('Next')}</button>
       </div>
     </Page>
   );
@@ -62,12 +63,12 @@ function QaTime({ id }: { id: string }) {
     <div className="card">
       <div className="row" style={{ alignItems: 'end' }}>
         <div className="grow">
-          <strong>QA time travel</strong>
-          <div className="hint">Pin this player's clock to test future live events and schedules. {q.data?.qa_time ? <Badge tone="info">pinned to {fmtDate(q.data.qa_time)}</Badge> : <span className="muted">real time</span>}</div>
+          <strong>{t('QA time travel')}</strong>
+          <div className="hint">Pin this player's clock to test future live events and schedules. {q.data?.qa_time ? <Badge tone="info">pinned to {fmtDate(q.data.qa_time)}</Badge> : <span className="muted">{t('real time')}</span>}</div>
         </div>
-        <Field label="Travel to"><input type="datetime-local" value={at} onChange={(e) => setAt(e.target.value)} /></Field>
-        <button className="btn ghost" disabled={!at} onClick={save}>Pin</button>
-        {q.data?.qa_time && <button className="btn ghost" onClick={clear}>Reset</button>}
+        <Field label={t('Travel to')}><input type="datetime-local" value={at} onChange={(e) => setAt(e.target.value)} /></Field>
+        <button className="btn ghost" disabled={!at} onClick={save}>{t('Pin')}</button>
+        {q.data?.qa_time && <button className="btn ghost" onClick={clear}>{t('Reset')}</button>}
       </div>
       <ErrorBox error={err} />
     </div>
@@ -83,18 +84,18 @@ function Detail() {
   const i = q.data;
   return (
     <Page
-      title={<span><a href="#" className="muted" onClick={(e) => { e.preventDefault(); nav('..', { relative: 'path' }); }}>Identities</a> / {i?.external_id ?? '…'}</span>}
-      actions={<Confirm danger onConfirm={() => del(`/identities/${id}`).then(() => nav('..', { relative: 'path' }), setErr)}>Delete identity</Confirm>}
+      title={<span><a href="#" className="muted" onClick={(e) => { e.preventDefault(); nav('..', { relative: 'path' }); }}>{t('Identities')}</a> / {i?.external_id ?? '…'}</span>}
+      actions={<Confirm danger onConfirm={() => del(`/identities/${id}`).then(() => nav('..', { relative: 'path' }), setErr)}>{t('Delete identity')}</Confirm>}
     >
       <ErrorBox error={err ?? q.error} />
       {i && (
         <>
           <div className="card">
             <dl className="kv">
-              <dt>Id</dt><dd className="mono">{i.id}</dd>
-              <dt>External id</dt><dd className="mono">{i.external_id}</dd>
-              <dt>First seen</dt><dd>{fmtDate(i.created_at)}</dd>
-              <dt>Last seen</dt><dd>{fmtDate(i.last_seen_at)}</dd>
+              <dt>{t('Id')}</dt><dd className="mono">{i.id}</dd>
+              <dt>{t('External id')}</dt><dd className="mono">{i.external_id}</dd>
+              <dt>{t('First seen')}</dt><dd>{fmtDate(i.created_at)}</dd>
+              <dt>{t('Last seen')}</dt><dd>{fmtDate(i.last_seen_at)}</dd>
             </dl>
           </div>
           <QaTime id={i.id} />
@@ -124,12 +125,12 @@ function Props({ i, onSaved }: { i: Identity; onSaved: (n: Identity) => void }) 
     <div className="grid c2">
       <div className="card">
         <ErrorBox error={err} />
-        <Field label="Default properties" hint="set by the client at authenticate (platform, country, app version, …); merged on save"><JsonField value={dflt} onChange={setDflt} rows={8} /></Field>
-        <Field label="Custom properties" hint="set by the game/backend (level, vip, …); merged on save, null deletes a key"><JsonField value={custom} onChange={setCustom} rows={8} /></Field>
-        <button className="btn" onClick={save}>Save</button>{ok && <span className="muted" style={{ marginLeft: 10 }}>Saved</span>}
+        <Field label={t('Default properties')} hint="set by the client at authenticate (platform, country, app version, …); merged on save"><JsonField value={dflt} onChange={setDflt} rows={8} /></Field>
+        <Field label={t('Custom properties')} hint="set by the game/backend (level, vip, …); merged on save, null deletes a key"><JsonField value={custom} onChange={setCustom} rows={8} /></Field>
+        <button className="btn" onClick={save}>{t('Save')}</button>{ok && <span className="muted" style={{ marginLeft: 10 }}>{t('Saved')}</span>}
       </div>
       <div className="card">
-        <strong>Computed properties</strong>
+        <strong>{t('Computed properties')}</strong>
         <div className="hint" style={{ marginBottom: 8 }}>Derived from events by the server; read-only, usable in targeting as <code>computed.*</code>.</div>
         <pre className="code">{JSON.stringify(i.properties.computed, null, 2)}</pre>
       </div>
@@ -145,7 +146,7 @@ function Events({ id }: { id: string }) {
       <Table<Ev>
         rows={q.data?.events}
         rowKey={(e) => e.id}
-        empty="No events recorded"
+        empty={t('No events recorded')}
         cols={[
           { h: 'Time', w: '180px', c: (e) => fmtDate(e.event_time) },
           { h: 'Name', c: (e) => <code>{e.name}</code> },
@@ -184,16 +185,16 @@ function FlagsTab({ id }: { id: string }) {
   return (
     <div className="card">
       <div className="row" style={{ alignItems: 'center', marginBottom: 8 }}>
-        <input placeholder="filter by key" value={filter} onChange={(e) => setFilter(e.target.value)} style={{ maxWidth: 240 }} />
-        <label className="hint" style={{ display: 'flex', gap: 6, alignItems: 'center' }}><input type="checkbox" checked={changedOnly} onChange={(e) => setChangedOnly(e.target.checked)} /> only values changed from default</label>
+        <input placeholder={t('filter by key')} value={filter} onChange={(e) => setFilter(e.target.value)} style={{ maxWidth: 240 }} />
+        <label className="hint" style={{ display: 'flex', gap: 6, alignItems: 'center' }}><input type="checkbox" checked={changedOnly} onChange={(e) => setChangedOnly(e.target.checked)} />{' ' + t('only values changed from default')}</label>
         <div className="spacer" />
         <span className="hint">{rows.length} of {q.data?.items.length ?? 0} flags</span>
       </div>
       <ErrorBox error={q.error} />
-      {q.data && rows.length === 0 && <div className="empty">No flags match.</div>}
+      {q.data && rows.length === 0 && <div className="empty">{t('No flags match.')}</div>}
       {rows.length > 0 && (
         <table className="table">
-          <thead><tr><th>Flag</th><th>Value</th><th>Source</th><th style={{ width: 60 }}>v</th><th /></tr></thead>
+          <thead><tr><th>{t('Flag')}</th><th>{t('Value')}</th><th>{t('Source')}</th><th style={{ width: 60 }}>v</th><th /></tr></thead>
           <tbody>
             {rows.map((r) => (
               <tr key={r.key}>
@@ -217,7 +218,7 @@ function JourneysTab({ id }: { id: string }) {
   return (
     <>
       <ErrorBox error={q.error} />
-      {!q.data ? null : items.length === 0 ? <div className="empty">This player has not entered any journey.</div> : items.map(({ journey, run, log }) => (
+      {!q.data ? null : items.length === 0 ? <div className="empty">{t('This player has not entered any journey.')}</div> : items.map(({ journey, run, log }) => (
         <div key={run.id} className="card">
           <div className="row" style={{ alignItems: 'center' }}>
             <Link to={`/journeys/${encodeURIComponent(journey)}`}><strong>{journey}</strong></Link>
@@ -225,7 +226,7 @@ function JourneysTab({ id }: { id: string }) {
             <span className="hint">entered {fmtDate(run.entered_at)}{run.context?.parent ? ` · from journey ${String(run.context.parent)}` : ''}{run.status === 'active' && run.wake_at ? ` · wakes ${fmtDate(run.wake_at)}` : ''}{run.error ? ` · ${run.error}` : ''}</span>
           </div>
           <table className="table" style={{ marginTop: 8 }}>
-            <thead><tr><th style={{ width: 180 }}>Time</th><th style={{ width: 160 }}>Step</th><th>What happened</th></tr></thead>
+            <thead><tr><th style={{ width: 180 }}>{t('Time')}</th><th style={{ width: 160 }}>{t('Step')}</th><th>{t('What happened')}</th></tr></thead>
             <tbody>{log.map((l, i) => <tr key={i}><td>{fmtDate(l.at)}</td><td><code>{l.step + 1}. {l.action}</code></td><td className="hint">{l.detail}</td></tr>)}</tbody>
           </table>
         </div>
@@ -244,13 +245,13 @@ function InboxTab({ id }: { id: string }) {
       <Table<Inbox>
         rows={rows}
         rowKey={(m) => m.id}
-        empty="Inbox is empty"
+        empty={t('Inbox is empty')}
         cols={[
           { h: 'Delivered', w: '180px', c: (m) => fmtDate(m.delivered_at) },
           { h: 'Title', c: (m) => <><strong>{m.title}</strong>{m.key && <div className="hint">campaign {m.key}</div>}</> },
           { h: 'State', c: (m) => m.read_at ? <Badge>read</Badge> : <Badge tone="info">unread</Badge> },
           { h: 'Expires', c: (m) => fmtDate(m.expires_at) },
-          { h: '', c: (m) => <button className="btn ghost sm" onClick={() => del(`/identities/${id}/inbox/${m.id}`).then(q.reload)}>Delete</button> },
+          { h: '', c: (m) => <button className="btn ghost sm" onClick={() => del(`/identities/${id}/inbox/${m.id}`).then(q.reload)}>{t('Delete')}</button> },
         ]}
       />
     </>
@@ -264,12 +265,12 @@ function PushTab({ id }: { id: string }) {
     <>
       <ErrorBox error={q.error ?? err} />
       <div className="actions" style={{ marginBottom: 10 }}>
-        <button className="btn ghost sm" onClick={() => post('/push/sweep').then(() => setErr(null), setErr)}>Run push sweep now</button>
+        <button className="btn ghost sm" onClick={() => post('/push/sweep').then(() => setErr(null), setErr)}>{t('Run push sweep now')}</button>
       </div>
       <Table<Tok>
         rows={q.data?.tokens}
         rowKey={(t) => t.token}
-        empty="No registered devices"
+        empty={t('No registered devices')}
         cols={[
           { h: 'Platform', c: (t) => <Badge tone="info">{t.platform}</Badge> },
           { h: 'Device', c: (t) => <span className="mono">{t.device_id || '—'}</span> },
@@ -293,15 +294,15 @@ function TimelineTab({ id }: { id: string }) {
   return (
     <div className="card">
       <div className="row" style={{ alignItems: 'center', marginBottom: 8 }}>
-        <strong>Timeline</strong>
+        <strong>{t('Timeline')}</strong>
         {TL_KINDS.map((k) => <label key={k} className="hint"><input type="checkbox" checked={kinds.has(k)} onChange={() => toggle(k)} /> {k}s</label>)}
-        <button className="btn ghost sm" style={{ marginLeft: 'auto' }} onClick={q.reload}>Refresh</button>
+        <button className="btn ghost sm" style={{ marginLeft: 'auto' }} onClick={q.reload}>{t('Refresh')}</button>
       </div>
       <ErrorBox error={q.error} />
       <Table<TimelineItem>
         rows={q.data ? rows : undefined}
         rowKey={(it) => `${it.kind}-${it.at}-${it.title}`}
-        empty="Nothing yet."
+        empty={t('Nothing yet.')}
         cols={[
           { h: 'When', c: (it) => fmtDate(it.at), w: '170px' },
           { h: 'Kind', c: (it) => <Badge tone={it.kind === 'event' ? 'muted' : it.kind === 'message' ? 'info' : it.kind === 'journey' ? 'warn' : 'ok'}>{it.kind}</Badge>, w: '90px' },

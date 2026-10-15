@@ -4,6 +4,7 @@ import { Badge, ErrorBox, Field, Menu, Page, Table, fmtDate } from '../ui';
 import { PermissionEditor, type Permissions } from '../permissions';
 import { useMe } from '../me';
 import { toast } from '../toast';
+import { t } from '../i18n';
 
 type User = { id: string; email: string; name: string; permissions: Permissions; archetype: string | null; totp_enabled: boolean; disabled: boolean; must_change_password: boolean; created_at: string; last_login_at: string | null; recovery_codes_left: number; created_by: string | null };
 
@@ -27,9 +28,9 @@ export default function Users() {
     } catch (e) { setErr(e as Error); }
   };
   return (
-    <Page title="Console users" actions={<button className="btn" onClick={() => { setEditing(null); setCreating(true); }}>New user</button>}>
+    <Page title={t('Console users')} actions={<button className="btn" onClick={() => { setEditing(null); setCreating(true); }}>{t('New user')}</button>}>
       <ErrorBox error={q.error ?? err} />
-      {secret && <div className="card"><strong>{secret.title}</strong> — shown once:<pre className="code" style={{ marginTop: 8 }}>{secret.body}</pre><button className="btn ghost" onClick={() => setSecret(null)}>Done</button></div>}
+      {secret && <div className="card"><strong>{secret.title}</strong> — shown once:<pre className="code" style={{ marginTop: 8 }}>{secret.body}</pre><button className="btn ghost" onClick={() => setSecret(null)}>{t('Done')}</button></div>}
       {(creating || editing) && (
         <UserForm
           user={editing}
@@ -40,7 +41,7 @@ export default function Users() {
       <Table<User>
         rows={q.data}
         rowKey={(u) => u.id}
-        empty="No console users yet — admins sign in with API keys or SSO until you create one."
+        empty={t('No console users yet — admins sign in with API keys or SSO until you create one.')}
         cols={[
           { h: 'User', c: (u) => <><strong>{u.name}</strong><div className="hint">{u.email}</div></> },
           { h: 'Access', c: (u) => <>{u.archetype ? <Badge tone="info">{u.archetype.replace('_', ' ')}</Badge> : <Badge>custom</Badge>}{u.disabled && <Badge tone="bad">disabled</Badge>}</> },
@@ -53,7 +54,7 @@ export default function Users() {
               { label: 'Edit access', onClick: () => { setCreating(false); setEditing(u); } },
               { label: 'Password reset link', onClick: () => void resetLink(u) },
               { label: u.disabled ? 'Enable' : 'Disable', onClick: () => api('PATCH', `/users/${u.id}`, { disabled: !u.disabled }).then(q.reload, setErr) },
-              { label: 'Sign out everywhere', onClick: () => del(`/users/${u.id}/sessions`).then(() => toast('Sessions revoked')).then(q.reload, setErr) },
+              { label: 'Sign out everywhere', onClick: () => del(`/users/${u.id}/sessions`).then(() => toast(t('Sessions revoked'))).then(q.reload, setErr) },
               ...(u.totp_enabled ? [{ label: 'Remove MFA', onClick: () => del(`/users/${u.id}/mfa`).then(q.reload, setErr) }] : []),
               ...(me?.user_id !== u.id ? [{ label: 'Delete', danger: true, onClick: () => del(`/users/${u.id}`).then(q.reload, setErr) }] : []),
             ]} />
@@ -93,26 +94,26 @@ function UserForm({ user, onClose, onSaved }: { user: User | null; onClose: () =
       <h3 style={{ margin: 0 }}>{user ? `Edit ${user.email}` : 'New console user'}</h3>
       <ErrorBox error={err} />
       <div className="row">
-        <Field label="Email"><input type="email" value={email} onChange={(e) => setEmail(e.target.value)} required disabled={!!user} /></Field>
-        <Field label="Name"><input value={name} onChange={(e) => setName(e.target.value)} required /></Field>
+        <Field label={t('Email')}><input type="email" value={email} onChange={(e) => setEmail(e.target.value)} required disabled={!!user} /></Field>
+        <Field label={t('Name')}><input value={name} onChange={(e) => setName(e.target.value)} required /></Field>
       </div>
       {!user && (
         <div className="row">
-          <Field label="First login">
+          <Field label={t('First login')}>
             <select value={mode} onChange={(e) => setMode(e.target.value as typeof mode)}>
-              <option value="password">give them an initial password</option>
-              <option value="link">hand them a one-time setup link</option>
+              <option value="password">{t('give them an initial password')}</option>
+              <option value="link">{t('hand them a one-time setup link')}</option>
             </select>
           </Field>
-          {mode === 'password' && <Field label="Initial password" hint="min 12 characters; generated for you"><input value={password} onChange={(e) => setPassword(e.target.value)} className="mono" /></Field>}
+          {mode === 'password' && <Field label={t('Initial password')} hint="min 12 characters; generated for you"><input value={password} onChange={(e) => setPassword(e.target.value)} className="mono" /></Field>}
         </div>
       )}
-      <Field label="Permissions" hint="a preset or an explicit resource × action grid; changes sign the user out of active sessions">
+      <Field label={t('Permissions')} hint="a preset or an explicit resource × action grid; changes sign the user out of active sessions">
         <PermissionEditor archetype={archetype} permissions={permissions} onChange={(a, p) => { setArchetype(a); setPermissions(p); }} />
       </Field>
       <div className="row">
         <button className="btn" disabled={busy}>{user ? 'Save' : 'Create user'}</button>
-        <button type="button" className="btn ghost" onClick={onClose}>Cancel</button>
+        <button type="button" className="btn ghost" onClick={onClose}>{t('Cancel')}</button>
       </div>
     </form>
   );

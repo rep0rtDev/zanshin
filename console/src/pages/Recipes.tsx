@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { ApiError, post } from '../api';
 import { toast } from '../toast';
 import { Badge, ErrorBox, Field, Page } from '../ui';
+import { t } from '../i18n';
 
 type Param = { key: string; label: string; type: 'text' | 'number'; value: string; hint?: string };
 type Step = { kind: 'flag' | 'live-event' | 'message' | 'experiment' | 'audience'; path: string; body: Record<string, unknown> };
@@ -154,8 +155,8 @@ export default function Recipes() {
   };
 
   return (
-    <Page title="Recipes">
-      <p className="hint">Ready-made LiveOps setups. Each recipe creates the flags, audiences, live events, campaigns and experiments behind a common mechanic with your keys and numbers — then edit them like anything else. Nothing is created until you press Create.</p>
+    <Page title={t('Recipes')}>
+      <p className="hint">{t('Ready-made LiveOps setups. Each recipe creates the flags, audiences, live events, campaigns and experiments behind a common mechanic with your keys and numbers — then edit them like anything else. Nothing is created until you press Create.')}</p>
       <ErrorBox error={err} />
       <div className="grid c2">
         {RECIPES.map((r) => {

@@ -249,3 +249,6 @@ details.section>.body{padding:0 16px 14px}
 .checklist li.done .mark{color:var(--ok,#2e9e5b)}
 .small{font-size:12px}
 button.link{background:none;border:0;padding:0;color:var(--accent,inherit);cursor:pointer;text-decoration:underline;font:inherit}
+
+.lang-switch{display:flex;gap:10px;justify-content:flex-end;margin:-6px 0 10px}
+.lang-switch .link.active{color:var(--fg);font-weight:600}

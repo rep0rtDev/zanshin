@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
+import { intlLocale, t } from './i18n';
 
 export function Page({ title, actions, children }: { title: ReactNode; actions?: ReactNode; children: ReactNode }) {
   return (
@@ -57,14 +58,14 @@ export function JsonField({ value, onChange, rows = 6, placeholder }: { value: u
           try { onChange(JSON.parse(e.target.value)); setBad(false); } catch { setBad(true); }
         }}
       />
-      {bad && <span className="hint bad">invalid JSON</span>}
+      {bad && <span className="hint bad">{t('invalid JSON')}</span>}
     </div>
   );
 }
 
 export type Col<T> = { h: ReactNode; c: (row: T) => ReactNode; w?: string };
-export function Table<T>({ cols, rows, rowKey, empty = 'Nothing here yet', onRow }: { cols: Col<T>[]; rows: T[] | null | undefined; rowKey: (r: T) => string; empty?: ReactNode; onRow?: (r: T) => void }) {
-  if (!rows) return <div className="muted">Loading…</div>;
+export function Table<T>({ cols, rows, rowKey, empty = t('Nothing here yet'), onRow }: { cols: Col<T>[]; rows: T[] | null | undefined; rowKey: (r: T) => string; empty?: ReactNode; onRow?: (r: T) => void }) {
+  if (!rows) return <div className="muted">{t('Loading…')}</div>;
   if (rows.length === 0) return <div className="muted empty">{empty}</div>;
   return (
     <table className="table">
@@ -95,8 +96,8 @@ export function Confirm({ onConfirm, children, danger }: { onConfirm: () => void
   if (!arm) return <button className={danger ? 'btn danger ghost' : 'btn ghost'} onClick={() => setArm(true)}>{children}</button>;
   return (
     <span className="confirm">
-      <button className={'btn ' + (danger ? 'danger' : '')} onClick={() => { setArm(false); onConfirm(); }}>Confirm</button>
-      <button className="btn ghost" onClick={() => setArm(false)}>Cancel</button>
+      <button className={'btn ' + (danger ? 'danger' : '')} onClick={() => { setArm(false); onConfirm(); }}>{t('Confirm')}</button>
+      <button className="btn ghost" onClick={() => setArm(false)}>{t('Cancel')}</button>
     </span>
   );
 }
@@ -110,7 +111,7 @@ export const setDisplayTz = (tz: string) => {
   if (tz) localStorage.setItem(TZ_KEY, tz); else localStorage.removeItem(TZ_KEY);
 };
 export const displayTimezone = () => displayTz ?? Intl.DateTimeFormat().resolvedOptions().timeZone;
-export const fmtDate = (s?: string | null) => (s ? new Date(s).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short', timeZone: displayTz }) : '—');
+export const fmtDate = (s?: string | null) => (s ? new Date(s).toLocaleString(intlLocale, { dateStyle: 'medium', timeStyle: 'short', timeZone: displayTz }) : '—');
 export const fmtNum = (n: number) => new Intl.NumberFormat().format(n);
 export const short = (s: string, n = 8) => (s.length > n ? s.slice(0, n) + '…' : s);
 
@@ -136,7 +137,7 @@ export function Menu({ items, label = '⋯' }: { items: { label: ReactNode; onCl
   }, [open]);
   return (
     <div className="menu" ref={ref} onClick={(e) => e.stopPropagation()}>
-      <button className="btn ghost sm" onClick={() => setOpen((o) => !o)} aria-label="More">{label}</button>
+      <button className="btn ghost sm" onClick={() => setOpen((o) => !o)} aria-label={t('More')}>{label}</button>
       {open && (
         <div className="menu-pop">
           {items.map((it, i) => <button key={i} className={'menu-item' + (it.danger ? ' danger' : '')} disabled={it.disabled} onClick={() => { setOpen(false); it.onClick(); }}>{it.label}</button>)}
@@ -165,7 +166,7 @@ export function Pager({ page, pages, size, onPage, onSize, total }: { page: numb
 
 export type PickOption = { key: string; name?: string; hint?: ReactNode };
 /** Multi-select over a catalog: chosen keys as removable chips + a search box with a dropdown. Replaces chip walls. */
-export function KeyPicker({ value, onChange, options, placeholder = 'Search…', empty }: { value: string[]; onChange: (v: string[]) => void; options: PickOption[] | null; placeholder?: string; empty?: ReactNode }) {
+export function KeyPicker({ value, onChange, options, placeholder = t('Search…'), empty }: { value: string[]; onChange: (v: string[]) => void; options: PickOption[] | null; placeholder?: string; empty?: ReactNode }) {
   const [q, setQ] = useState('');
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
@@ -175,7 +176,7 @@ export function KeyPicker({ value, onChange, options, placeholder = 'Search…',
     document.addEventListener('mousedown', h);
     return () => document.removeEventListener('mousedown', h);
   }, [open]);
-  if (!options) return <span className="hint">Loading…</span>;
+  if (!options) return <span className="hint">{t('Loading…')}</span>;
   if (!options.length && !value.length) return <span className="hint">{empty ?? 'Nothing to pick from yet'}</span>;
   const s = q.trim().toLowerCase();
   const rest = options.filter((o) => !value.includes(o.key) && (!s || `${o.key} ${o.name ?? ''}`.toLowerCase().includes(s))).slice(0, 8);
