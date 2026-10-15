@@ -316,7 +316,8 @@ jobs:
       - name: Nakama database + migrate
         run: |
           PGPASSWORD=zanshin psql -h localhost -U zanshin -d zanshin -c "CREATE DATABASE nakama"
-          docker run --rm --network host zanshin-nakama:ci /nakama/nakama migrate up --database.address zanshin:zanshin@localhost:5432/nakama
+          docker run --rm --network host --entrypoint /bin/sh zanshin-nakama:ci -c \
+            "/nakama/nakama migrate up --database.address zanshin:zanshin@localhost:5432/nakama"
       - name: RustFS bucket
         run: |
           for i in $(seq 1 30); do curl -sf http://localhost:9000/ >/dev/null 2>&1 && break || sleep 2; done || true
@@ -342,7 +343,7 @@ jobs:
         run: ./target/debug/zanshin --migrate && ./target/debug/zanshin --doctor && ./target/debug/zanshin --doctor --json | head -5
       - name: Nakama (module → Zanshin on 127.0.0.1:7560)
         run: |
-          docker run -d --name nakama --network host zanshin-nakama:ci /nakama/nakama \
+          docker run -d --name nakama --network host --entrypoint /nakama/nakama zanshin-nakama:ci \
             --database.address zanshin:zanshin@localhost:5432/nakama --logger.level INFO \
             --socket.server_key defaultkey --console.port 7351 \
             --runtime.env ZANSHIN_URL=http://127.0.0.1:7560 --runtime.env ZANSHIN_SERVER_KEY=live-bootstrap-admin-key-49
