@@ -437,12 +437,12 @@ async fn live_services() {
             )
             .await;
             assert_eq!(st, 200, "{r}");
+            assert_eq!(r["status"], "ok", "s3 export run ({format}): {r}");
+            assert!(r["rows"].as_u64().unwrap_or(0) >= 1, "{r}");
             assert!(
-                r["error"].is_null() && r["ok"] != false,
-                "s3 export run ({format}): {r}"
-            );
-            assert!(
-                r["events"].as_u64().or(r["exported"].as_u64()).unwrap_or(1) >= 1,
+                r["object"]
+                    .as_str()
+                    .is_some_and(|o| o.contains(&format!("live/{format}/"))),
                 "{r}"
             );
         }
