@@ -278,7 +278,7 @@ function Dashboards() {
     <EntityPage<Dashboard>
       title={tr('Dashboards')}
       path="/dashboards"
-      blurb="Custom dashboards: numbers, event timeseries, funnels, retention and top-events widgets, evaluated for a time range."
+      blurb={tr('Custom dashboards: numbers, event timeseries, funnels, retention and top-events widgets, evaluated for a time range.')}
       cols={[{ h: 'Key', c: (d) => <><strong>{d.key}</strong><div className="hint">{d.name}</div></> }, { h: 'Widgets', c: (d) => d.widgets.length }, { h: 'Updated', c: (d) => fmtDate(d.updated_at) }]}
       blank={() => ({ key: '', name: '', description: '', widgets: [{ id: 'dau', kind: 'number', title: 'DAU', width: 1, config: { metric: 'dau' } }], filters: {}, tags: [] })}
       form={(d, set, isNew) => (

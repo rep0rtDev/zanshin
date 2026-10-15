@@ -79,7 +79,7 @@ export default function Templates() {
     <EntityPage<Template>
       title={tr('Templates')}
       path="/templates"
-      blurb="Reusable message copy in plaintext, HTML or JSON with one translation per locale. Campaigns that reference a template render it in each player's locale (exact → language → default)."
+      blurb={tr('Reusable message copy in plaintext, HTML or JSON with one translation per locale. Campaigns that reference a template render it in each player\'s locale (exact → language → default).')}
       cols={[
         { h: 'Key', c: (t) => <><strong>{t.key}</strong><div className="hint">{t.name}</div></> },
         { h: 'Format', c: (t) => <Badge tone="info">{t.format}</Badge> },

@@ -44,7 +44,7 @@ export default function Notifications() {
     <EntityPage<Channel>
       title={t('Notifications')}
       path="/notification-channels"
-      blurb="Post configuration changes, failed export runs, unhealthy integrations and alerts to Slack, Discord or any webhook."
+      blurb={t('Post configuration changes, failed export runs, unhealthy integrations and alerts to Slack, Discord or any webhook.')}
       cols={[
         { h: 'Key', c: (c) => <><strong>{c.key}</strong><div className="hint">{c.name}</div></> },
         { h: 'Kind', c: (c) => <code>{c.kind}</code> },

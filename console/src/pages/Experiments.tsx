@@ -307,7 +307,7 @@ export default function Experiments() {
     <EntityPage<Experiment>
       title={t('Experiments')}
       path="/experiments"
-      blurb="A/B tests with deterministic sticky assignment. Events are tagged with the active variant, so any event name can be used as a conversion metric."
+      blurb={t('A/B tests with deterministic sticky assignment. Events are tagged with the active variant, so any event name can be used as a conversion metric.')}
       above={<HoldoutsCard />}
       cols={[
         { h: 'Key', c: (e) => <><strong>{e.key}</strong><div className="hint">{e.name}</div></> },

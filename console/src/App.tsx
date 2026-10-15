@@ -155,7 +155,7 @@ function Crumbs() {
   return (
     <div className="crumbs">
       {item?.[0] && <span className="muted">{t(item[0])} /</span>}
-      <span>{item?.[1][1] ?? (parts[0] === 'account' ? 'Your account' : 'Overview')}</span>
+      <span>{t(item?.[1][1] ?? (parts[0] === 'account' ? 'Your account' : 'Overview'))}</span>
       {parts.slice(1).map((p, i) => <span key={i} className="muted">/ {decodeURIComponent(p)}</span>)}
     </div>
   );
@@ -262,7 +262,7 @@ export default function App() {
               <NavLink to="/account" className="brand-text trunc" title={t('Your account')}>{me.name}</NavLink>
               <span className={'role role-' + me.role + ' brand-text'}>{me.role}</span>
             </div>
-            <button className="theme-btn" onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}>{theme === 'dark' ? 'Light theme' : 'Dark theme'}</button>
+            <button className="theme-btn" onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}>{theme === 'dark' ? t('Light theme') : t('Dark theme')}</button>
             <a href="#" onClick={signOut}>{t('Sign out')}</a>
           </div>
         </nav>

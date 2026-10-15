@@ -32,7 +32,7 @@ export default function LiveEvents() {
       above={<Calendar onPick={(k) => nav(encodeURIComponent(k))} />}
       title={tr('Live events')}
       path="/live-events"
-      blurb="Scheduled content windows — one-shot or recurring (cron, UTC) — with a payload the client reads when the event is active."
+      blurb={tr('Scheduled content windows — one-shot or recurring (cron, UTC) — with a payload the client reads when the event is active.')}
       sort={(a, b) => new Date(a.starts_at).getTime() - new Date(b.starts_at).getTime()}
       cols={[
         { h: 'Key', c: (e) => <><strong>{e.key}</strong><div className="hint">{e.name}</div></> },

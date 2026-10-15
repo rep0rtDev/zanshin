@@ -52,7 +52,7 @@ export default function Integrations() {
     <EntityPage<Integration>
       title={t('Integrations')}
       path="/integrations"
-      blurb="Delivery channels beyond the inbox. Add an integration key to a campaign's channels and every delivery is also sent through it and logged per channel. Secrets are masked after saving."
+      blurb={t('Delivery channels beyond the inbox. Add an integration key to a campaign\'s channels and every delivery is also sent through it and logged per channel. Secrets are masked after saving.')}
       cols={[
         { h: 'Key', c: (i) => <><strong>{i.key}</strong><div className="hint">{i.name}</div></> },
         { h: 'Kind', c: (i) => <Badge tone="info">{i.kind}</Badge> },

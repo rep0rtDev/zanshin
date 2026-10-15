@@ -241,7 +241,7 @@ export default function Flags() {
     <EntityPage<Flag>
       title={t('Feature flags')}
       path="/flags"
-      blurb="Remote-configurable values with targeting rules, percentage rollouts and weighted variants. Changes reach connected clients instantly."
+      blurb={t('Remote-configurable values with targeting rules, percentage rollouts and weighted variants. Changes reach connected clients instantly.')}
       cols={[
         { h: 'Key', c: (f) => <><strong>{f.key}</strong><div className="hint">{f.name}</div></> },
         { h: 'Type', c: (f) => <Badge tone="info">{f.value_type}</Badge> },

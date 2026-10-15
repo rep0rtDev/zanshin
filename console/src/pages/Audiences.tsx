@@ -154,7 +154,7 @@ export default function Audiences() {
     <EntityPage<Audience>
       title={t('Audiences')}
       path="/audiences"
-      blurb="Reusable segments defined by rules over identity properties. Reference them from flags, experiments, live events and campaigns."
+      blurb={t('Reusable segments defined by rules over identity properties. Reference them from flags, experiments, live events and campaigns.')}
       cols={[
         { h: 'Key', c: (a) => <><strong>{a.key}</strong><div className="hint">{a.name}</div></> },
         { h: 'Type', c: (a) => <>{a.kind === 'managed' ? <Badge tone="info">managed</Badge> : <Badge>{a.recompute === 'scheduled' ? 'scheduled' : 'live'}</Badge>} {a.copied_from && <span className="hint">copy of {a.copied_from}</span>}</> },

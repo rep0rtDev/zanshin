@@ -308,7 +308,7 @@ export default function Journeys() {
     <EntityPage<Journey>
       title={tr('Journeys')}
       path="/journeys"
-      blurb="Per-player flows: an entry trigger admits the player, then actions (messages, events, flag overrides, experiment variants, live events on the player's own timeline), delays (fixed, local time, date or recurring schedule) and branches run on that player's own clock. Waits are persisted and survive restarts."
+      blurb={tr('Per-player flows: an entry trigger admits the player, then actions (messages, events, flag overrides, experiment variants, live events on the player\'s own timeline), delays (fixed, local time, date or recurring schedule) and branches run on that player\'s own clock. Waits are persisted and survive restarts.')}
       cols={[
         { h: 'Key', c: (j) => <><strong>{j.key}</strong><div className="hint">{j.name}</div></> },
         { h: 'Trigger', c: (j) => <code>{j.trigger.kind}{'name' in j.trigger ? ` ${j.trigger.name}` : ''}{'audience' in j.trigger ? ` ${j.trigger.audience}` : ''}{'live_event' in j.trigger ? ` ${j.trigger.live_event}` : ''}</code> },
