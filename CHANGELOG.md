@@ -8,6 +8,7 @@ Release automation reads the section whose heading contains the tagged version.
 
 ### Added
 - Console end-to-end tests (Playwright, `console/e2e`, CI job `console-e2e`): admin-key login, Overview, creating a flag through the UI, Platform → Health, Russian locale, phone layout with the drawer. `npm run e2e` against a running server (`ZANSHIN_URL`, `ADMIN_KEY`).
+- CI: `upgrade-drill` (previous release seeds data → current migrations → data still served, `--doctor` clean) and `multi-replica` (two replicas, cross-replica propagation, rolling restart) jobs; documented under Upgrades.
 
 ## [0.2.2] — 2026-10-15
 
