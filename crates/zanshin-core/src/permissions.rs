@@ -213,7 +213,7 @@ pub fn resource_for_path(path: &str) -> Option<&'static str> {
         "me" => return None,
         "flags" => "flags",
         "audiences" => "audiences",
-        "experiments" => "experiments",
+        "experiments" | "holdouts" => "experiments",
         "metrics" => "metrics",
         "live-events" => "live_events",
         "messages" | "push" => "messages",

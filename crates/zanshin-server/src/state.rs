@@ -233,6 +233,7 @@ impl AppState {
         .with_cache(stores.cache.clone());
         let experiments = ExperimentService::new(
             ExperimentRepo::new(stores.pg.clone()),
+            zanshin_store::holdouts::HoldoutRepo::new(stores.pg.clone()),
             bus.clone(),
             events.clone(),
         );

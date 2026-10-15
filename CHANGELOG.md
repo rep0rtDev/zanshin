@@ -7,6 +7,14 @@ Release automation reads the section whose heading contains the tagged version.
 ## [Unreleased]
 
 ### Added
+- Experiments v4: mutually exclusive **layers**, **holdout groups** (`/admin/v1/holdouts`) that keep a
+  deterministic slice of players out of experiments, **guardrail metrics** that pause an experiment
+  automatically when a variant regresses control beyond a tolerance (webhook
+  `experiment.guardrail_tripped`, `alert` notification), **bandit allocation** (Thompson sampling
+  re-weights variants towards the likely winner, sticky assignments untouched), **sequential testing**
+  (always-valid mSPRT p-values on conversion metrics, safe to peek at any time) and **CUPED**
+  variance reduction (`?cuped=true`) on count / sum / avg metrics; console form, results panel and
+  holdouts card.
 - Satori parity leftovers: **Flags** tab on an identity (`GET /admin/v1/identities/{id}/flags`) showing every
   resolved flag with its value source (default / rule / variant / override / experiment / live event); the
   expression ("query view") editor is now available on every condition — flag rules, live events, journeys,

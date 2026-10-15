@@ -197,6 +197,14 @@ impl MetricService {
                             assigned.get(v.key.as_str()).copied().unwrap_or(0),
                             ctrl,
                         ));
+                        if let Some(c) = ctrl {
+                            row["sequential"] = json!(zanshin_core::stats::sequential(
+                                ident_of(&v.key),
+                                assigned.get(v.key.as_str()).copied().unwrap_or(0),
+                                c,
+                                None,
+                            ));
+                        }
                     }
                     row
                 })
@@ -204,6 +212,128 @@ impl MetricService {
             out.push(json!({
                 "metric": metric.key, "name": metric.name, "kind": metric.kind, "event_name": metric.event_name,
                 "aggregation": metric.aggregation, "variants": variants,
+            }));
+        }
+        out
+    }
+
+    /// CUPED: per-player outcomes on each count / sum / avg metric, adjusted with the same player's
+    /// pre-experiment value of the metric as covariate. Returns one entry per eligible metric with
+    /// `theta`, `variance_reduction` and raw vs adjusted means per variant.
+    pub async fn cuped_for_experiment(
+        &self,
+        exp: &Experiment,
+        from: chrono::DateTime<chrono::Utc>,
+        to: chrono::DateTime<chrono::Utc>,
+        pre_days: i64,
+    ) -> Vec<Value> {
+        use zanshin_core::metrics::Aggregation;
+        const MAX_IDENTITIES: i64 = 50_000;
+        let pre_from = from - chrono::Duration::days(pre_days.clamp(1, 90));
+        let mut out = Vec::new();
+        for key in &exp.metrics {
+            let Ok(metric) = self.repo.get(key).await else {
+                continue;
+            };
+            if !matches!(
+                metric.aggregation,
+                Aggregation::Count | Aggregation::Sum | Aggregation::Avg
+            ) {
+                continue;
+            }
+            let post = match self
+                .events
+                .experiment_metric_by_identity(
+                    &exp.key,
+                    &metric.event_name,
+                    metric.metadata_field(),
+                    from,
+                    to,
+                    MAX_IDENTITIES,
+                )
+                .await
+            {
+                Ok(p) => p,
+                Err(e) => {
+                    out.push(json!({"metric": key, "error": e.to_string()}));
+                    continue;
+                }
+            };
+            if post.len() < 10 {
+                out.push(json!({"metric": key, "error": "not enough players with the event yet (need 10)"}));
+                continue;
+            }
+            let ids: Vec<uuid::Uuid> = post.iter().map(|p| p.identity_id).collect();
+            let pre = match self
+                .events
+                .metric_by_identity(
+                    &metric.event_name,
+                    metric.metadata_field(),
+                    &ids,
+                    pre_from,
+                    from,
+                )
+                .await
+            {
+                Ok(p) => p,
+                Err(e) => {
+                    out.push(json!({"metric": key, "error": e.to_string()}));
+                    continue;
+                }
+            };
+            let pre_by_id: HashMap<uuid::Uuid, f64> = pre
+                .into_iter()
+                .map(|p| {
+                    (
+                        p.identity_id,
+                        metric_value(&metric.aggregation, p.count, p.sum),
+                    )
+                })
+                .collect();
+            let outcomes: Vec<f64> = post
+                .iter()
+                .map(|p| metric_value(&metric.aggregation, p.count, p.sum))
+                .collect();
+            let covariates: Vec<f64> = post
+                .iter()
+                .map(|p| pre_by_id.get(&p.identity_id).copied().unwrap_or(0.0))
+                .collect();
+            let (theta, adjusted, reduction) = zanshin_core::stats::cuped(&outcomes, &covariates);
+            let mut per: HashMap<&str, (f64, f64, usize)> = HashMap::new();
+            for (i, p) in post.iter().enumerate() {
+                let e = per.entry(p.variant.as_str()).or_insert((0.0, 0.0, 0));
+                e.0 += outcomes[i];
+                e.1 += adjusted[i];
+                e.2 += 1;
+            }
+            let ctrl = exp
+                .control
+                .as_deref()
+                .and_then(|c| per.get(c))
+                .map(|(_, a, n)| a / *n as f64);
+            let variants: Vec<Value> = exp
+                .variants
+                .iter()
+                .map(|v| {
+                    let (raw, adj, n) = per.get(v.key.as_str()).copied().unwrap_or((0.0, 0.0, 0));
+                    let (mean, adjusted_mean) = if n > 0 {
+                        (raw / n as f64, adj / n as f64)
+                    } else {
+                        (0.0, 0.0)
+                    };
+                    let lift = match ctrl {
+                        Some(c) if c != 0.0 && exp.control.as_deref() != Some(&v.key) => {
+                            Some((adjusted_mean - c) / c)
+                        }
+                        _ => None,
+                    };
+                    json!({"variant": v.key, "players": n, "mean": mean, "adjusted_mean": adjusted_mean, "adjusted_lift": lift})
+                })
+                .collect();
+            out.push(json!({
+                "metric": metric.key, "name": metric.name, "aggregation": metric.aggregation,
+                "theta": theta, "variance_reduction": reduction, "players": post.len(),
+                "pre_window": { "from": pre_from, "to": from }, "variants": variants,
             }));
         }
         out
@@ -322,5 +452,15 @@ impl MetricService {
             })
             .collect();
         Ok(json!({"metric": metric.key, "aggregation": metric.aggregation, "points": points}))
+    }
+}
+
+/// A single player's value of a metric from their event count and summed field.
+fn metric_value(agg: &zanshin_core::metrics::Aggregation, count: i64, sum: f64) -> f64 {
+    match agg {
+        zanshin_core::metrics::Aggregation::Count => count as f64,
+        zanshin_core::metrics::Aggregation::Sum => sum,
+        zanshin_core::metrics::Aggregation::Avg if count > 0 => sum / count as f64,
+        _ => 0.0,
     }
 }

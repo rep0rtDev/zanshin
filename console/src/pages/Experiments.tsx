@@ -1,20 +1,27 @@
 import { useState } from 'react';
-import { download, get, post, useLoad } from '../api';
+import { del, download, get, post, put, useLoad } from '../api';
 import { DateTime, EntityPage, Num, Tags, Text } from '../crud';
 import { AudiencePicker, ConditionEditor, VariantsEditor } from '../RuleBuilder';
 import type { Cond } from '../RuleBuilder';
 import { Badge, Confirm, ErrorBox, Field, KeyPicker, Table, fmtDate, fmtNum } from '../ui';
 
 type Variant = { key: string; name: string; value: unknown; weight: number };
+type Guardrail = { metric: string; max_drop: number; min_identities: number };
+type Bandit = { metric: string; min_weight: number; every_secs: number; min_assigned: number; last_run_at?: string | null; last_probabilities?: number[] };
+type Holdout = { key: string; name: string; description: string; percentage: number; enabled: boolean; version: number };
 type Experiment = {
+  layer?: string | null; holdout?: string | null; guardrails?: Guardrail[]; bandit?: Bandit | null;
   split_key?: string; max_participants?: number | null; enrol_until?: string | null; locked?: boolean; metrics?: string[]; copied_from?: string | null; phase_of?: string | null; winner?: string | null; interrupt_reason?: string;
   key: string; name: string; description: string; hypothesis: string; status: 'draft' | 'running' | 'paused' | 'stopped';
   condition: Cond | null; audiences: string[]; percentage: number; variants: Variant[]; control: string | null; flag_key: string | null;
   starts_at: string | null; ends_at: string | null; tags: string[]; version: number; updated_at: string;
 };
 type VStats = { rate: number; ci_low: number; ci_high: number; prob_beats_control?: number; expected_uplift?: number };
-type CatalogMetric = { metric: string; name?: string; kind?: string; aggregation?: string; error?: string; variants?: { variant: string; value: number; lift: number | null; stats?: VStats }[] };
+type SeqStats = { delta: number; z: number; p_value: number; significant: boolean; lift?: number };
+type CupedRow = { metric: string; name?: string; error?: string; theta?: number; variance_reduction?: number; players?: number; variants?: { variant: string; players: number; mean: number; adjusted_mean: number; adjusted_lift: number | null }[] };
+type CatalogMetric = { metric: string; name?: string; kind?: string; aggregation?: string; error?: string; variants?: { variant: string; value: number; lift: number | null; stats?: VStats; sequential?: SeqStats | null }[] };
 type Results = {
+  cuped?: CupedRow[] | null;
   srm?: { chi2: number; p_value: number; suspicious: boolean } | null;
   metrics?: CatalogMetric[]; winner?: string | null; interrupted_at?: string | null; interrupt_reason?: string; locked?: boolean;
   total_assigned: number; metric: string | null; control: string | null;
@@ -121,10 +128,118 @@ function Participants({ exp }: { exp: Experiment }) {
   );
 }
 
+function HoldoutSelect({ value, onChange }: { value: string | null; onChange: (v: string | null) => void }) {
+  const q = useLoad(() => get<{ items: Holdout[] }>('/holdouts'), []);
+  const items = q.data?.items ?? [];
+  return (
+    <Field label="Holdout group" hint="players in the group are never enrolled here">
+      <select value={value ?? ''} onChange={(e) => onChange(e.target.value || null)}>
+        <option value="">none</option>
+        {items.map((h) => <option key={h.key} value={h.key}>{h.key} · {h.percentage}%{h.enabled ? '' : ' (disabled)'}</option>)}
+        {value && !items.some((h) => h.key === value) && <option value={value}>{value} (missing)</option>}
+      </select>
+    </Field>
+  );
+}
+
+function GuardrailsEditor({ value, onChange }: { value: Guardrail[]; onChange: (v: Guardrail[]) => void }) {
+  const upd = (i: number, patch: Partial<Guardrail>) => onChange(value.map((g, j) => (j === i ? { ...g, ...patch } : g)));
+  return (
+    <div className="stack" style={{ gap: 6 }}>
+      {value.map((g, i) => (
+        <div className="row" key={i} style={{ alignItems: 'end' }}>
+          <div className="grow"><MetricsPicker value={g.metric ? [g.metric] : []} onChange={(m) => upd(i, { metric: m[m.length - 1] ?? '' })} /></div>
+          <Num label="Max drop %" value={Math.round(g.max_drop * 1000) / 10} onChange={(v) => upd(i, { max_drop: (v ?? 0) / 100 })} min={0} max={100} />
+          <Num label="Min players" value={g.min_identities} onChange={(v) => upd(i, { min_identities: v ?? 0 })} min={0} />
+          <button type="button" className="btn ghost sm" onClick={() => onChange(value.filter((_, j) => j !== i))}>remove</button>
+        </div>
+      ))}
+      <div><button type="button" className="btn ghost sm" onClick={() => onChange([...value, { metric: '', max_drop: 0.05, min_identities: 100 }])}>+ add guardrail</button></div>
+    </div>
+  );
+}
+
+function BanditEditor({ value, onChange }: { value: Bandit | null; onChange: (v: Bandit | null) => void }) {
+  if (!value) return <button type="button" className="btn ghost sm" onClick={() => onChange({ metric: '', min_weight: 5, every_secs: 3600, min_assigned: 100 })}>Enable bandit</button>;
+  return (
+    <div className="stack" style={{ gap: 6 }}>
+      <div className="row" style={{ alignItems: 'end' }}>
+        <div className="grow"><MetricsPicker value={value.metric ? [value.metric] : []} onChange={(m) => onChange({ ...value, metric: m[m.length - 1] ?? '' })} /></div>
+        <Num label="Min weight %" value={value.min_weight} onChange={(v) => onChange({ ...value, min_weight: v ?? 0 })} min={0} max={50} />
+        <Num label="Every (s)" value={value.every_secs} onChange={(v) => onChange({ ...value, every_secs: v ?? 60 })} min={60} />
+        <Num label="Explore until N assigned" value={value.min_assigned} onChange={(v) => onChange({ ...value, min_assigned: v ?? 0 })} min={0} />
+        <button type="button" className="btn ghost sm" onClick={() => onChange(null)}>disable</button>
+      </div>
+      {value.last_run_at && <div className="hint">last re-weighted {fmtDate(value.last_run_at)} · P(best): {(value.last_probabilities ?? []).map((p) => (p * 100).toFixed(0) + '%').join(' / ')}</div>}
+    </div>
+  );
+}
+
+function SequentialSummary({ metrics, control }: { metrics: CatalogMetric[]; control: string | null }) {
+  const rows = metrics.flatMap((m) => (m.variants ?? []).filter((v) => v.sequential && v.variant !== control).map((v) => ({ metric: m.metric, variant: v.variant, s: v.sequential! })));
+  if (rows.length === 0) return null;
+  return (
+    <div className="hint" style={{ marginBottom: 8 }}>
+      Always-valid (sequential) test — safe to read at any time:{' '}
+      {rows.map((r) => <span key={r.metric + r.variant} style={{ marginRight: 10 }}><code>{r.metric}</code> {r.variant}: <Badge tone={r.s.significant ? 'ok' : 'muted'}>p = {r.s.p_value < 0.001 ? r.s.p_value.toExponential(1) : r.s.p_value.toFixed(3)}{r.s.lift !== undefined ? ` · lift ${(r.s.lift * 100).toFixed(1)}%` : ''}</Badge></span>)}
+    </div>
+  );
+}
+
+function CupedTable({ rows }: { rows: CupedRow[] }) {
+  return (
+    <table className="table" style={{ marginBottom: 10 }}>
+      <thead><tr><th>Metric</th><th>θ</th><th>Variance ↓</th><th>Variant</th><th>Mean</th><th>CUPED mean</th><th>Adj. lift</th></tr></thead>
+      <tbody>
+        {rows.map((m) => m.error
+          ? <tr key={m.metric}><td><strong>{m.metric}</strong></td><td colSpan={6} className="hint">{m.error}</td></tr>
+          : (m.variants ?? []).map((v, i) => (
+            <tr key={m.metric + v.variant}>
+              {i === 0 && <><td rowSpan={m.variants!.length}><strong>{m.metric}</strong><div className="hint">{fmtNum(m.players ?? 0)} players</div></td><td rowSpan={m.variants!.length}>{m.theta?.toFixed(3)}</td><td rowSpan={m.variants!.length}>{((m.variance_reduction ?? 0) * 100).toFixed(1)}%</td></>}
+              <td>{v.variant}</td><td>{v.mean.toFixed(4)}</td><td>{v.adjusted_mean.toFixed(4)}</td><td>{v.adjusted_lift === null ? '—' : (v.adjusted_lift * 100).toFixed(1) + '%'}</td>
+            </tr>
+          )))}
+      </tbody>
+    </table>
+  );
+}
+
+/** Holdout groups: deterministic slices of players kept out of the experiments that reference them. */
+export function HoldoutsCard() {
+  const q = useLoad(() => get<{ items: Holdout[] }>('/holdouts'), []);
+  const [d, setD] = useState({ key: '', name: '', percentage: 5 });
+  const [err, setErr] = useState<Error | null>(null);
+  const run = (p: Promise<unknown>) => p.then(() => { setErr(null); q.reload(); }, setErr);
+  return (
+    <div className="card">
+      <strong>Holdout groups</strong> <span className="hint">a fixed share of players kept out of every experiment that references the group — the untouched baseline for measuring the long-term effect of experimentation</span>
+      <ErrorBox error={err ?? q.error} />
+      <Table<Holdout>
+        rows={q.data?.items ?? []}
+        rowKey={(h) => h.key}
+        empty="No holdout groups yet."
+        cols={[
+          { h: 'Key', c: (h) => <><strong>{h.key}</strong><div className="hint">{h.name}</div></> },
+          { h: 'Held out', c: (h) => `${h.percentage}%` },
+          { h: 'Status', c: (h) => <Badge tone={h.enabled ? 'ok' : 'muted'}>{h.enabled ? 'enabled' : 'disabled'}</Badge> },
+          { h: '', c: (h) => <div className="actions"><button className="btn ghost sm" onClick={() => run(put(`/holdouts/${encodeURIComponent(h.key)}`, { enabled: !h.enabled }))}>{h.enabled ? 'disable' : 'enable'}</button><Confirm danger onConfirm={() => run(del(`/holdouts/${encodeURIComponent(h.key)}`))}>Delete</Confirm></div> },
+        ]}
+      />
+      <div className="row" style={{ alignItems: 'end', marginTop: 8 }}>
+        <Text label="Key" value={d.key} onChange={(key) => setD({ ...d, key })} mono />
+        <Text label="Name" value={d.name} onChange={(name) => setD({ ...d, name })} />
+        <Num label="Held out %" value={d.percentage} onChange={(v) => setD({ ...d, percentage: v ?? 0 })} min={0} max={100} />
+        <button className="btn" disabled={!d.key} onClick={() => run(post('/holdouts', d)).then(() => setD({ key: '', name: '', percentage: 5 }))}>Create</button>
+      </div>
+    </div>
+  );
+}
+
 function ResultsPanel({ exp }: { exp: Experiment }) {
   const [metric, setMetric] = useState('');
   const [applied, setApplied] = useState('');
-  const q = useLoad(() => get<Results>(`/experiments/${encodeURIComponent(exp.key)}/results${applied ? '?metric=' + encodeURIComponent(applied) : ''}`), [exp.key, applied, exp.version]);
+  const [cuped, setCuped] = useState(false);
+  const q = useLoad(() => get<Results>(`/experiments/${encodeURIComponent(exp.key)}/results?${applied ? 'metric=' + encodeURIComponent(applied) + '&' : ''}${cuped ? 'cuped=true' : ''}`), [exp.key, applied, exp.version, cuped]);
   const r = q.data;
   const ctrl = r?.variants.find((v) => v.variant === r.control);
   return (
@@ -141,6 +256,11 @@ function ResultsPanel({ exp }: { exp: Experiment }) {
             {r.srm && <> · sample ratio {r.srm.suspicious ? <Badge tone="bad">mismatch (p = {r.srm.p_value.toExponential(1)}) — assignment is skewed, do not trust these results</Badge> : <Badge tone="ok">ok (p = {r.srm.p_value.toFixed(2)})</Badge>}</>}
             <button className="btn ghost sm" style={{ marginLeft: 8 }} onClick={() => download(`/experiments/${encodeURIComponent(exp.key)}/results.csv`, `${exp.key}-results.csv`)}>Download CSV</button>
           </div>
+          <SequentialSummary metrics={r.metrics ?? []} control={r.control} />
+          <div className="row" style={{ alignItems: 'center', marginBottom: 8 }}>
+            <label className="hint" style={{ display: 'flex', gap: 6, alignItems: 'center' }}><input type="checkbox" checked={cuped} onChange={(e) => setCuped(e.target.checked)} /> CUPED (variance reduction from pre-experiment behaviour, count / sum / avg metrics)</label>
+          </div>
+          {cuped && r.cuped && <CupedTable rows={r.cuped} />}
 
           {r.metrics && r.metrics.length > 0 && (
 
@@ -187,6 +307,7 @@ export default function Experiments() {
       title="Experiments"
       path="/experiments"
       blurb="A/B tests with deterministic sticky assignment. Events are tagged with the active variant, so any event name can be used as a conversion metric."
+      above={<HoldoutsCard />}
       cols={[
         { h: 'Key', c: (e) => <><strong>{e.key}</strong><div className="hint">{e.name}</div></> },
         { h: 'Status', c: (e) => <Badge tone={TONE[e.status]}>{e.status}</Badge> },
@@ -225,6 +346,16 @@ export default function Experiments() {
             <Num label="Max participants" value={d.max_participants ?? null} onChange={(max_participants) => set({ max_participants: max_participants ?? null })} min={1} hint="blank = unlimited" />
             <Text label="Split key" value={d.split_key ?? 'identity'} onChange={(split_key) => set({ split_key })} mono hint="identity, or property:<path> e.g. property:custom.clan_id" />
           </div>
+          <div className="row">
+            <Text label="Layer" value={d.layer ?? ''} onChange={(v) => set({ layer: v || null })} mono hint="experiments in one layer are mutually exclusive; their traffic % must sum to ≤ 100" />
+            <HoldoutSelect value={d.holdout ?? null} onChange={(holdout) => set({ holdout })} />
+          </div>
+          <Field label="Guardrail metrics" hint="auto-pause when a variant drops below control by more than the limit (checked every minute)">
+            <GuardrailsEditor value={d.guardrails ?? []} onChange={(guardrails) => set({ guardrails })} />
+          </Field>
+          <Field label="Bandit allocation" hint="Thompson sampling re-weights variants towards the one most likely to be best on a conversion metric; assigned players stay sticky">
+            <BanditEditor value={d.bandit ?? null} onChange={(bandit) => set({ bandit })} />
+          </Field>
           <Field label="Metrics" hint="goal / monitor metrics from the catalog, evaluated per variant in results"><MetricsPicker value={d.metrics ?? []} onChange={(metrics) => set({ metrics })} /></Field>
           <Tags value={d.tags} onChange={(tags) => set({ tags })} />
         </>

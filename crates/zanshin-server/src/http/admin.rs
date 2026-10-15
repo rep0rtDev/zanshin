@@ -126,6 +126,11 @@ pub fn router() -> Router<AppState> {
             axum::routing::post(reset_experiment),
         )
         .route("/experiments/{key}/results", get(experiment_results))
+        .route("/holdouts", get(list_holdouts).post(create_holdout))
+        .route(
+            "/holdouts/{key}",
+            get(get_holdout).put(update_holdout).delete(delete_holdout),
+        )
         .route(
             "/experiments/{key}/results.csv",
             get(experiment_results_csv),
@@ -888,6 +893,74 @@ pub struct ResultsQuery {
     pub from: Option<chrono::DateTime<chrono::Utc>>,
     #[serde(default)]
     pub to: Option<chrono::DateTime<chrono::Utc>>,
+    /// Add CUPED variance-reduced estimates for count / sum / avg metrics.
+    #[serde(default)]
+    pub cuped: Option<bool>,
+    /// Pre-experiment covariate window in days (default 14).
+    #[serde(default)]
+    pub pre_days: Option<i64>,
+}
+
+// ---- holdouts -------------------------------------------------------------------------------
+
+async fn list_holdouts(
+    State(state): State<AppState>,
+    AdminAuth(_): AdminAuth,
+) -> ApiResult<Json<serde_json::Value>> {
+    let items = state.experiments.list_holdouts().await?;
+    Ok(Json(serde_json::json!({ "items": items })))
+}
+
+#[derive(Deserialize)]
+struct CreateHoldoutRequest {
+    key: String,
+    #[serde(flatten)]
+    patch: crate::services::experiments::HoldoutPatch,
+}
+
+async fn create_holdout(
+    State(state): State<AppState>,
+    AdminAuth(_): AdminAuth,
+    Json(req): Json<CreateHoldoutRequest>,
+) -> ApiResult<(
+    axum::http::StatusCode,
+    Json<zanshin_core::experiments::Holdout>,
+)> {
+    let h = state
+        .experiments
+        .create_holdout(&req.key, req.patch)
+        .await?;
+    Ok((axum::http::StatusCode::CREATED, Json(h)))
+}
+
+async fn get_holdout(
+    State(state): State<AppState>,
+    AdminAuth(_): AdminAuth,
+    Path(key): Path<String>,
+) -> ApiResult<Json<serde_json::Value>> {
+    let h = state.experiments.get_holdout(&key).await?;
+    let used_by = state.experiments.holdouts.used_by(&key).await?;
+    Ok(Json(
+        serde_json::json!({ "holdout": h, "used_by": used_by }),
+    ))
+}
+
+async fn update_holdout(
+    State(state): State<AppState>,
+    AdminAuth(_): AdminAuth,
+    Path(key): Path<String>,
+    Json(patch): Json<crate::services::experiments::HoldoutPatch>,
+) -> ApiResult<Json<zanshin_core::experiments::Holdout>> {
+    Ok(Json(state.experiments.update_holdout(&key, patch).await?))
+}
+
+async fn delete_holdout(
+    State(state): State<AppState>,
+    AdminAuth(_): AdminAuth,
+    Path(key): Path<String>,
+) -> ApiResult<Json<serde_json::Value>> {
+    state.experiments.delete_holdout(&key).await?;
+    Ok(Json(serde_json::json!({ "deleted": key })))
 }
 
 async fn experiment_results(
@@ -921,6 +994,21 @@ async fn experiment_results(
             q.to.unwrap_or_else(chrono::Utc::now),
         )
         .await;
+    let cuped = if q.cuped == Some(true) {
+        Some(
+            state
+                .metrics
+                .cuped_for_experiment(
+                    &exp,
+                    q.from.unwrap_or(exp.created_at),
+                    q.to.unwrap_or_else(chrono::Utc::now),
+                    q.pre_days.unwrap_or(14),
+                )
+                .await,
+        )
+    } else {
+        None
+    };
     let srm = zanshin_core::stats::srm(
         &exp.variants
             .iter()
@@ -942,6 +1030,11 @@ async fn experiment_results(
         "locked": exp.locked, "max_participants": exp.max_participants, "enrol_until": exp.enrol_until,
         "srm": srm,
         "metrics": catalog_metrics,
+        "cuped": cuped,
+        "layer": exp.layer,
+        "holdout": exp.holdout,
+        "guardrails": exp.guardrails,
+        "bandit": exp.bandit,
         "metric": metric.as_ref().map(|(m, _)| m.clone()),
         "variants": exp.variants.iter().map(|v| {
             let s = stats.iter().find(|s| s.variant == v.key);

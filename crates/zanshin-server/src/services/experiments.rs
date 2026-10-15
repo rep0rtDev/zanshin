@@ -6,13 +6,19 @@ use async_trait::async_trait;
 use serde::Deserialize;
 use uuid::Uuid;
 use zanshin_core::{
-    experiments::{default_split_key, Assignment, Experiment, ExperimentVariant, Status},
+    experiments::{
+        default_split_key, Assignment, BanditConfig, Experiment, ExperimentVariant, Guardrail,
+        Holdout, Status,
+    },
     flags::validate_key,
     properties::PropertyMap,
     rules::Condition,
     Error, Identity, Result,
 };
-use zanshin_store::experiments::{AssignmentRow, ExperimentRepo, VariantStats};
+use zanshin_store::{
+    experiments::{AssignmentRow, ExperimentRepo, VariantStats},
+    holdouts::HoldoutRepo,
+};
 
 use super::{
     bus::{ChangeBus, ChangeKind},
@@ -37,6 +43,15 @@ impl CatalogSource<Experiment> for ExperimentRepo {
     async fn get(&self, key: &str) -> Result<Experiment> {
         ExperimentRepo::get(self, key).await
     }
+}
+
+#[derive(Debug, Clone, Default, Deserialize)]
+pub struct HoldoutPatch {
+    pub name: Option<String>,
+    pub description: Option<String>,
+    pub percentage: Option<f64>,
+    pub salt: Option<String>,
+    pub enabled: Option<bool>,
 }
 
 #[derive(Debug, Clone, Default, Deserialize)]
@@ -82,6 +97,13 @@ pub struct ExperimentPatch {
     #[serde(default)]
     pub metrics: Option<Vec<String>>,
     #[serde(default, deserialize_with = "deserialize_double_option")]
+    pub layer: Option<Option<String>>,
+    #[serde(default, deserialize_with = "deserialize_double_option")]
+    pub holdout: Option<Option<String>>,
+    pub guardrails: Option<Vec<Guardrail>>,
+    #[serde(default, deserialize_with = "deserialize_double_option")]
+    pub bandit: Option<Option<BanditConfig>>,
+    #[serde(default, deserialize_with = "deserialize_double_option")]
     pub phase_of: Option<Option<String>>,
     #[serde(default, deserialize_with = "deserialize_double_option")]
     pub winner: Option<Option<String>>,
@@ -120,17 +142,157 @@ pub struct ExperimentService {
     bus: ChangeBus,
     events: super::events::EventService,
     pub catalog: Arc<Catalog<Experiment>>,
+    pub holdouts: HoldoutRepo,
 }
 
 impl ExperimentService {
-    pub fn new(repo: ExperimentRepo, bus: ChangeBus, events: super::events::EventService) -> Self {
+    pub fn new(
+        repo: ExperimentRepo,
+        holdouts: HoldoutRepo,
+        bus: ChangeBus,
+        events: super::events::EventService,
+    ) -> Self {
         let catalog = Catalog::new(ChangeKind::Experiment, "experiment", Arc::new(repo.clone()));
         Self {
             repo,
             bus,
             events,
             catalog,
+            holdouts,
         }
+    }
+
+    /// Start (0..100) of `exp`'s range inside its layer: the summed percentages of the other
+    /// non-stopped experiments in that layer created before it.
+    pub fn layer_offset(exp: &Experiment, all: &[Arc<Experiment>]) -> f64 {
+        let Some(layer) = exp.layer.as_deref() else {
+            return 0.0;
+        };
+        all.iter()
+            .filter(|o| {
+                o.layer.as_deref() == Some(layer)
+                    && o.key != exp.key
+                    && o.status != Status::Stopped
+                    && (o.created_at, &o.key) < (exp.created_at, &exp.key)
+            })
+            .map(|o| o.percentage)
+            .sum()
+    }
+
+    /// Reject a layer whose non-stopped experiments would exceed 100 % together.
+    async fn check_layer(&self, e: &Experiment) -> Result<()> {
+        let Some(layer) = e.layer.as_deref() else {
+            return Ok(());
+        };
+        if e.status == Status::Stopped {
+            return Ok(());
+        }
+        // Read storage, not the catalog: the catalog refreshes asynchronously and would miss an
+        // experiment created a moment ago.
+        let others: f64 = self
+            .repo
+            .list()
+            .await?
+            .iter()
+            .filter(|o| {
+                o.layer.as_deref() == Some(layer) && o.key != e.key && o.status != Status::Stopped
+            })
+            .map(|o| o.percentage)
+            .sum();
+        if others + e.percentage > 100.0 + 1e-9 {
+            return Err(Error::invalid(format!(
+                "layer {layer:?} is over-allocated: other experiments already take {others}%, this one asks for {}%",
+                e.percentage
+            )));
+        }
+        if let Some(h) = &e.holdout {
+            self.holdouts.get(h).await?;
+        }
+        Ok(())
+    }
+
+    /// Is this player kept out of `exp` by its holdout group?
+    async fn held_out(&self, exp: &Experiment, subject: &str) -> bool {
+        let Some(h) = exp.holdout.as_deref() else {
+            return false;
+        };
+        match self.holdouts.get(h).await {
+            Ok(h) => h.holds(subject),
+            Err(_) => false,
+        }
+    }
+
+    // ---- holdouts -----------------------------------------------------------------------------
+
+    pub async fn list_holdouts(&self) -> Result<Vec<Holdout>> {
+        self.holdouts.list().await
+    }
+
+    pub async fn get_holdout(&self, key: &str) -> Result<Holdout> {
+        self.holdouts.get(key).await
+    }
+
+    pub async fn create_holdout(&self, key: &str, p: HoldoutPatch) -> Result<Holdout> {
+        validate_key(key)?;
+        let h = Holdout {
+            key: key.to_string(),
+            name: p.name.unwrap_or_default(),
+            description: p.description.unwrap_or_default(),
+            percentage: p.percentage.unwrap_or(5.0),
+            salt: p
+                .salt
+                .unwrap_or_else(|| Uuid::now_v7().simple().to_string()),
+            enabled: p.enabled.unwrap_or(true),
+            version: 1,
+            created_at: chrono::Utc::now(),
+            updated_at: chrono::Utc::now(),
+        };
+        h.validate()?;
+        self.holdouts.create(&h).await
+    }
+
+    pub async fn update_holdout(&self, key: &str, p: HoldoutPatch) -> Result<Holdout> {
+        let mut h = self.holdouts.get(key).await?;
+        if let Some(v) = p.name {
+            h.name = v;
+        }
+        if let Some(v) = p.description {
+            h.description = v;
+        }
+        if let Some(v) = p.percentage {
+            h.percentage = v;
+        }
+        if let Some(v) = p.salt {
+            h.salt = v;
+        }
+        if let Some(v) = p.enabled {
+            h.enabled = v;
+        }
+        h.validate()?;
+        self.holdouts.update(&h).await
+    }
+
+    pub async fn delete_holdout(&self, key: &str) -> Result<()> {
+        let used = self.holdouts.used_by(key).await?;
+        if !used.is_empty() {
+            return Err(Error::conflict(format!(
+                "holdout {key:?} is referenced by experiments: {}",
+                used.join(", ")
+            )));
+        }
+        self.holdouts.delete(key).await
+    }
+
+    /// Experiments whose holdout group keeps this player out (for the identity page).
+    pub async fn holdouts_for(&self, subject: &str) -> Result<Vec<String>> {
+        Ok(self
+            .holdouts
+            .list()
+            .await?
+            .into_iter()
+            .filter(|h| h.holds(subject))
+            .map(|h| h.key)
+            .collect())
     }
 
     pub async fn list(&self) -> Vec<Arc<Experiment>> {
@@ -160,14 +322,26 @@ impl ExperimentService {
             return Ok(vec![]);
         }
         let existing = self.repo.assignments_for(identity.id).await?;
+        let all_for_layers = if candidates.iter().any(|e| e.layer.is_some()) {
+            self.catalog.list().await
+        } else {
+            Vec::new()
+        };
         let mut out = Vec::new();
         for exp in candidates {
             let variant_key = match existing.get(&exp.id) {
                 Some(v) => Some(v.clone()),
-                None if exp.is_enrolling(now) && self.has_capacity(&exp).await => {
-                    match exp.allocate(&identity.external_id, flat, &|k: &str| {
-                        audiences.contains(k)
-                    }) {
+                None if exp.is_enrolling(now)
+                    && self.has_capacity(&exp).await
+                    && !self.held_out(&exp, &identity.external_id).await =>
+                {
+                    let offset = Self::layer_offset(&exp, &all_for_layers);
+                    match exp.allocate_in_layer(
+                        &identity.external_id,
+                        flat,
+                        &|k: &str| audiences.contains(k),
+                        offset,
+                    ) {
                         Some(v) => {
                             let stored = self.repo.assign(exp.id, identity.id, &v.key).await?;
                             let mut meta = serde_json::Map::new();
@@ -297,6 +471,7 @@ impl ExperimentService {
         e.created_at = now;
         e.updated_at = now;
         e.validate()?;
+        self.check_layer(&e).await?;
         let created = self.repo.create(&e).await?;
         self.bus
             .publish(
@@ -410,11 +585,16 @@ impl ExperimentService {
             interrupted_at: None,
             interrupt_reason: String::new(),
             winner: p.winner.flatten(),
+            layer: p.layer.flatten(),
+            holdout: p.holdout.flatten(),
+            guardrails: p.guardrails.unwrap_or_default(),
+            bandit: p.bandit.flatten(),
             version: 1,
             created_at: now,
             updated_at: now,
         };
         e.validate()?;
+        self.check_layer(&e).await?;
         let created = self.repo.create(&e).await?;
         self.bus
             .publish(
@@ -445,6 +625,10 @@ impl ExperimentService {
                 && p.max_participants.is_none()
                 && p.enrol_until.is_none()
                 && p.metrics.is_none()
+                && p.layer.is_none()
+                && p.holdout.is_none()
+                && p.guardrails.is_none()
+                && p.bandit.is_none()
                 && p.phase_of.is_none();
             if !only_status {
                 return Err(Error::invalid(format!(
@@ -469,6 +653,18 @@ impl ExperimentService {
         }
         if let Some(v) = p.metrics {
             e.metrics = v;
+        }
+        if let Some(v) = p.layer {
+            e.layer = v;
+        }
+        if let Some(v) = p.holdout {
+            e.holdout = v;
+        }
+        if let Some(v) = p.guardrails {
+            e.guardrails = v;
+        }
+        if let Some(v) = p.bandit {
+            e.bandit = v;
         }
         if let Some(v) = p.phase_of {
             e.phase_of = v;
@@ -519,6 +715,7 @@ impl ExperimentService {
             e.tags = normalize_tags(v)?;
         }
         e.validate()?;
+        self.check_layer(&e).await?;
         let updated = self.repo.update(&e).await?;
         self.bus
             .publish(
