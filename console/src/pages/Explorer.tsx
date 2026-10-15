@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { del, get, post, put, useLoad } from '../api';
 import { Num, Text } from '../crud';
 import { Badge, ErrorBox, Field, Page, Table, Toggle, fmtDate, fmtNum } from '../ui';
+import { t } from '../i18n';
 
 type SqlResult = { columns: string[]; types: string[]; rows: unknown[][]; rows_read: number; elapsed_secs: number; truncated: boolean };
 type SavedQuery = { key: string; name: string; description: string; sql: string; tags: string[]; updated_at: string };
@@ -16,7 +17,7 @@ const LABEL: Record<(typeof TABS)[number], string> = { sql: 'SQL', queries: 'Sav
 export default function Explorer() {
   const [tab, setTab] = useState<(typeof TABS)[number]>('sql');
   return (
-    <Page title="Explorer">
+    <Page title={t('Explorer')}>
       <div className="tabs">{TABS.map((t) => <button key={t} className={tab === t ? 'active' : ''} onClick={() => setTab(t)}>{LABEL[t]}</button>)}</div>
       {tab === 'sql' && <Sql />}
       {tab === 'queries' && <Queries />}
@@ -56,19 +57,19 @@ function Sql() {
   const toCohort = () => post<{ audience: string; matched: number; members: number }>('/sql/cohort', { sql, audience_key: cohort }).then((d) => { setMsg(`${d.matched} players → audience ${d.audience} (${d.members} members)`); setErr(null); }, setErr);
   return (
     <div className="stack">
-      {st.data && !st.data.available && <div className="card"><Badge tone="warn">ClickHouse is not enabled</Badge> <span className="hint">The SQL explorer reads the ClickHouse <code>events</code> table; configure <code>clickhouse.enabled</code> to use it.</span></div>}
+      {st.data && !st.data.available && <div className="card"><Badge tone="warn">{t('ClickHouse is not enabled')}</Badge> <span className="hint">{t('The SQL explorer reads the ClickHouse') + ' '}<code>events</code> table; configure <code>clickhouse.enabled</code>{' ' + t('to use it.')}</span></div>}
       <div className="card">
-        <Field label="Read-only SQL" hint="single SELECT / WITH statement on `events`; readonly=2, 30 s, row cap">
+        <Field label={t('Read-only SQL')} hint="single SELECT / WITH statement on `events`; readonly=2, 30 s, row cap">
           <textarea className="mono" value={sql} onChange={(e) => setSql(e.target.value)} rows={8} style={{ width: '100%' }} spellCheck={false} />
         </Field>
         <div className="row" style={{ alignItems: 'end' }}>
-          <Num label="Row limit" value={limit} onChange={(v) => setLimit(v ?? 1000)} min={1} max={st.data?.max_rows ?? 10000} />
+          <Num label={t('Row limit')} value={limit} onChange={(v) => setLimit(v ?? 1000)} min={1} max={st.data?.max_rows ?? 10000} />
           <button className="btn" disabled={busy || !sql.trim()} onClick={run}>{busy ? 'Running…' : 'Run'}</button>
           <div className="row" style={{ marginLeft: 'auto', alignItems: 'end' }}>
-            <Text label="Save as" value={saveKey} onChange={setSaveKey} mono />
-            <button className="btn ghost sm" disabled={!saveKey} onClick={save}>Save query</button>
-            <Text label="Audience key" value={cohort} onChange={setCohort} mono />
-            <button className="btn ghost sm" disabled={!cohort} onClick={toCohort} title="The result must have an identity_id column">To audience</button>
+            <Text label={t('Save as')} value={saveKey} onChange={setSaveKey} mono />
+            <button className="btn ghost sm" disabled={!saveKey} onClick={save}>{t('Save query')}</button>
+            <Text label={t('Audience key')} value={cohort} onChange={setCohort} mono />
+            <button className="btn ghost sm" disabled={!cohort} onClick={toCohort} title={t('The result must have an identity_id column')}>{t('To audience')}</button>
           </div>
         </div>
         {msg && <div className="hint">{msg}</div>}
@@ -92,24 +93,24 @@ function Queries() {
       <Table<SavedQuery>
         rows={q.data?.items}
         rowKey={(s) => s.key}
-        empty="No saved queries — save one from the SQL tab."
+        empty={t('No saved queries — save one from the SQL tab.')}
         cols={[
           { h: 'Key', c: (s) => <strong className="mono">{s.key}</strong> },
           { h: 'Name', c: (s) => s.name },
           { h: 'SQL', c: (s) => <span className="mono hint" title={s.sql}>{s.sql.replace(/\s+/g, ' ').slice(0, 90)}</span> },
           { h: 'Updated', c: (s) => fmtDate(s.updated_at) },
-          { h: '', c: (s) => <span className="row"><button className="btn ghost sm" onClick={() => run(s.key)}>Run</button><button className="btn ghost sm" onClick={() => setEdit(s)}>Edit</button><button className="btn ghost sm" onClick={() => del(`/analytics/queries/${encodeURIComponent(s.key)}`).then(q.reload, setErr)}>Delete</button></span> },
+          { h: '', c: (s) => <span className="row"><button className="btn ghost sm" onClick={() => run(s.key)}>{t('Run')}</button><button className="btn ghost sm" onClick={() => setEdit(s)}>{t('Edit')}</button><button className="btn ghost sm" onClick={() => del(`/analytics/queries/${encodeURIComponent(s.key)}`).then(q.reload, setErr)}>{t('Delete')}</button></span> },
         ]}
       />
       {edit && (
         <div className="card stack">
           <strong className="mono">{edit.key}</strong>
-          <div className="row"><Text label="Name" value={edit.name} onChange={(name) => setEdit({ ...edit, name })} /><Text label="Description" value={edit.description} onChange={(description) => setEdit({ ...edit, description })} /></div>
-          <Field label="SQL"><textarea className="mono" rows={6} style={{ width: '100%' }} value={edit.sql} onChange={(e) => setEdit({ ...edit, sql: e.target.value })} spellCheck={false} /></Field>
-          <div className="row"><button className="btn" onClick={save}>Save</button><button className="btn ghost" onClick={() => setEdit(null)}>Cancel</button></div>
+          <div className="row"><Text label={t('Name')} value={edit.name} onChange={(name) => setEdit({ ...edit, name })} /><Text label={t('Description')} value={edit.description} onChange={(description) => setEdit({ ...edit, description })} /></div>
+          <Field label={t('SQL')}><textarea className="mono" rows={6} style={{ width: '100%' }} value={edit.sql} onChange={(e) => setEdit({ ...edit, sql: e.target.value })} spellCheck={false} /></Field>
+          <div className="row"><button className="btn" onClick={save}>{t('Save')}</button><button className="btn ghost" onClick={() => setEdit(null)}>{t('Cancel')}</button></div>
         </div>
       )}
-      {res && <><div className="hint">Result of <code>{res.key}</code></div><ResultTable r={res.r} /></>}
+      {res && <><div className="hint">{t('Result of') + ' '}<code>{res.key}</code></div><ResultTable r={res.r} /></>}
     </div>
   );
 }
@@ -126,12 +127,12 @@ function PathsView() {
   return (
     <div className="stack">
       <div className="card row" style={{ alignItems: 'end' }}>
-        <Text label="Anchor event" value={event} onChange={setEvent} mono />
-        <Field label="Direction"><select value={direction} onChange={(e) => setDirection(e.target.value as 'after' | 'before')}><option value="after">what happens after</option><option value="before">what led to it</option></select></Field>
-        <Num label="Steps" value={depth} onChange={(v) => setDepth(v ?? 3)} min={1} max={10} />
-        <Num label="Max gap (s)" value={gap} onChange={(v) => setGap(v ?? 1800)} min={1} />
-        <Num label="Last N days" value={days} onChange={(v) => setDays(v ?? 7)} min={1} max={90} />
-        <button className="btn" disabled={!event} onClick={run}>Analyse</button>
+        <Text label={t('Anchor event')} value={event} onChange={setEvent} mono />
+        <Field label={t('Direction')}><select value={direction} onChange={(e) => setDirection(e.target.value as 'after' | 'before')}><option value="after">{t('what happens after')}</option><option value="before">{t('what led to it')}</option></select></Field>
+        <Num label={t('Steps')} value={depth} onChange={(v) => setDepth(v ?? 3)} min={1} max={10} />
+        <Num label={t('Max gap (s)')} value={gap} onChange={(v) => setGap(v ?? 1800)} min={1} />
+        <Num label={t('Last N days')} value={days} onChange={(v) => setDays(v ?? 7)} min={1} max={90} />
+        <button className="btn" disabled={!event} onClick={run}>{t('Analyse')}</button>
       </div>
       <ErrorBox error={err} />
       {res && (
@@ -152,7 +153,7 @@ function PathsView() {
             ))}
           </div>
           <div className="card">
-            <strong>Top sequences</strong>
+            <strong>{t('Top sequences')}</strong>
             <Table<Paths['sequences'][number]> rows={res.sequences} rowKey={(s) => s.steps.join('>')} cols={[{ h: 'Path', c: (s) => <span className="mono">{s.steps.join(' → ')}</span> }, { h: 'Players', c: (s) => fmtNum(s.count), w: '100px' }, { h: 'Share', c: (s) => `${((s.count / Math.max(1, res.anchors)) * 100).toFixed(1)}%`, w: '80px' }]} />
           </div>
         </>
@@ -182,38 +183,38 @@ function Alerts() {
       <Table<Alert>
         rows={q.data?.items}
         rowKey={(a) => a.key}
-        empty="No metric alerts yet."
+        empty={t('No metric alerts yet.')}
         cols={[
           { h: 'Key', c: (a) => <strong className="mono">{a.key}</strong> },
           { h: 'Rule', c: (a) => <span>{a.aggregation}({a.event}{a.field ? `.${a.field}` : ''}) over {a.window_secs}s {a.condition.kind === 'anomaly' ? `anomaly z≥${a.condition.zscore}` : `${a.condition.kind} ${a.condition.threshold}`}</span> },
           { h: 'Last value', c: (a) => a.last_value === null ? '—' : fmtNum(a.last_value) },
           { h: 'Last fired', c: (a) => a.last_fired_at ? fmtDate(a.last_fired_at) : '—' },
           { h: 'State', c: (a) => <Badge tone={a.enabled ? 'ok' : 'muted'}>{a.enabled ? 'enabled' : 'disabled'}</Badge> },
-          { h: '', c: (a) => <span className="row"><button className="btn ghost sm" onClick={() => post<Record<string, unknown>>(`/analytics/alerts/${encodeURIComponent(a.key)}/check`, {}).then((d) => { setCheck(d); q.reload(); }, setErr)}>Check</button><button className="btn ghost sm" onClick={() => get<{ items: Fire[] }>(`/analytics/alerts/${encodeURIComponent(a.key)}/fires`).then((d) => setFires({ key: a.key, items: d.items }), setErr)}>History</button><button className="btn ghost sm" onClick={() => { setForm({ ...a }); setEditing(true); }}>Edit</button><button className="btn ghost sm" onClick={() => del(`/analytics/alerts/${encodeURIComponent(a.key)}`).then(q.reload, setErr)}>Delete</button></span> },
+          { h: '', c: (a) => <span className="row"><button className="btn ghost sm" onClick={() => post<Record<string, unknown>>(`/analytics/alerts/${encodeURIComponent(a.key)}/check`, {}).then((d) => { setCheck(d); q.reload(); }, setErr)}>{t('Check')}</button><button className="btn ghost sm" onClick={() => get<{ items: Fire[] }>(`/analytics/alerts/${encodeURIComponent(a.key)}/fires`).then((d) => setFires({ key: a.key, items: d.items }), setErr)}>{t('History')}</button><button className="btn ghost sm" onClick={() => { setForm({ ...a }); setEditing(true); }}>{t('Edit')}</button><button className="btn ghost sm" onClick={() => del(`/analytics/alerts/${encodeURIComponent(a.key)}`).then(q.reload, setErr)}>{t('Delete')}</button></span> },
         ]}
       />
       {check && <div className="card hint">Check: value {fmtNum(check.value as number)} · {check.fired ? 'fired' : check.suppressed ? 'condition met, suppressed by cooldown' : 'ok'}</div>}
-      {fires && <div className="card"><strong>Fires of <code>{fires.key}</code></strong><Table<Fire> rows={fires.items} rowKey={(f) => f.id} empty="Never fired." cols={[{ h: 'When', c: (f) => fmtDate(f.fired_at) }, { h: 'Value', c: (f) => fmtNum(f.value) }, { h: 'Baseline', c: (f) => f.baseline === null ? '—' : fmtNum(f.baseline) }, { h: 'Text', c: (f) => f.text }]} /></div>}
+      {fires && <div className="card"><strong>{t('Fires of') + ' '}<code>{fires.key}</code></strong><Table<Fire> rows={fires.items} rowKey={(f) => f.id} empty={t('Never fired.')} cols={[{ h: 'When', c: (f) => fmtDate(f.fired_at) }, { h: 'Value', c: (f) => fmtNum(f.value) }, { h: 'Baseline', c: (f) => f.baseline === null ? '—' : fmtNum(f.baseline) }, { h: 'Text', c: (f) => f.text }]} /></div>}
       <div className="card stack">
         <strong>{editing ? `Edit ${form.key}` : 'New alert'}</strong>
         <div className="row" style={{ alignItems: 'end' }}>
-          {!editing && <Text label="Key" value={form.key} onChange={(key) => setForm({ ...form, key })} mono />}
-          <Text label="Name" value={form.name} onChange={(name) => setForm({ ...form, name })} />
-          <Text label="Event" value={form.event} onChange={(event) => setForm({ ...form, event })} mono />
-          <Field label="Aggregation"><select value={form.aggregation} onChange={(e) => setForm({ ...form, aggregation: e.target.value as Alert['aggregation'] })}><option value="count">count</option><option value="unique">unique players</option><option value="sum">sum of field</option></select></Field>
-          {form.aggregation === 'sum' && <Text label="Metadata field" value={form.field} onChange={(field) => setForm({ ...form, field })} mono />}
-          <Num label="Window (s)" value={form.window_secs} onChange={(v) => setForm({ ...form, window_secs: v ?? 3600 })} min={60} />
-          <Num label="Cooldown (s)" value={form.cooldown_secs} onChange={(v) => setForm({ ...form, cooldown_secs: v ?? 3600 })} min={0} />
-          <Toggle label="Enabled" value={form.enabled} onChange={(enabled) => setForm({ ...form, enabled })} />
+          {!editing && <Text label={t('Key')} value={form.key} onChange={(key) => setForm({ ...form, key })} mono />}
+          <Text label={t('Name')} value={form.name} onChange={(name) => setForm({ ...form, name })} />
+          <Text label={t('Event')} value={form.event} onChange={(event) => setForm({ ...form, event })} mono />
+          <Field label={t('Aggregation')}><select value={form.aggregation} onChange={(e) => setForm({ ...form, aggregation: e.target.value as Alert['aggregation'] })}><option value="count">count</option><option value="unique">{t('unique players')}</option><option value="sum">{t('sum of field')}</option></select></Field>
+          {form.aggregation === 'sum' && <Text label={t('Metadata field')} value={form.field} onChange={(field) => setForm({ ...form, field })} mono />}
+          <Num label={t('Window (s)')} value={form.window_secs} onChange={(v) => setForm({ ...form, window_secs: v ?? 3600 })} min={60} />
+          <Num label={t('Cooldown (s)')} value={form.cooldown_secs} onChange={(v) => setForm({ ...form, cooldown_secs: v ?? 3600 })} min={0} />
+          <Toggle label={t('Enabled')} value={form.enabled} onChange={(enabled) => setForm({ ...form, enabled })} />
         </div>
         <div className="row" style={{ alignItems: 'end' }}>
-          <Field label="Condition"><select value={c.kind} onChange={(e) => setForm({ ...form, condition: e.target.value === 'anomaly' ? { kind: 'anomaly', zscore: 3, baseline_windows: 7, min_delta: 0 } : { kind: e.target.value as 'above' | 'below', threshold: 0 } })}><option value="below">below threshold</option><option value="above">above threshold</option><option value="anomaly">anomaly vs previous windows</option></select></Field>
-          {c.kind !== 'anomaly' && <Num label="Threshold" value={c.threshold} onChange={(v) => setForm({ ...form, condition: { kind: c.kind, threshold: v ?? 0 } })} />}
-          {c.kind === 'anomaly' && <><Num label="z-score" value={c.zscore} onChange={(v) => setForm({ ...form, condition: { ...c, zscore: v ?? 3 } })} min={0.5} /><Num label="Baseline windows" value={c.baseline_windows} onChange={(v) => setForm({ ...form, condition: { ...c, baseline_windows: v ?? 7 } })} min={3} max={60} /><Num label="Min delta" value={c.min_delta} onChange={(v) => setForm({ ...form, condition: { ...c, min_delta: v ?? 0 } })} min={0} /></>}
+          <Field label={t('Condition')}><select value={c.kind} onChange={(e) => setForm({ ...form, condition: e.target.value === 'anomaly' ? { kind: 'anomaly', zscore: 3, baseline_windows: 7, min_delta: 0 } : { kind: e.target.value as 'above' | 'below', threshold: 0 } })}><option value="below">{t('below threshold')}</option><option value="above">{t('above threshold')}</option><option value="anomaly">{t('anomaly vs previous windows')}</option></select></Field>
+          {c.kind !== 'anomaly' && <Num label={t('Threshold')} value={c.threshold} onChange={(v) => setForm({ ...form, condition: { kind: c.kind, threshold: v ?? 0 } })} />}
+          {c.kind === 'anomaly' && <><Num label="z-score" value={c.zscore} onChange={(v) => setForm({ ...form, condition: { ...c, zscore: v ?? 3 } })} min={0.5} /><Num label={t('Baseline windows')} value={c.baseline_windows} onChange={(v) => setForm({ ...form, condition: { ...c, baseline_windows: v ?? 7 } })} min={3} max={60} /><Num label={t('Min delta')} value={c.min_delta} onChange={(v) => setForm({ ...form, condition: { ...c, min_delta: v ?? 0 } })} min={0} /></>}
           <button className="btn" disabled={!form.key || !form.event} onClick={save}>{editing ? 'Save' : 'Create'}</button>
-          {editing && <button className="btn ghost" onClick={() => { setForm(blankAlert()); setEditing(false); }}>Cancel</button>}
+          {editing && <button className="btn ghost" onClick={() => { setForm(blankAlert()); setEditing(false); }}>{t('Cancel')}</button>}
         </div>
-        <div className="hint">Alerts are evaluated every minute by housekeeping and delivered to notification channels subscribed to <code>alert</code>.</div>
+        <div className="hint">{t('Alerts are evaluated every minute by housekeeping and delivered to notification channels subscribed to') + ' '}<code>alert</code>.</div>
       </div>
     </div>
   );
@@ -241,7 +242,7 @@ function Reports() {
       <Table<Report>
         rows={q.data?.items}
         rowKey={(r) => r.key}
-        empty="No scheduled reports yet."
+        empty={t('No scheduled reports yet.')}
         cols={[
           { h: 'Key', c: (r) => <strong className="mono">{r.key}</strong> },
           { h: 'Query', c: (r) => <span className="mono">{r.query_key}</span> },
@@ -249,27 +250,27 @@ function Reports() {
           { h: 'Delivery', c: (r) => <span className="hint">{r.channels.length ? r.channels.join(', ') : 'all report channels'}{r.email ? ` · email via ${r.email.integration} (${r.email.to.length})` : ''}</span> },
           { h: 'Last run', c: (r) => r.last_run_at ? <span>{fmtDate(r.last_run_at)} <Badge tone={r.last_status.startsWith('error') ? 'bad' : r.last_status === 'partial' ? 'warn' : 'ok'}>{r.last_status || 'ok'}</Badge></span> : '—' },
           { h: 'State', c: (r) => <Badge tone={r.enabled ? 'ok' : 'muted'}>{r.enabled ? 'enabled' : 'disabled'}</Badge> },
-          { h: '', c: (r) => <span className="row"><button className="btn ghost sm" onClick={() => post<Record<string, unknown>>(`/analytics/reports/${encodeURIComponent(r.key)}/run`, {}).then((d) => { setOut(d); setErr(null); q.reload(); }, setErr)}>Run now</button><button className="btn ghost sm" onClick={() => { setForm({ ...r }); setEmailOn(!!r.email); setEditing(true); }}>Edit</button><button className="btn ghost sm" onClick={() => del(`/analytics/reports/${encodeURIComponent(r.key)}`).then(q.reload, setErr)}>Delete</button></span> },
+          { h: '', c: (r) => <span className="row"><button className="btn ghost sm" onClick={() => post<Record<string, unknown>>(`/analytics/reports/${encodeURIComponent(r.key)}/run`, {}).then((d) => { setOut(d); setErr(null); q.reload(); }, setErr)}>{t('Run now')}</button><button className="btn ghost sm" onClick={() => { setForm({ ...r }); setEmailOn(!!r.email); setEditing(true); }}>{t('Edit')}</button><button className="btn ghost sm" onClick={() => del(`/analytics/reports/${encodeURIComponent(r.key)}`).then(q.reload, setErr)}>{t('Delete')}</button></span> },
         ]}
       />
       {out && <div className="card hint">Run: {String(out.status)} · {String(out.rows)} rows</div>}
       <div className="card stack">
         <strong>{editing ? `Edit ${form.key}` : 'New report'}</strong>
         <div className="row" style={{ alignItems: 'end' }}>
-          {!editing && <Text label="Key" value={form.key} onChange={(key) => setForm({ ...form, key })} mono />}
-          <Text label="Name" value={form.name} onChange={(name) => setForm({ ...form, name })} />
-          <Field label="Saved query"><select value={form.query_key} onChange={(e) => setForm({ ...form, query_key: e.target.value })}><option value="">—</option>{(queries.data?.items ?? []).map((s) => <option key={s.key} value={s.key}>{s.key}</option>)}</select></Field>
-          <Text label="Cron (sec min hour dom mon dow)" value={form.cron} onChange={(cron) => setForm({ ...form, cron })} mono />
-          <Text label="Timezone" value={form.timezone} onChange={(timezone) => setForm({ ...form, timezone })} mono />
-          <Num label="Rows" value={form.max_rows} onChange={(v) => setForm({ ...form, max_rows: v ?? 20 })} min={1} max={200} />
-          <Toggle label="Enabled" value={form.enabled} onChange={(enabled) => setForm({ ...form, enabled })} />
+          {!editing && <Text label={t('Key')} value={form.key} onChange={(key) => setForm({ ...form, key })} mono />}
+          <Text label={t('Name')} value={form.name} onChange={(name) => setForm({ ...form, name })} />
+          <Field label={t('Saved query')}><select value={form.query_key} onChange={(e) => setForm({ ...form, query_key: e.target.value })}><option value="">—</option>{(queries.data?.items ?? []).map((s) => <option key={s.key} value={s.key}>{s.key}</option>)}</select></Field>
+          <Text label={t('Cron (sec min hour dom mon dow)')} value={form.cron} onChange={(cron) => setForm({ ...form, cron })} mono />
+          <Text label={t('Timezone')} value={form.timezone} onChange={(timezone) => setForm({ ...form, timezone })} mono />
+          <Num label={t('Rows')} value={form.max_rows} onChange={(v) => setForm({ ...form, max_rows: v ?? 20 })} min={1} max={200} />
+          <Toggle label={t('Enabled')} value={form.enabled} onChange={(enabled) => setForm({ ...form, enabled })} />
         </div>
         <div className="row" style={{ alignItems: 'end' }}>
           <Text label="Notification channels (comma-separated keys, empty = all subscribed to `report`)" value={form.channels.join(', ')} onChange={(v) => setForm({ ...form, channels: v.split(',').map((x) => x.trim()).filter(Boolean) })} mono />
-          <Toggle label="Email" value={emailOn} onChange={setEmailOn} />
-          {emailOn && <><Text label="Email integration key" value={email.integration} onChange={(integration) => setForm({ ...form, email: { ...email, integration } })} mono /><Text label="Recipients (comma-separated)" value={email.to.join(', ')} onChange={(v) => setForm({ ...form, email: { ...email, to: v.split(',').map((x) => x.trim()).filter(Boolean) } })} mono /></>}
+          <Toggle label={t('Email')} value={emailOn} onChange={setEmailOn} />
+          {emailOn && <><Text label={t('Email integration key')} value={email.integration} onChange={(integration) => setForm({ ...form, email: { ...email, integration } })} mono /><Text label={t('Recipients (comma-separated)')} value={email.to.join(', ')} onChange={(v) => setForm({ ...form, email: { ...email, to: v.split(',').map((x) => x.trim()).filter(Boolean) } })} mono /></>}
           <button className="btn" disabled={!form.key || !form.query_key} onClick={save}>{editing ? 'Save' : 'Create'}</button>
-          {editing && <button className="btn ghost" onClick={() => { setForm(blankReport()); setEditing(false); }}>Cancel</button>}
+          {editing && <button className="btn ghost" onClick={() => { setForm(blankReport()); setEditing(false); }}>{t('Cancel')}</button>}
         </div>
       </div>
     </div>

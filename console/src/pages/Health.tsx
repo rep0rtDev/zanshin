@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { get, useLoad } from '../api';
 import { Badge, ErrorBox, Stat, Table, fmtDate } from '../ui';
+import { t } from '../i18n';
 
 type Comp = { ok: boolean; latency_ms?: number; error?: string | null };
 type Job = { name: string; interval_secs: number; stale: boolean; last_started_at?: string | null; last_finished_at?: string | null; last_seen_at?: string | null; last_ms: number; runs: number; skipped: number; last_error?: string | null };
@@ -40,10 +41,10 @@ export default function Health() {
     <div className="page">
       <div className="page-head">
         <h1>Health {h && <Badge tone={tone}>{h.status}</Badge>}</h1>
-        <p className="blurb">Is this deployment doing its background work? Dependencies, ingest queue, housekeeping jobs and every delivery channel in one place. Refreshes every 15 s.</p>
+        <p className="blurb">{t('Is this deployment doing its background work? Dependencies, ingest queue, housekeeping jobs and every delivery channel in one place. Refreshes every 15 s.')}</p>
         <div className="actions">
           <label className="check"><input type="checkbox" checked={auto} onChange={(e) => setAuto(e.target.checked)} /> auto-refresh</label>
-          <button onClick={() => setTick((n) => n + 1)}>Refresh</button>
+          <button onClick={() => setTick((n) => n + 1)}>{t('Refresh')}</button>
         </div>
       </div>
       <ErrorBox error={q.error} />
@@ -57,13 +58,13 @@ export default function Health() {
           )}
           <div className="grid c4 stats">
             <Stat label="uptime" value={dur(h.process.uptime_seconds)} sub={`v${h.process.version} · ${h.process.node_id.slice(0, 8)}${h.process.draining ? ' · draining' : ''}`} />
-            <Stat label="ingest queue" value={`${h.ingest.queue_depth} / ${h.ingest.queue_capacity}`} sub={`${h.ingest.sink} · ${h.ingest.dropped_total} dropped`} />
-            <Stat label="events (5 m / 1 h)" value={`${h.ingest.events_5m} / ${h.ingest.events_1h}`} sub={`${h.ingest.identities_1h} players in the last hour`} />
-            <Stat label="live streams" value={h.streams.websocket + h.streams.server_sdk} sub={`${h.streams.websocket} console · ${h.streams.server_sdk} server SDK`} />
+            <Stat label={t('ingest queue')} value={`${h.ingest.queue_depth} / ${h.ingest.queue_capacity}`} sub={`${h.ingest.sink} · ${h.ingest.dropped_total} dropped`} />
+            <Stat label={t('events (5 m / 1 h)')} value={`${h.ingest.events_5m} / ${h.ingest.events_1h}`} sub={`${h.ingest.identities_1h} players in the last hour`} />
+            <Stat label={t('live streams')} value={h.streams.websocket + h.streams.server_sdk} sub={`${h.streams.websocket} console · ${h.streams.server_sdk} server SDK`} />
           </div>
           <div className="grid c2">
             <section className="card">
-              <h2>Dependencies</h2>
+              <h2>{t('Dependencies')}</h2>
               <Table cols={[
                 { h: 'Service', c: (d) => <strong>{d.name}</strong> },
                 { h: 'Status', c: (d) => okBadge(d.c.ok) },
@@ -73,18 +74,18 @@ export default function Health() {
               <div className="hint" style={{ marginTop: 8 }}>Postgres pool: {h.dependencies.pool.size} open, {h.dependencies.pool.idle} idle, max {h.dependencies.pool.max}.</div>
             </section>
             <section className="card">
-              <h2>Webhooks <span className="count">{h.webhooks.enabled}/{h.webhooks.configured} enabled</span></h2>
+              <h2>{t('Webhooks') + ' '}<span className="count">{h.webhooks.enabled}/{h.webhooks.configured} enabled</span></h2>
               <div className="grid c4 stats">
                 <Stat label="pending" value={h.webhooks.deliveries.pending} />
                 <Stat label="retrying" value={h.webhooks.deliveries.retrying} />
-                <Stat label="sent 24 h" value={h.webhooks.deliveries.sent_24h} />
-                <Stat label="dead 24 h" value={h.webhooks.deliveries.dead_24h} />
+                <Stat label={t('sent 24 h')} value={h.webhooks.deliveries.sent_24h} />
+                <Stat label={t('dead 24 h')} value={h.webhooks.deliveries.dead_24h} />
               </div>
               <div className="hint">{h.webhooks.deliveries.oldest_pending_secs > 0 ? `Oldest undelivered: ${dur(h.webhooks.deliveries.oldest_pending_secs)}.` : 'No backlog.'}</div>
             </section>
           </div>
           <section className="card">
-            <h2>Housekeeping jobs <span className="count">this replica</span></h2>
+            <h2>{t('Housekeeping jobs') + ' '}<span className="count">{t('this replica')}</span></h2>
             <Table cols={[
               { h: 'Job', c: (j) => <strong>{j.name}</strong> },
               { h: 'State', c: (j) => j.last_error ? <Badge tone="bad">failed</Badge> : j.stale ? <Badge tone="warn">stale</Badge> : <Badge tone="ok">ok</Badge> },
@@ -93,10 +94,10 @@ export default function Health() {
               { h: 'Every', c: (j) => dur(j.interval_secs) },
               { h: 'Runs / skipped', c: (j) => `${j.runs} / ${j.skipped}` },
               { h: '', c: (j) => <span className="muted">{j.last_error ?? ''}</span> },
-            ]} rows={h.jobs} rowKey={(j) => j.name} empty="Housekeeping has not reported yet — first jobs run within a minute of start." />
+            ]} rows={h.jobs} rowKey={(j) => j.name} empty={t('Housekeeping has not reported yet — first jobs run within a minute of start.')} />
           </section>
           <section className="card">
-            <h2>Integrations</h2>
+            <h2>{t('Integrations')}</h2>
             <Table cols={[
               { h: 'Integration', c: (i) => <><strong>{i.name || i.key}</strong> <span className="muted">{i.kind}</span></> },
               { h: 'Enabled', c: (i) => okBadge(i.enabled, i.enabled ? 'on' : 'off') },
@@ -104,37 +105,37 @@ export default function Health() {
               { h: 'When', c: (i) => ago(i.last_at) },
               { h: 'Sent / failed', c: (i) => `${i.sent} / ${i.failed}` },
               { h: '', c: (i) => <span className="muted">{i.last_error ?? ''}</span> },
-            ]} rows={h.integrations} rowKey={(i) => i.key} empty="No integrations configured." />
+            ]} rows={h.integrations} rowKey={(i) => i.key} empty={t('No integrations configured.')} />
           </section>
           <div className="grid c2">
             <section className="card">
-              <h2>Export sinks</h2>
+              <h2>{t('Export sinks')}</h2>
               <Table cols={[
                 { h: 'Sink', c: (s) => <><strong>{s.name || s.key}</strong> <span className="muted">{s.kind}</span></> },
                 { h: 'Last run', c: (s) => s.last_status ? <Badge tone={statusTone(s.last_status)}>{s.last_status}</Badge> : <span className="muted">never</span> },
                 { h: 'When', c: (s) => ago(s.last_run_at) },
                 { h: 'Next', c: (s) => s.enabled ? fmtDate(s.next_run_at) : <span className="muted">disabled</span> },
-              ]} rows={h.exports} rowKey={(s) => s.key} empty="No export sinks." />
+              ]} rows={h.exports} rowKey={(s) => s.key} empty={t('No export sinks.')} />
             </section>
             <section className="card">
-              <h2>Scheduled reports</h2>
+              <h2>{t('Scheduled reports')}</h2>
               <Table cols={[
                 { h: 'Report', c: (r) => <strong>{r.name || r.key}</strong> },
                 { h: 'Cron', c: (r) => <code>{r.cron}</code> },
                 { h: 'Last run', c: (r) => r.last_status ? <Badge tone={statusTone(r.last_status)}>{r.last_status}</Badge> : <span className="muted">never</span> },
                 { h: 'When', c: (r) => ago(r.last_run_at) },
-              ]} rows={h.reports} rowKey={(r) => r.key} empty="No scheduled reports." />
+              ]} rows={h.reports} rowKey={(r) => r.key} empty={t('No scheduled reports.')} />
             </section>
           </div>
           <section className="card">
-            <h2>Metric alerts</h2>
+            <h2>{t('Metric alerts')}</h2>
             <Table cols={[
               { h: 'Alert', c: (a) => <><strong>{a.name || a.key}</strong> <span className="muted">{a.event}</span></> },
               { h: 'State', c: (a) => !a.enabled ? <Badge tone="muted">off</Badge> : a.firing ? <Badge tone="bad">firing</Badge> : <Badge tone="ok">quiet</Badge> },
               { h: 'Last value', c: (a) => a.last_value ?? '—' },
               { h: 'Checked', c: (a) => ago(a.last_checked_at) },
               { h: 'Last fired', c: (a) => ago(a.last_fired_at) },
-            ]} rows={h.alerts} rowKey={(a) => a.key} empty="No metric alerts." />
+            ]} rows={h.alerts} rowKey={(a) => a.key} empty={t('No metric alerts.')} />
           </section>
           <div className="hint">Checked {fmtDate(h.checked_at)} · {h.process.production ? 'production' : 'development'} mode · project {h.process.project}</div>
         </>

@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { get } from './api';
+import { t } from './i18n';
 
 export type Action = 'read' | 'write' | 'delete';
 export type Permissions = Record<string, Action[]>;
@@ -42,11 +43,11 @@ export function PermissionMatrix({ value, onChange, resources, actions, disabled
   const rows = ['*', ...resources];
   return (
     <table className="table compact perm-matrix">
-      <thead><tr><th>Resource</th>{actions.map((a) => <th key={a} style={{ textAlign: 'center' }}>{a}</th>)}</tr></thead>
+      <thead><tr><th>{t('Resource')}</th>{actions.map((a) => <th key={a} style={{ textAlign: 'center' }}>{a}</th>)}</tr></thead>
       <tbody>
         {rows.map((r) => (
           <tr key={r} className={r === '*' ? 'muted' : ''}>
-            <td>{r === '*' ? <em>everything else (*)</em> : (RESOURCE_TITLES[r] ?? r)}</td>
+            <td>{r === '*' ? <em>{t('everything else (*)')}</em> : (RESOURCE_TITLES[r] ?? r)}</td>
             {actions.map((a) => {
               const explicit = !!value[r]?.includes(a);
               const inherited = r !== '*' && !(r in value) && allows(value, r, a);
@@ -66,11 +67,11 @@ export function PermissionMatrix({ value, onChange, resources, actions, disabled
 /** Archetype picker + matrix; picking a preset replaces the matrix, editing the matrix clears the preset. */
 export function PermissionEditor({ archetype, permissions, onChange, disabled }: { archetype: string | null; permissions: Permissions; onChange: (a: string | null, p: Permissions) => void; disabled?: boolean }) {
   const cat = useCatalog();
-  if (!cat) return <div className="hint">Loading permission catalog…</div>;
+  if (!cat) return <div className="hint">{t('Loading permission catalog…')}</div>;
   return (
     <div className="stack">
       <label className="field">
-        <span className="label">Preset</span>
+        <span className="label">{t('Preset')}</span>
         <select value={archetype ?? ''} disabled={disabled} onChange={(e) => { const a = cat.archetypes.find((x) => x.name === e.target.value); onChange(a ? a.name : null, a ? a.permissions : permissions); }}>
           <option value="">custom</option>
           {cat.archetypes.map((a) => <option key={a.name} value={a.name}>{a.title} — {a.description}</option>)}

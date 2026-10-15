@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { get, qs, useLoad } from '../api';
 import { ErrorBox, Page, Table, fmtNum } from '../ui';
+import { t } from '../i18n';
 
 type Names = { backend: string; from: string; to: string; names: { name: string; count: number; identities: number }[] };
 type Bucket = { bucket: string; count: number; identities: number };
@@ -16,7 +17,7 @@ function useSeries(names: string[], from: string, g: string) {
 function Chart({ series, mode }: { series: Series[]; mode: 'count' | 'identities' }) {
   const [hover, setHover] = useState<number | null>(null);
   const base = series[0]?.buckets ?? [];
-  if (!base.length) return <div className="muted empty">No events in this range</div>;
+  if (!base.length) return <div className="muted empty">{t('No events in this range')}</div>;
   const n = base.length;
   const val = (s: Series, i: number) => s.buckets[i]?.[mode] ?? 0;
   const max = Math.max(1, ...series.flatMap((s) => s.buckets.map((b) => b[mode])));
@@ -67,7 +68,7 @@ export default function Analytics() {
   const totals = (series.data ?? []).map((s) => s.buckets.reduce((a, b) => a + b[mode], 0));
   const maxCount = Math.max(1, ...(list.data?.names.map((x) => x.count) ?? [1]));
   return (
-    <Page title="Analytics" actions={
+    <Page title={t('Analytics')} actions={
       <>
         <div className="tabs" style={{ border: 0, margin: 0 }}>{(['count', 'identities'] as const).map((m) => <button key={m} className={mode === m ? 'active' : ''} onClick={() => setMode(m)}>{m === 'count' ? 'events' : 'unique identities'}</button>)}</div>
         <div className="tabs" style={{ border: 0, margin: 0 }}>{RANGES.map(([l, d]) => <button key={l} className={days === d ? 'active' : ''} onClick={() => setDays(d)}>{l}</button>)}</div>
@@ -76,7 +77,7 @@ export default function Analytics() {
       <ErrorBox error={list.error ?? series.error} />
       <div className="card">
         <div className="legend">
-          {names.map((n, i) => <button key={n} className="chip on" style={{ background: COLORS[i % COLORS.length], borderColor: COLORS[i % COLORS.length], color: i === 0 ? 'var(--bg)' : '#fff' }} onClick={() => toggle(n)} title="remove from chart">{n} · {fmtNum(totals[i] ?? 0)}</button>)}
+          {names.map((n, i) => <button key={n} className="chip on" style={{ background: COLORS[i % COLORS.length], borderColor: COLORS[i % COLORS.length], color: i === 0 ? 'var(--bg)' : '#fff' }} onClick={() => toggle(n)} title={t('remove from chart')}>{n} · {fmtNum(totals[i] ?? 0)}</button>)}
           <span className="hint">per {g} · backend {list.data?.backend ?? '…'} · click rows below to compare up to 4 events</span>
         </div>
         {series.data && <Chart series={series.data} mode={mode} />}
@@ -85,7 +86,7 @@ export default function Analytics() {
         rows={list.data?.names}
         rowKey={(n) => n.name}
         onRow={(n) => toggle(n.name)}
-        empty="No events in this range"
+        empty={t('No events in this range')}
         cols={[
           { h: 'Event', c: (n) => <code style={{ fontWeight: names.includes(n.name) ? 700 : 400 }}>{names.includes(n.name) && <span style={{ color: COLORS[names.indexOf(n.name) % COLORS.length] }}>● </span>}{n.name}</code> },
           { h: 'Events', c: (n) => fmtNum(n.count) },
@@ -94,7 +95,7 @@ export default function Analytics() {
           { h: '', c: (n) => <div className="bar"><i style={{ width: `${(n.count / maxCount) * 100}%` }} /></div> },
         ]}
       />
-      <p className="hint">Names starting with <code>$</code> are reserved server events ($authenticate, $grant, $expose, …).</p>
+      <p className="hint">{t('Names starting with') + ' '}<code>$</code>{' ' + t('are reserved server events ($authenticate, $grant, $expose, …).')}</p>
     </Page>
   );
 }

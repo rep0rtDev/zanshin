@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { del, get, post, useLoad } from '../api';
 import { EntityPage, Num, Tags, Text } from '../crud';
 import { ErrorBox, Field, JsonField, Page, Table, fmtDate, fmtNum } from '../ui';
+import { t } from '../i18n';
 
 type Sink = { id: string; key: string; name: string; kind: 'http' | 's3' | 'bigquery' | 'snowflake' | 'redshift'; config: Record<string, unknown>; format: 'jsonl' | 'csv' | 'parquet'; gzip: boolean; enabled: boolean; events: string[]; interval_secs: number; batch_size: number; cursor_at: string | null; last_run_at: string | null; last_error: string; tags: string[]; version: number; updated_at: string };
 type Run = { id: string; started_at: string; finished_at: string | null; status: string; rows: number; bytes: number; object: string; error: string };
@@ -23,16 +24,16 @@ function SinkRuns({ s }: { s: Sink }) {
   return (
     <div className="card">
       <div className="row" style={{ alignItems: 'center' }}>
-        <strong>Runs</strong>
+        <strong>{t('Runs')}</strong>
         <span className="hint">cursor {s.cursor_at ? fmtDate(s.cursor_at) : 'start'} · last run {s.last_run_at ? fmtDate(s.last_run_at) : '—'}</span>
-        <button className="btn sm" onClick={() => act('run')}>Run now</button>
-        <button className="btn ghost sm" onClick={() => act('test')}>Send test</button>
-        <button className="btn ghost sm" onClick={() => act('reset-cursor')}>Reset cursor</button>
+        <button className="btn sm" onClick={() => act('run')}>{t('Run now')}</button>
+        <button className="btn ghost sm" onClick={() => act('test')}>{t('Send test')}</button>
+        <button className="btn ghost sm" onClick={() => act('reset-cursor')}>{t('Reset cursor')}</button>
       </div>
       {s.last_error && <ErrorBox error={new Error(s.last_error)} />}
       <ErrorBox error={err ?? q.error} />
       {msg && <pre className="mono hint" style={{ whiteSpace: 'pre-wrap' }}>{msg}</pre>}
-      <Table<Run> rows={q.data?.items} rowKey={(r) => r.id} empty="No runs yet" cols={[
+      <Table<Run> rows={q.data?.items} rowKey={(r) => r.id} empty={t('No runs yet')} cols={[
         { h: 'Started', c: (r) => fmtDate(r.started_at) }, { h: 'Status', c: (r) => <code>{r.status}</code> }, { h: 'Rows', c: (r) => fmtNum(r.rows) },
         { h: 'Bytes', c: (r) => fmtNum(r.bytes) }, { h: 'Object', c: (r) => <span className="mono">{r.object}</span> }, { h: 'Error', c: (r) => r.error },
       ]} />
@@ -43,31 +44,31 @@ function SinkRuns({ s }: { s: Sink }) {
 function Sinks() {
   return (
     <EntityPage<Sink>
-      title="Export sinks"
+      title={t('Export sinks')}
       path="/export-sinks"
       blurb="Ship raw events to S3-compatible storage (JSONL / CSV / Parquet, optionally one object per event), an HTTP endpoint, BigQuery streaming, Snowflake (stage + COPY INTO) or Redshift (S3 + COPY). Rejected events carry `_error`. Each sink keeps its own cursor and run log."
       cols={[{ h: 'Key', c: (s) => <><strong>{s.key}</strong><div className="hint">{s.name}</div></> }, { h: 'Kind', c: (s) => <code>{s.kind}</code> }, { h: 'Every', c: (s) => `${s.interval_secs}s` }, { h: 'Last run', c: (s) => s.last_run_at ? fmtDate(s.last_run_at) : '—' }, { h: 'State', c: (s) => s.last_error ? <span style={{ color: 'var(--danger)' }}>error</span> : s.enabled ? 'on' : 'off' }]}
       blank={() => ({ key: '', name: '', kind: 'http', config: {}, format: 'jsonl', gzip: true, enabled: true, events: [], interval_secs: 300, batch_size: 10000, tags: [] })}
       form={(s, set, isNew) => (
         <>
-          <div className="row"><Text label="Key" value={s.key} onChange={(key) => set({ key })} disabled={!isNew} mono /><Text label="Name" value={s.name} onChange={(name) => set({ name })} /></div>
+          <div className="row"><Text label={t('Key')} value={s.key} onChange={(key) => set({ key })} disabled={!isNew} mono /><Text label={t('Name')} value={s.name} onChange={(name) => set({ name })} /></div>
           <div className="row">
-            <Field label="Kind"><select value={s.kind ?? 'http'} onChange={(e) => set({ kind: e.target.value as Sink['kind'], config: {} })}><option value="http">HTTP endpoint</option><option value="s3">S3 / compatible</option><option value="snowflake">Snowflake</option><option value="redshift">Redshift</option><option value="bigquery">BigQuery</option></select></Field>
-            <Field label="Format"><select value={s.format ?? 'jsonl'} onChange={(e) => set({ format: e.target.value as Sink['format'] })} disabled={s.kind === 'bigquery'}><option value="jsonl">JSON lines</option><option value="csv">CSV</option><option value="parquet">Parquet (snappy)</option></select></Field>
+            <Field label={t('Kind')}><select value={s.kind ?? 'http'} onChange={(e) => set({ kind: e.target.value as Sink['kind'], config: {} })}><option value="http">{t('HTTP endpoint')}</option><option value="s3">{t('S3 / compatible')}</option><option value="snowflake">{t('Snowflake')}</option><option value="redshift">{t('Redshift')}</option><option value="bigquery">{t('BigQuery')}</option></select></Field>
+            <Field label={t('Format')}><select value={s.format ?? 'jsonl'} onChange={(e) => set({ format: e.target.value as Sink['format'] })} disabled={s.kind === 'bigquery'}><option value="jsonl">{t('JSON lines')}</option><option value="csv">{t('CSV')}</option><option value="parquet">{t('Parquet (snappy)')}</option></select></Field>
             <Field label="gzip"><input type="checkbox" checked={s.gzip ?? true} onChange={(e) => set({ gzip: e.target.checked })} disabled={s.format === 'parquet'} /></Field>
-            {s.kind !== 'http' && s.kind !== 'bigquery' && <Field label="Object per event"><input type="checkbox" checked={(s.config ?? {}).partition === 'event'} onChange={(e) => set({ config: { ...(s.config ?? {}), partition: e.target.checked ? 'event' : 'none' } })} /></Field>}
-            <Field label="Enabled"><input type="checkbox" checked={s.enabled ?? true} onChange={(e) => set({ enabled: e.target.checked })} /></Field>
+            {s.kind !== 'http' && s.kind !== 'bigquery' && <Field label={t('Object per event')}><input type="checkbox" checked={(s.config ?? {}).partition === 'event'} onChange={(e) => set({ config: { ...(s.config ?? {}), partition: e.target.checked ? 'event' : 'none' } })} /></Field>}
+            <Field label={t('Enabled')}><input type="checkbox" checked={s.enabled ?? true} onChange={(e) => set({ enabled: e.target.checked })} /></Field>
           </div>
           <div className="row">
             {KIND_FIELDS[s.kind ?? 'http'].map(([k, l]) => <Text key={k} label={l} value={((s.config ?? {})[k] as string) ?? ''} onChange={(v) => set({ config: { ...(s.config ?? {}), [k]: v } })} mono />)}
           </div>
-          {s.kind === 'snowflake' && <Field label="Private key (PEM, key-pair auth)"><textarea rows={4} value={((s.config ?? {}).private_key as string) ?? ''} onChange={(e) => set({ config: { ...(s.config ?? {}), private_key: e.target.value } })} /></Field>}
-          {s.kind === 'bigquery' && <Field label="Service account JSON"><JsonField value={((s.config ?? {}).service_account as object) ?? {}} onChange={(service_account) => set({ config: { ...(s.config ?? {}), service_account } })} rows={4} /></Field>}
-          {s.kind === 'http' && <Field label="Extra headers (JSON object)"><JsonField value={((s.config ?? {}).headers as object) ?? {}} onChange={(headers) => set({ config: { ...(s.config ?? {}), headers } })} rows={2} /></Field>}
+          {s.kind === 'snowflake' && <Field label={t('Private key (PEM, key-pair auth)')}><textarea rows={4} value={((s.config ?? {}).private_key as string) ?? ''} onChange={(e) => set({ config: { ...(s.config ?? {}), private_key: e.target.value } })} /></Field>}
+          {s.kind === 'bigquery' && <Field label={t('Service account JSON')}><JsonField value={((s.config ?? {}).service_account as object) ?? {}} onChange={(service_account) => set({ config: { ...(s.config ?? {}), service_account } })} rows={4} /></Field>}
+          {s.kind === 'http' && <Field label={t('Extra headers (JSON object)')}><JsonField value={((s.config ?? {}).headers as object) ?? {}} onChange={(headers) => set({ config: { ...(s.config ?? {}), headers } })} rows={2} /></Field>}
           <div className="row">
             <Text label="Events (comma-separated, empty = all)" value={(s.events ?? []).join(',')} onChange={(v) => set({ events: v.split(',').map((x) => x.trim()).filter(Boolean) })} mono />
-            <Num label="Interval (s)" value={s.interval_secs ?? 300} onChange={(v) => set({ interval_secs: v ?? 300 })} min={30} />
-            <Num label="Batch size" value={s.batch_size ?? 10000} onChange={(v) => set({ batch_size: v ?? 10000 })} min={1} max={100000} />
+            <Num label={t('Interval (s)')} value={s.interval_secs ?? 300} onChange={(v) => set({ interval_secs: v ?? 300 })} min={30} />
+            <Num label={t('Batch size')} value={s.batch_size ?? 10000} onChange={(v) => set({ batch_size: v ?? 10000 })} min={1} max={100000} />
           </div>
           <Tags value={s.tags ?? []} onChange={(tags) => set({ tags })} />
         </>
@@ -100,23 +101,23 @@ function ConfigTab() {
   return (
     <div className="stack">
       <div className="card">
-        <strong>Export</strong>
+        <strong>{t('Export')}</strong>
         <p className="hint">Download the whole configuration ({kinds.data?.kinds.join(', ')}) as one JSON bundle. Volatile fields (ids, versions, timestamps) are stripped so bundles can move between servers.</p>
-        <button className="btn" onClick={download}>Download bundle</button>
+        <button className="btn" onClick={download}>{t('Download bundle')}</button>
       </div>
       <div className="card stack">
-        <strong>Import</strong>
+        <strong>{t('Import')}</strong>
         <div className="row" style={{ alignItems: 'end' }}>
-          <Field label="Bundle file"><input type="file" accept="application/json" onChange={(e) => onFile(e.target.files?.[0])} /></Field>
-          <Field label="Mode"><select value={mode} onChange={(e) => setMode(e.target.value as 'merge' | 'replace')}><option value="merge">Merge (create + update)</option><option value="replace">Replace (also delete entities missing from the bundle)</option></select></Field>
-          <button className="btn ghost" disabled={!bundle} onClick={runDiff}>Preview diff</button>
-          <button className="btn" disabled={!bundle} onClick={() => runImport(false)}>Import</button>
+          <Field label={t('Bundle file')}><input type="file" accept="application/json" onChange={(e) => onFile(e.target.files?.[0])} /></Field>
+          <Field label={t('Mode')}><select value={mode} onChange={(e) => setMode(e.target.value as 'merge' | 'replace')}><option value="merge">{t('Merge (create + update)')}</option><option value="replace">{t('Replace (also delete entities missing from the bundle)')}</option></select></Field>
+          <button className="btn ghost" disabled={!bundle} onClick={runDiff}>{t('Preview diff')}</button>
+          <button className="btn" disabled={!bundle} onClick={() => runImport(false)}>{t('Import')}</button>
         </div>
         <div className="row" style={{ alignItems: 'end' }}>
-          <Text label="Or import from another server (base URL)" value={remote.url} onChange={(url) => setRemote({ ...remote, url })} mono placeholder="https://staging.example.com" />
-          <Text label="Its admin key" value={remote.admin_key} onChange={(admin_key) => setRemote({ ...remote, admin_key })} mono />
-          <button className="btn ghost" disabled={!remote.url || !remote.admin_key} onClick={() => importFrom(true)}>Dry run</button>
-          <button className="btn" disabled={!remote.url || !remote.admin_key} onClick={() => importFrom(false)}>Import</button>
+          <Text label={t('Or import from another server (base URL)')} value={remote.url} onChange={(url) => setRemote({ ...remote, url })} mono placeholder="https://staging.example.com" />
+          <Text label={t('Its admin key')} value={remote.admin_key} onChange={(admin_key) => setRemote({ ...remote, admin_key })} mono />
+          <button className="btn ghost" disabled={!remote.url || !remote.admin_key} onClick={() => importFrom(true)}>{t('Dry run')}</button>
+          <button className="btn" disabled={!remote.url || !remote.admin_key} onClick={() => importFrom(false)}>{t('Import')}</button>
         </div>
         <ErrorBox error={err} />
         {diff && (
@@ -136,16 +137,16 @@ function ConfigTab() {
         {result != null && <pre className="mono hint" style={{ whiteSpace: 'pre-wrap', maxHeight: 240, overflow: 'auto' }}>{JSON.stringify(result, null, 2)}</pre>}
       </div>
       <div className="card stack">
-        <strong>Promote to another environment</strong>
-        <p className="hint">Push this project's configuration into another server (dev → staging → prod) using the import mode above. Preview first: the plan is computed on the target and nothing changes.</p>
+        <strong>{t('Promote to another environment')}</strong>
+        <p className="hint">{t('Push this project\'s configuration into another server (dev → staging → prod) using the import mode above. Preview first: the plan is computed on the target and nothing changes.')}</p>
         <div className="row" style={{ alignItems: 'end' }}>
-          <Text label="Target server URL" value={target.url} onChange={(url) => setTarget({ ...target, url })} mono />
-          <Text label="Target admin key" value={target.admin_key} onChange={(admin_key) => setTarget({ ...target, admin_key })} mono />
-          <Text label="Target project (optional)" value={target.project} onChange={(project) => setTarget({ ...target, project })} mono />
-          <button className="btn ghost" disabled={!target.url || !target.admin_key} onClick={() => promote(true)}>Preview plan</button>
-          <button className="btn" disabled={!target.url || !target.admin_key} onClick={() => promote(false)}>Promote</button>
+          <Text label={t('Target server URL')} value={target.url} onChange={(url) => setTarget({ ...target, url })} mono />
+          <Text label={t('Target admin key')} value={target.admin_key} onChange={(admin_key) => setTarget({ ...target, admin_key })} mono />
+          <Text label={t('Target project (optional)')} value={target.project} onChange={(project) => setTarget({ ...target, project })} mono />
+          <button className="btn ghost" disabled={!target.url || !target.admin_key} onClick={() => promote(true)}>{t('Preview plan')}</button>
+          <button className="btn" disabled={!target.url || !target.admin_key} onClick={() => promote(false)}>{t('Promote')}</button>
         </div>
-        <div className="hint">Same thing from CI: <code>zanshinctl config promote --to … --to-key …</code>, or keep configuration in git with <code>zanshinctl config pull / apply / drift</code> and the <code>zanshin-apply</code> GitHub Action.</div>
+        <div className="hint">{t('Same thing from CI:') + ' '}<code>zanshinctl config promote --to … --to-key …</code>, or keep configuration in git with <code>zanshinctl config pull / apply / drift</code> and the <code>zanshin-apply</code>{' ' + t('GitHub Action.')}</div>
       </div>
     </div>
   );
@@ -160,13 +161,13 @@ function HistoryTab() {
   const revert = (id: string) => post(`/config/history/${id}/revert`, {}).then(() => { setErr(null); q.reload(); }, setErr);
   return (
     <div className="stack">
-      <p className="hint">Every configuration change is snapshotted. Revert restores an entity to how it looked in that snapshot (or deletes it again if the snapshot is a deletion).</p>
-      <div className="row" style={{ alignItems: 'end' }}><Text label="Kind" value={kind} onChange={setKind} mono placeholder="flags" /><Text label="Key" value={key} onChange={setKey} mono /></div>
+      <p className="hint">{t('Every configuration change is snapshotted. Revert restores an entity to how it looked in that snapshot (or deletes it again if the snapshot is a deletion).')}</p>
+      <div className="row" style={{ alignItems: 'end' }}><Text label={t('Kind')} value={kind} onChange={setKind} mono placeholder="flags" /><Text label={t('Key')} value={key} onChange={setKey} mono /></div>
       <ErrorBox error={err ?? q.error} />
-      <Table<Snapshot> rows={q.data?.items} rowKey={(s) => s.id} empty="No history yet" cols={[
+      <Table<Snapshot> rows={q.data?.items} rowKey={(s) => s.id} empty={t('No history yet')} cols={[
         { h: 'When', c: (s) => fmtDate(s.at) }, { h: 'Kind', c: (s) => <code>{s.kind}</code> }, { h: 'Key', c: (s) => <strong>{s.key}</strong> },
         { h: 'Change', c: (s) => s.deleted ? <span style={{ color: 'var(--danger)' }}>deleted</span> : `v${s.version}${s.actor ? ` · ${s.actor}` : ''}` },
-        { h: '', c: (s) => <span className="row"><button className="btn ghost sm" onClick={() => setOpen(open === s.id ? null : s.id)}>{open === s.id ? 'Hide' : 'Show'}</button><button className="btn sm" onClick={() => revert(s.id)}>Revert to this</button></span> },
+        { h: '', c: (s) => <span className="row"><button className="btn ghost sm" onClick={() => setOpen(open === s.id ? null : s.id)}>{open === s.id ? 'Hide' : 'Show'}</button><button className="btn sm" onClick={() => revert(s.id)}>{t('Revert to this')}</button></span> },
       ]} />
       {open && <pre className="mono hint" style={{ whiteSpace: 'pre-wrap', maxHeight: 320, overflow: 'auto' }}>{JSON.stringify(q.data?.items.find((s) => s.id === open)?.body, null, 2)}</pre>}
     </div>
@@ -183,34 +184,34 @@ function ToolsTab() {
   return (
     <div className="stack">
       <div className="card">
-        <strong>Sample data</strong>
-        <p className="hint">Generate a deterministic population (sessions, level-ups, purchases, retention decay) to try out analytics on an empty server. Players get external ids <code>sample-&lt;seed&gt;-N</code> and <code>custom.sample = true</code>.</p>
+        <strong>{t('Sample data')}</strong>
+        <p className="hint">{t('Generate a deterministic population (sessions, level-ups, purchases, retention decay) to try out analytics on an empty server. Players get external ids') + ' '}<code>sample-&lt;seed&gt;-N</code> and <code>custom.sample = true</code>.</p>
         <div className="row" style={{ alignItems: 'end' }}>
-          <Num label="Players" value={sample.players} onChange={(v) => setSample({ ...sample, players: v ?? 1 })} min={1} max={5000} />
-          <Num label="Days" value={sample.days} onChange={(v) => setSample({ ...sample, days: v ?? 1 })} min={1} max={90} />
-          <Num label="Seed" value={sample.seed} onChange={(v) => setSample({ ...sample, seed: v ?? 0 })} min={0} />
-          <button className="btn" onClick={() => show(post('/data/sample', sample))}>Generate</button>
+          <Num label={t('Players')} value={sample.players} onChange={(v) => setSample({ ...sample, players: v ?? 1 })} min={1} max={5000} />
+          <Num label={t('Days')} value={sample.days} onChange={(v) => setSample({ ...sample, days: v ?? 1 })} min={1} max={90} />
+          <Num label={t('Seed')} value={sample.seed} onChange={(v) => setSample({ ...sample, seed: v ?? 0 })} min={0} />
+          <button className="btn" onClick={() => show(post('/data/sample', sample))}>{t('Generate')}</button>
         </div>
       </div>
       <div className="card">
-        <strong>Default data</strong>
-        <p className="hint">Out-of-the-box audiences (Tier-1-Countries, Spenders, Whales, New-Players, Lapsed-Players, iOS / Android…) and metrics (Active-Users, Sessions, Revenue, Purchases…). Only missing ones are created — safe to run again after deleting some.</p>
-        <button className="btn ghost" onClick={() => show(post('/data/defaults'))}>Restore default audiences & metrics</button>
+        <strong>{t('Default data')}</strong>
+        <p className="hint">{t('Out-of-the-box audiences (Tier-1-Countries, Spenders, Whales, New-Players, Lapsed-Players, iOS / Android…) and metrics (Active-Users, Sessions, Revenue, Purchases…). Only missing ones are created — safe to run again after deleting some.')}</p>
+        <button className="btn ghost" onClick={() => show(post('/data/defaults'))}>{t('Restore default audiences & metrics')}</button>
       </div>
       <div className="card">
-        <strong>Player data (GDPR)</strong>
+        <strong>{t('Player data (GDPR)')}</strong>
         <div className="row" style={{ alignItems: 'end' }}>
-          <Text label="Identity id" value={pid} onChange={setPid} mono />
-          <button className="btn ghost" disabled={!pid} onClick={() => show(get(`/data/identities/${pid}/takeout`))}>Takeout (JSON)</button>
-          <button className="btn danger" disabled={!pid} onClick={() => confirm('Delete this player and all their events?') && show(del(`/data/identities/${pid}`))}>Delete everything</button>
+          <Text label={t('Identity id')} value={pid} onChange={setPid} mono />
+          <button className="btn ghost" disabled={!pid} onClick={() => show(get(`/data/identities/${pid}/takeout`))}>{t('Takeout (JSON)')}</button>
+          <button className="btn danger" disabled={!pid} onClick={() => confirm('Delete this player and all their events?') && show(del(`/data/identities/${pid}`))}>{t('Delete everything')}</button>
         </div>
       </div>
       <div className="card">
-        <strong>Purge events</strong>
+        <strong>{t('Purge events')}</strong>
         <div className="row" style={{ alignItems: 'end' }}>
-          <Text label="Older than (date)" value={purge.before} onChange={(before) => setPurge({ ...purge, before })} mono />
-          <Text label="Only these events (comma-separated, optional)" value={purge.names} onChange={(names) => setPurge({ ...purge, names })} mono />
-          <button className="btn danger" onClick={() => confirm('Permanently delete matching events?') && show(post('/data/events/purge', { before: new Date(purge.before).toISOString(), names: purge.names.split(',').map((x) => x.trim()).filter(Boolean) }))}>Purge</button>
+          <Text label={t('Older than (date)')} value={purge.before} onChange={(before) => setPurge({ ...purge, before })} mono />
+          <Text label={t('Only these events (comma-separated, optional)')} value={purge.names} onChange={(names) => setPurge({ ...purge, names })} mono />
+          <button className="btn danger" onClick={() => confirm('Permanently delete matching events?') && show(post('/data/events/purge', { before: new Date(purge.before).toISOString(), names: purge.names.split(',').map((x) => x.trim()).filter(Boolean) }))}>{t('Purge')}</button>
         </div>
       </div>
       <ErrorBox error={err} />
@@ -225,7 +226,7 @@ export default function Data() {
   const chips = <div className="chips" style={{ marginBottom: 12 }}>{tabs.map(([k, l]) => <button key={k} className={'chip' + (k === tab ? ' on' : '')} onClick={() => setTab(k)}>{l}</button>)}</div>;
   if (tab === 'sinks') return <>{chips}<Sinks /></>;
   return (
-    <Page title="Data">
+    <Page title={t('Data')}>
       {chips}
       {tab === 'config' && <ConfigTab />}
       {tab === 'history' && <HistoryTab />}

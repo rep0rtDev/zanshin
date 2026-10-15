@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { get } from './api';
+import { t } from './i18n';
 
 export type PaletteItem = { label: string; sub?: string; to: string; group: string };
 
@@ -37,7 +38,7 @@ export function Palette({ pages, open, onClose }: { pages: PaletteItem[]; open: 
   return (
     <div className="palette-bg" onMouseDown={onClose}>
       <div className="palette" onMouseDown={(e) => e.stopPropagation()}>
-        <input ref={inp} value={q} onChange={(e) => setQ(e.target.value)} placeholder="Jump to a page or entity…"
+        <input ref={inp} value={q} onChange={(e) => setQ(e.target.value)} placeholder={t('Jump to a page or entity…')}
           onKeyDown={(e) => {
             if (e.key === 'ArrowDown') { e.preventDefault(); setSel((s) => Math.min(s + 1, hits.length - 1)); }
             else if (e.key === 'ArrowUp') { e.preventDefault(); setSel((s) => Math.max(s - 1, 0)); }
@@ -45,7 +46,7 @@ export function Palette({ pages, open, onClose }: { pages: PaletteItem[]; open: 
             else if (e.key === 'Escape') onClose();
           }} />
         <div className="palette-list">
-          {hits.length === 0 && <div className="hint" style={{ padding: 12 }}>No matches</div>}
+          {hits.length === 0 && <div className="hint" style={{ padding: 12 }}>{t('No matches')}</div>}
           {hits.map((it, i) => (
             <div key={it.group + it.to} className={'palette-item' + (i === sel ? ' on' : '')} onMouseEnter={() => setSel(i)} onClick={() => go(it)}>
               <span className="palette-group">{it.group}</span>

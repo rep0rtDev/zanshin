@@ -6,6 +6,7 @@ import { Badge, ErrorBox, Field, JsonField, Table, Toggle, fmtDate, fmtNum } fro
 import { MetricsPicker } from './Experiments';
 import { Calendar } from '../Calendar';
 import { useNavigate } from 'react-router-dom';
+import { t as tr } from '../i18n';
 
 type LiveEvent = {
   key: string; name: string; description: string; enabled: boolean; condition: Cond | null; audiences: string[];
@@ -29,9 +30,9 @@ export default function LiveEvents() {
   return (
     <EntityPage<LiveEvent>
       above={<Calendar onPick={(k) => nav(encodeURIComponent(k))} />}
-      title="Live events"
+      title={tr('Live events')}
       path="/live-events"
-      blurb="Scheduled content windows — one-shot or recurring (cron, UTC) — with a payload the client reads when the event is active."
+      blurb={tr('Scheduled content windows — one-shot or recurring (cron, UTC) — with a payload the client reads when the event is active.')}
       sort={(a, b) => new Date(a.starts_at).getTime() - new Date(b.starts_at).getTime()}
       cols={[
         { h: 'Key', c: (e) => <><strong>{e.key}</strong><div className="hint">{e.name}</div></> },
@@ -44,34 +45,34 @@ export default function LiveEvents() {
       form={(d, set, isNew) => (
         <>
           <div className="row">
-            <Text label="Key" value={d.key} onChange={(key) => set({ key })} disabled={!isNew} mono />
-            <Text label="Name" value={d.name} onChange={(name) => set({ name })} />
-            <div className="field fixed"><span className="label">Enabled</span><Toggle value={!!d.enabled} onChange={(enabled) => set({ enabled })} label={d.enabled ? 'on' : 'off'} /></div>
+            <Text label={tr('Key')} value={d.key} onChange={(key) => set({ key })} disabled={!isNew} mono />
+            <Text label={tr('Name')} value={d.name} onChange={(name) => set({ name })} />
+            <div className="field fixed"><span className="label">{tr('Enabled')}</span><Toggle value={!!d.enabled} onChange={(enabled) => set({ enabled })} label={d.enabled ? 'on' : 'off'} /></div>
           </div>
-          <Text label="Description" value={d.description} onChange={(description) => set({ description })} />
+          <Text label={tr('Description')} value={d.description} onChange={(description) => set({ description })} />
           <div className="row">
-            <DateTime label="Starts" value={d.starts_at} onChange={(v) => set({ starts_at: v ?? new Date().toISOString() })} hint="first occurrence (recurring) or window start" />
-            <Num label="Duration (seconds)" value={d.duration_secs} onChange={(duration_secs) => set({ duration_secs: duration_secs ?? null })} min={1} hint="length of each occurrence" />
+            <DateTime label={tr('Starts')} value={d.starts_at} onChange={(v) => set({ starts_at: v ?? new Date().toISOString() })} hint={tr('first occurrence (recurring) or window start')} />
+            <Num label={tr('Duration (seconds)')} value={d.duration_secs} onChange={(duration_secs) => set({ duration_secs: duration_secs ?? null })} min={1} hint={tr('length of each occurrence')} />
           </div>
           <div className="row">
-            <Text label="Recurrence (cron, UTC)" value={d.recurrence ?? ''} onChange={(v) => set({ recurrence: v || null })} mono placeholder="0 0 18 * * Fri *" hint="7-field cron: sec min hour day month weekday year; empty = one-shot" />
-            <DateTime label="Ends" value={d.ends_at} onChange={(ends_at) => set({ ends_at })} hint="one-shot: window end · recurring: no occurrences after this" />
+            <Text label={tr('Recurrence (cron, UTC)')} value={d.recurrence ?? ''} onChange={(v) => set({ recurrence: v || null })} mono placeholder="0 0 18 * * Fri *" hint="7-field cron: sec min hour day month weekday year; empty = one-shot" />
+            <DateTime label={tr('Ends')} value={d.ends_at} onChange={(ends_at) => set({ ends_at })} hint={tr('one-shot: window end · recurring: no occurrences after this')} />
           </div>
-          <Field label="Payload (JSON)" hint="arbitrary data delivered to clients while the event is active"><JsonField value={d.payload} onChange={(payload) => set({ payload: payload ?? {} })} rows={5} /></Field>
+          <Field label={tr('Payload (JSON)')} hint={tr('arbitrary data delivered to clients while the event is active')}><JsonField value={d.payload} onChange={(payload) => set({ payload: payload ?? {} })} rows={5} /></Field>
           <div className="row">
-            <Field label="Participation" hint="explicit: players call join during a window">
-              <select value={d.join_mode ?? 'auto'} onChange={(e) => set({ join_mode: e.target.value as 'auto' | 'explicit' })}><option value="auto">auto (everyone targeted)</option><option value="explicit">explicit join</option></select>
+            <Field label={tr('Participation')} hint={tr('explicit: players call join during a window')}>
+              <select value={d.join_mode ?? 'auto'} onChange={(e) => set({ join_mode: e.target.value as 'auto' | 'explicit' })}><option value="auto">{tr('auto (everyone targeted)')}</option><option value="explicit">{tr('explicit join')}</option></select>
             </Field>
-            <Num label="Duration per player (sec)" value={d.participation_secs ?? null} onChange={(participation_secs) => set({ participation_secs: participation_secs ?? null })} min={1} hint="blank = until the window closes" />
-            <div className="field fixed"><span className="label">Sticky</span><Toggle value={!!d.sticky} onChange={(sticky) => set({ sticky })} label={d.sticky ? 'keep participants across windows' : 'off'} /></div>
+            <Num label={tr('Duration per player (sec)')} value={d.participation_secs ?? null} onChange={(participation_secs) => set({ participation_secs: participation_secs ?? null })} min={1} hint="blank = until the window closes" />
+            <div className="field fixed"><span className="label">{tr('Sticky')}</span><Toggle value={!!d.sticky} onChange={(sticky) => set({ sticky })} label={d.sticky ? 'keep participants across windows' : 'off'} /></div>
           </div>
-          <Field label="Flag overrides (JSON)" hint='{"flag_key": value} applied to participants while active — above rules, below experiments'><JsonField value={d.flag_overrides ?? {}} onChange={(flag_overrides) => set({ flag_overrides: (flag_overrides ?? {}) as Record<string, unknown> })} rows={3} /></Field>
-          <Field label="Variants" hint="optional: each participant is deterministically assigned one by weight and gets its payload (blank = event payload) and flag overrides on top of the event's; metrics are reported per variant">
+          <Field label={tr('Flag overrides (JSON)')} hint='{"flag_key": value} applied to participants while active — above rules, below experiments'><JsonField value={d.flag_overrides ?? {}} onChange={(flag_overrides) => set({ flag_overrides: (flag_overrides ?? {}) as Record<string, unknown> })} rows={3} /></Field>
+          <Field label={tr('Variants')} hint="optional: each participant is deterministically assigned one by weight and gets its payload (blank = event payload) and flag overrides on top of the event's; metrics are reported per variant">
             <VariantsPanel value={d.variants ?? []} onChange={(variants) => set({ variants })} />
           </Field>
-          <Field label="Monitor metrics" hint="catalog metrics evaluated over participants, per run and per variant"><MetricsPicker value={d.metrics ?? []} onChange={(metrics) => set({ metrics })} /></Field>
-          <Field label="Targeting condition"><ConditionEditor optional value={d.condition} onChange={(condition) => set({ condition })} /></Field>
-          <Field label="Audiences"><AudiencePicker value={d.audiences ?? []} onChange={(audiences) => set({ audiences })} /></Field>
+          <Field label={tr('Monitor metrics')} hint={tr('catalog metrics evaluated over participants, per run and per variant')}><MetricsPicker value={d.metrics ?? []} onChange={(metrics) => set({ metrics })} /></Field>
+          <Field label={tr('Targeting condition')}><ConditionEditor optional value={d.condition} onChange={(condition) => set({ condition })} /></Field>
+          <Field label={tr('Audiences')}><AudiencePicker value={d.audiences ?? []} onChange={(audiences) => set({ audiences })} /></Field>
           <Tags value={d.tags} onChange={(tags) => set({ tags })} />
         </>
       )}
@@ -92,14 +93,14 @@ function Participants({ ev }: { ev: LiveEvent }) {
     <>
       <div className="card">
         <div className="row" style={{ alignItems: 'center' }}>
-          <strong>Timeline</strong>
+          <strong>{tr('Timeline')}</strong>
           {t.data && <span className="hint">{t.data.participants.active} active · {t.data.participants.total} joined in total</span>}
         </div>
         <ErrorBox error={t.error} />
         <Table<{ start: string; end: string }>
           rows={t.data?.occurrences}
           rowKey={(o) => o.start}
-          empty="No occurrences in the last 30 / next 60 days"
+          empty={tr('No occurrences in the last 30 / next 60 days')}
           cols={[
             { h: 'Window', c: (o) => <>{fmtDate(o.start)} → {fmtDate(o.end)}</> },
             { h: 'State', w: '110px', c: (o) => { const s = Date.parse(o.start), e = Date.parse(o.end); return s <= now && now < e ? <Badge tone="ok">live</Badge> : e <= now ? <Badge>past</Badge> : <Badge tone="info">upcoming</Badge>; } },
@@ -108,7 +109,7 @@ function Participants({ ev }: { ev: LiveEvent }) {
         />
       </div>
       <div className="card">
-        <strong>Participants</strong>
+        <strong>{tr('Participants')}</strong>
         <ErrorBox error={p.error} />
         <Table<Participant>
           rows={p.data?.items}
@@ -132,18 +133,18 @@ function VariantsPanel({ value, onChange }: { value: LEVariant[]; onChange: (v: 
       {value.map((v, i) => (
         <div key={i} className="card" style={{ padding: 10 }}>
           <div className="row" style={{ alignItems: 'end' }}>
-            <Text label="Key" value={v.key} onChange={(key) => upd(i, { key })} mono />
-            <Text label="Name" value={v.name} onChange={(name) => upd(i, { name })} />
-            <Num label="Weight" value={v.weight} onChange={(weight) => upd(i, { weight: weight ?? 1 })} min={0.01} />
-            <button className="btn ghost sm" onClick={() => onChange(value.filter((_, j) => j !== i))}>Remove</button>
+            <Text label={tr('Key')} value={v.key} onChange={(key) => upd(i, { key })} mono />
+            <Text label={tr('Name')} value={v.name} onChange={(name) => upd(i, { name })} />
+            <Num label={tr('Weight')} value={v.weight} onChange={(weight) => upd(i, { weight: weight ?? 1 })} min={0.01} />
+            <button className="btn ghost sm" onClick={() => onChange(value.filter((_, j) => j !== i))}>{tr('Remove')}</button>
           </div>
           <div className="row">
             <Field label="Payload (JSON, blank = event payload)"><JsonField value={v.payload} onChange={(payload) => upd(i, { payload: payload ?? null })} rows={2} /></Field>
-            <Field label="Flag overrides (JSON)"><JsonField value={v.flag_overrides} onChange={(fo) => upd(i, { flag_overrides: (fo ?? {}) as Record<string, unknown> })} rows={2} /></Field>
+            <Field label={tr('Flag overrides (JSON)')}><JsonField value={v.flag_overrides} onChange={(fo) => upd(i, { flag_overrides: (fo ?? {}) as Record<string, unknown> })} rows={2} /></Field>
           </div>
         </div>
       ))}
-      <div><button className="btn ghost" onClick={() => onChange([...value, { key: `v${value.length + 1}`, name: '', weight: 1, payload: null, flag_overrides: {} }])}>Add variant</button></div>
+      <div><button className="btn ghost" onClick={() => onChange([...value, { key: `v${value.length + 1}`, name: '', weight: 1, payload: null, flag_overrides: {} }])}>{tr('Add variant')}</button></div>
     </div>
   );
 }
@@ -156,27 +157,27 @@ function Monitor({ ev }: { ev: LiveEvent }) {
   const k = encodeURIComponent(ev.key);
   const m = useLoad(() => get<Monitor>(`/live-events/${k}/metrics`), [ev.key, ev.version]);
   const r = useLoad(() => get<Runs>(`/live-events/${k}/runs?limit=12`), [ev.key, ev.version]);
-  if (!ev.metrics?.length) return <div className="card"><strong>Monitor metrics</strong><div className="hint">Attach catalog metrics to this event to see per-run and per-variant results here.</div></div>;
+  if (!ev.metrics?.length) return <div className="card"><strong>{tr('Monitor metrics')}</strong><div className="hint">{tr('Attach catalog metrics to this event to see per-run and per-variant results here.')}</div></div>;
   const cols = m.data?.variants.length ? m.data.variants : ['default'];
   return (
     <>
       <div className="card">
-        <strong>Monitor metrics</strong> <span className="hint">since the first occurrence, per variant</span>
+        <strong>{tr('Monitor metrics')}</strong> <span className="hint">{tr('since the first occurrence, per variant')}</span>
         <ErrorBox error={m.error} />
         {m.data && (
           <table className="table" style={{ marginTop: 8 }}>
-            <thead><tr><th>Metric</th>{cols.map((c) => <th key={c}>{c}</th>)}</tr></thead>
+            <thead><tr><th>{tr('Metric')}</th>{cols.map((c) => <th key={c}>{c}</th>)}</tr></thead>
             <tbody>{m.data.metrics.map((x) => <tr key={x.metric}><td><strong>{x.metric}</strong><div className="hint">{x.error ?? `${x.kind} · ${x.aggregation}`}</div></td>{cols.map((c) => { const v = x.variants?.find((y) => y.variant === c); return <td key={c}>{v ? <>{fmtNum(v.value)} <span className="hint">({fmtNum(v.identities)} players)</span></> : '—'}</td>; })}</tr>)}</tbody>
           </table>
         )}
       </div>
       <div className="card">
-        <strong>Run report</strong> <span className="hint">compare the same event across its runs</span>
+        <strong>{tr('Run report')}</strong> <span className="hint">{tr('compare the same event across its runs')}</span>
         <ErrorBox error={r.error} />
         <Table<Runs['runs'][number]>
           rows={r.data?.runs}
           rowKey={(x) => x.start}
-          empty="No run has started yet"
+          empty={tr('No run has started yet')}
           cols={[
             { h: 'Run', w: '70px', c: (x) => <>#{x.run} {x.live && <Badge tone="ok">live</Badge>}</> },
             { h: 'Window', c: (x) => <>{fmtDate(x.start)} → {fmtDate(x.end)}</> },

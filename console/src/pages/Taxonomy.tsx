@@ -3,6 +3,7 @@ import { toast } from '../toast';
 import { NavLink, Navigate, Route, Routes } from 'react-router-dom';
 import { del, get, post, put, qs, useLoad } from '../api';
 import { Badge, Confirm, ErrorBox, Field, JsonField, Page, Table, Toggle, fmtDate, fmtNum } from '../ui';
+import { t } from '../i18n';
 
 type Label = { id: string; name: string; color: string; description: string; created_at: string };
 type EventDef = {
@@ -19,10 +20,8 @@ const TABS: [string, string][] = [['events', 'Events'], ['properties', 'Properti
 
 export default function Taxonomy() {
   return (
-    <Page title="Taxonomy">
-      <p className="muted" style={{ marginTop: -8 }}>
-        Define what your game sends: event names and validators, player properties, JSON schemas for flag values and the labels used to organise everything.
-      </p>
+    <Page title={t('Taxonomy')}>
+      <p className="muted" style={{ marginTop: -8 }}>{t('Define what your game sends: event names and validators, player properties, JSON schemas for flag values and the labels used to organise everything.')}</p>
       <nav className="tabs">{TABS.map(([p, l]) => <NavLink key={p} to={p}>{l}</NavLink>)}</nav>
       <Routes>
         <Route path="events" element={<Events />} />
@@ -60,21 +59,21 @@ function CurrencyRates() {
   return (
     <div className="card stack">
       <div className="row" style={{ alignItems: 'center' }}>
-        <strong>Currency → USD rates</strong>
+        <strong>{t('Currency → USD rates')}</strong>
         <span className="hint">{latest.size} currencies · revenue metadata gets <code>amount_usd</code> at ingest · feed {q.data?.remote_configured ? 'configured' : 'not configured (taxonomy.currency_rates_url)'}</span>
         <div className="spacer" />
-        {q.data?.remote_configured && <button className="btn secondary" onClick={refresh}>Refresh from feed</button>}
+        {q.data?.remote_configured && <button className="btn secondary" onClick={refresh}>{t('Refresh from feed')}</button>}
         <button className="btn secondary" onClick={() => setOpen(!open)}>{open ? 'Hide' : 'Show'}</button>
       </div>
       <ErrorBox error={error ?? q.error} />
       {open && (
         <>
           <div className="row" style={{ alignItems: 'end' }}>
-            <Field label="Code"><input value={code} onChange={(e) => setCode(e.target.value)} style={{ width: 80 }} /></Field>
-            <Field label="USD per unit"><input value={rate} onChange={(e) => setRate(e.target.value)} style={{ width: 120 }} /></Field>
-            <button className="btn" onClick={add} disabled={!/^[A-Za-z]{3}$/.test(code) || !(Number(rate) > 0)}>Set today's rate</button>
+            <Field label={t('Code')}><input value={code} onChange={(e) => setCode(e.target.value)} style={{ width: 80 }} /></Field>
+            <Field label={t('USD per unit')}><input value={rate} onChange={(e) => setRate(e.target.value)} style={{ width: 120 }} /></Field>
+            <button className="btn" onClick={add} disabled={!/^[A-Za-z]{3}$/.test(code) || !(Number(rate) > 0)}>{t('Set today\'s rate')}</button>
           </div>
-          <Table<Rate> rows={Array.from(latest.values())} rowKey={(r) => r.code} empty="No rates yet — USD amounts are taken as-is" cols={[
+          <Table<Rate> rows={Array.from(latest.values())} rowKey={(r) => r.code} empty={t('No rates yet — USD amounts are taken as-is')} cols={[
             { h: 'Code', c: (r) => <code>{r.code}</code> }, { h: 'USD per unit', c: (r) => r.usd_per_unit }, { h: 'Day', c: (r) => r.day }, { h: 'Source', c: (r) => r.source },
           ]} />
         </>
@@ -103,20 +102,20 @@ function Events() {
   return (
     <>
       <div className="card row" style={{ alignItems: 'end' }}>
-        <Field label="Enforcement" hint="warn: store but report violations · strict: reject invalid events · off: accept anything">
+        <Field label={t('Enforcement')} hint={t('warn: store but report violations · strict: reject invalid events · off: accept anything')}>
           <select value={settings.data?.mode ?? 'warn'} onChange={(e) => setMode(e.target.value as Settings['mode'])}>
             <option value="off">off</option><option value="warn">warn</option><option value="strict">strict</option>
           </select>
         </Field>
-        <div className="field"><span className="label">Auto-discover</span><Badge tone={settings.data?.auto_discover ? 'ok' : 'muted'}>{settings.data?.auto_discover ? 'on' : 'off'}</Badge></div>
-        <div className="field"><span className="label">Geo-IP</span><Badge tone={settings.data?.geoip_enabled ? 'ok' : 'muted'}>{settings.data?.geoip_enabled ? 'enabled' : 'not configured'}</Badge></div>
-        <div className="field"><span className="label">Session inactivity</span><span>{settings.data ? `${Math.round(settings.data.session_inactivity_secs / 60)} min` : '…'}</span></div>
+        <div className="field"><span className="label">{t('Auto-discover')}</span><Badge tone={settings.data?.auto_discover ? 'ok' : 'muted'}>{settings.data?.auto_discover ? 'on' : 'off'}</Badge></div>
+        <div className="field"><span className="label">{t('Geo-IP')}</span><Badge tone={settings.data?.geoip_enabled ? 'ok' : 'muted'}>{settings.data?.geoip_enabled ? 'enabled' : 'not configured'}</Badge></div>
+        <div className="field"><span className="label">{t('Session inactivity')}</span><span>{settings.data ? `${Math.round(settings.data.session_inactivity_secs / 60)} min` : '…'}</span></div>
         <div className="spacer" />
-        <label className="hint" style={{ whiteSpace: 'nowrap' }}><input type="checkbox" checked={showCore} onChange={(e) => setShowCore(e.target.checked)} /> Show core</label>
-        <label className="hint" style={{ whiteSpace: 'nowrap' }}><input type="checkbox" checked={showSynthetic} onChange={(e) => setShowSynthetic(e.target.checked)} /> Show synthetic</label>
-        <label className="hint" style={{ whiteSpace: 'nowrap' }}><input type="checkbox" checked={onlyDiscovered} onChange={(e) => setOnlyDiscovered(e.target.checked)} /> Only discovered</label>
-        <input placeholder="Filter events" value={filter} onChange={(e) => setFilter(e.target.value)} style={{ maxWidth: 220 }} />
-        <button className="btn" onClick={() => setEdit({ ...EMPTY_DEF })}>New event</button>
+        <label className="hint" style={{ whiteSpace: 'nowrap' }}><input type="checkbox" checked={showCore} onChange={(e) => setShowCore(e.target.checked)} />{' ' + t('Show core')}</label>
+        <label className="hint" style={{ whiteSpace: 'nowrap' }}><input type="checkbox" checked={showSynthetic} onChange={(e) => setShowSynthetic(e.target.checked)} />{' ' + t('Show synthetic')}</label>
+        <label className="hint" style={{ whiteSpace: 'nowrap' }}><input type="checkbox" checked={onlyDiscovered} onChange={(e) => setOnlyDiscovered(e.target.checked)} />{' ' + t('Only discovered')}</label>
+        <input placeholder={t('Filter events')} value={filter} onChange={(e) => setFilter(e.target.value)} style={{ maxWidth: 220 }} />
+        <button className="btn" onClick={() => setEdit({ ...EMPTY_DEF })}>{t('New event')}</button>
       </div>
       <CurrencyRates />
       <ErrorBox error={error ?? defs.error ?? settings.error} />
@@ -124,26 +123,26 @@ function Events() {
         <div className="card">
           <h3>{edit.is_core ? `Core event ${edit.name}` : edit.name ? `Edit ${edit.name}` : 'New event definition'}</h3>
           <div className="row">
-            <label className="field"><span className="label">Name</span><input className="mono" value={edit.name ?? ''} disabled={!!edit.updated_at} onChange={(e) => setEdit({ ...edit, name: e.target.value })} placeholder="levelCompleted" /></label>
-            <Field label="Value type" hint="number · string · object (JSON) · revenue (metadata.amount + metadata.currency) · any">
+            <label className="field"><span className="label">{t('Name')}</span><input className="mono" value={edit.name ?? ''} disabled={!!edit.updated_at} onChange={(e) => setEdit({ ...edit, name: e.target.value })} placeholder="levelCompleted" /></label>
+            <Field label={t('Value type')} hint={t('number · string · object (JSON) · revenue (metadata.amount + metadata.currency) · any')}>
               <select value={edit.value_type} onChange={(e) => setEdit({ ...edit, value_type: e.target.value })}>
                 {['any', 'number', 'string', 'object', 'revenue'].map((t) => <option key={t}>{t}</option>)}
               </select>
             </Field>
-            <label className="field grow"><span className="label">Description</span><input value={edit.description ?? ''} onChange={(e) => setEdit({ ...edit, description: e.target.value })} /></label>
+            <label className="field grow"><span className="label">{t('Description')}</span><input value={edit.description ?? ''} onChange={(e) => setEdit({ ...edit, description: e.target.value })} /></label>
           </div>
-          <Field label="Metadata JSON Schema" hint="Optional. Events whose metadata does not match are reported (warn) or rejected (strict).">
+          <Field label={t('Metadata JSON Schema')} hint={t('Optional. Events whose metadata does not match are reported (warn) or rejected (strict).')}>
             <JsonField value={edit.metadata_schema ?? null} onChange={(v) => setEdit({ ...edit, metadata_schema: v })} rows={5} placeholder='{"type":"object","required":["level"]}' />
           </Field>
           <div className="row">
-            <Toggle value={!!edit.exclude_from_activity} onChange={(v) => setEdit({ ...edit, exclude_from_activity: v })} label="Exclude from activity (does not count towards last-seen / event totals in reports)" />
-            <label className="field"><span className="label">Labels</span><input value={(edit.tags ?? []).join(', ')} onChange={(e) => setEdit({ ...edit, tags: e.target.value.split(',').map((s) => s.trim()).filter(Boolean) })} placeholder="economy, core-loop" /></label>
+            <Toggle value={!!edit.exclude_from_activity} onChange={(v) => setEdit({ ...edit, exclude_from_activity: v })} label={t('Exclude from activity (does not count towards last-seen / event totals in reports)')} />
+            <label className="field"><span className="label">{t('Labels')}</span><input value={(edit.tags ?? []).join(', ')} onChange={(e) => setEdit({ ...edit, tags: e.target.value.split(',').map((s) => s.trim()).filter(Boolean) })} placeholder={t('economy, core-loop')} /></label>
           </div>
           <div className="actions">
-            <button className="btn" onClick={save} disabled={!edit.name}>Save</button>
-            <button className="btn ghost" onClick={() => setEdit(null)}>Cancel</button>
+            <button className="btn" onClick={save} disabled={!edit.name}>{t('Save')}</button>
+            <button className="btn ghost" onClick={() => setEdit(null)}>{t('Cancel')}</button>
             {edit.updated_at && !edit.is_core && (
-              <Confirm danger onConfirm={() => run(async () => { await del(`/taxonomy/events/${encodeURIComponent(edit.name!)}`); setEdit(null); defs.reload(); })}>Delete</Confirm>
+              <Confirm danger onConfirm={() => run(async () => { await del(`/taxonomy/events/${encodeURIComponent(edit.name!)}`); setEdit(null); defs.reload(); })}>{t('Delete')}</Confirm>
             )}
           </div>
         </div>
@@ -152,7 +151,7 @@ function Events() {
         rows={rows}
         rowKey={(d) => d.name}
         onRow={(d) => setEdit({ ...d })}
-        empty="No event definitions yet — they appear automatically as your game sends events"
+        empty={t('No event definitions yet — they appear automatically as your game sends events')}
         cols={[
           { h: 'Event', c: (d) => <><span className="mono">{d.name}</span> {d.is_core && <Badge tone="info">core</Badge>} {d.discovered && <Badge tone="warn">discovered</Badge>}</> },
           { h: 'Value', w: '100px', c: (d) => <Badge>{d.value_type}</Badge> },
@@ -161,13 +160,13 @@ function Events() {
           { h: 'Description', c: (d) => <span className="hint">{d.description}</span> },
         ]}
       />
-      <h3 style={{ marginTop: 24 }}>Rejected & invalid events <span className="hint">(last {rejected.data?.length ?? 0})</span></h3>
-      <p className="muted">Events that violated a definition. In <strong>strict</strong> mode they were dropped; in <strong>warn</strong> mode they were stored anyway.</p>
-      <div className="actions"><button className="btn ghost" onClick={() => rejected.reload()}>Refresh</button><Confirm onConfirm={() => run(async () => { await del('/taxonomy/rejected'); rejected.reload(); })}>Clear</Confirm></div>
+      <h3 style={{ marginTop: 24 }}>{t('Rejected & invalid events') + ' '}<span className="hint">(last {rejected.data?.length ?? 0})</span></h3>
+      <p className="muted">{t('Events that violated a definition. In') + ' '}<strong>strict</strong> mode they were dropped; in <strong>warn</strong>{' ' + t('mode they were stored anyway.')}</p>
+      <div className="actions"><button className="btn ghost" onClick={() => rejected.reload()}>{t('Refresh')}</button><Confirm onConfirm={() => run(async () => { await del('/taxonomy/rejected'); rejected.reload(); })}>{t('Clear')}</Confirm></div>
       <Table<Rejected>
         rows={rejected.data}
         rowKey={(r) => `${r.at}-${r.name}-${r.reason}`}
-        empty="No violations recorded"
+        empty={t('No violations recorded')}
         cols={[
           { h: 'When', w: '180px', c: (r) => fmtDate(r.at) },
           { h: 'Event', c: (r) => <span className="mono">{r.name}</span> },
@@ -196,13 +195,13 @@ function Properties() {
       <Table<Observed>
         rows={rows}
         rowKey={(r) => r.key}
-        empty="Nothing observed yet"
+        empty={t('Nothing observed yet')}
         cols={[
           { h: 'Key', c: (r) => <span className="mono">{ns}.{r.key}</span> },
           { h: 'Type', w: '100px', c: (r) => <Badge>{r.json_type}</Badge> },
           { h: 'Players', w: '110px', c: (r) => fmtNum(r.identities) },
           { h: 'Access', w: '220px', c: (r) => editable
-            ? <Toggle value={!!cfg.get(r.key)?.read_only} onChange={(v) => toggleRo(r.key, v, cfg.get(r.key)?.description)} label="read-only for clients" />
+            ? <Toggle value={!!cfg.get(r.key)?.read_only} onChange={(v) => toggleRo(r.key, v, cfg.get(r.key)?.description)} label={t('read-only for clients')} />
             : <span className="muted">{ns === 'computed' ? 'derived from events' : 'set by client / server'}</span> },
           { h: 'Description', c: (r) => <span className="hint">{cfg.get(r.key)?.description ?? ''}</span> },
         ]}
@@ -213,12 +212,12 @@ function Properties() {
     <>
       <ErrorBox error={error ?? q.error} />
       <div className="card">
-        <h3>Read-only custom property</h3>
+        <h3>{t('Read-only custom property')}</h3>
         <p className="muted">Read-only properties can only be written through the server API (e.g. from Nakama); clients get a 400 when they try to set them.</p>
         <div className="row" style={{ alignItems: 'end' }}>
-          <label className="field"><span className="label">Key</span><input className="mono" value={key} onChange={(e) => setKey(e.target.value)} placeholder="vip_tier" /></label>
-          <label className="field grow"><span className="label">Description</span><input value={desc} onChange={(e) => setDesc(e.target.value)} /></label>
-          <button className="btn" disabled={!key} onClick={() => { toggleRo(key, true, desc); setKey(''); setDesc(''); }}>Mark read-only</button>
+          <label className="field"><span className="label">{t('Key')}</span><input className="mono" value={key} onChange={(e) => setKey(e.target.value)} placeholder="vip_tier" /></label>
+          <label className="field grow"><span className="label">{t('Description')}</span><input value={desc} onChange={(e) => setDesc(e.target.value)} /></label>
+          <button className="btn" disabled={!key} onClick={() => { toggleRo(key, true, desc); setKey(''); setDesc(''); }}>{t('Mark read-only')}</button>
         </div>
         {(q.data?.config ?? []).length > 0 && (
           <div style={{ marginTop: 10 }}>{q.data!.config.map((c) => (
@@ -252,31 +251,31 @@ function Schemas() {
   });
   return (
     <>
-      <p className="muted">JSON Schemas describe the shape of structured flag and live-event values. Attach one to a flag and every variant, override and default is validated on save.</p>
+      <p className="muted">{t('JSON Schemas describe the shape of structured flag and live-event values. Attach one to a flag and every variant, override and default is validated on save.')}</p>
       <div className="actions">
-        <button className="btn" onClick={() => { setEdit({ name: '', description: '', schema: { type: 'object', properties: {} } }); setVerdict(null); }}>New schema</button>
-        <button className="btn ghost" title="ANY, Number, String, Object, Event-Revenue-Metadata — skips ones that already exist" onClick={() => run(async () => { const r = await post<{ created: string[] }>('/schemas/presets'); toast(r.created.length ? `Added ${r.created.join(', ')}` : 'Built-in validators already present'); q.reload(); })}>Add built-in validators</button>
+        <button className="btn" onClick={() => { setEdit({ name: '', description: '', schema: { type: 'object', properties: {} } }); setVerdict(null); }}>{t('New schema')}</button>
+        <button className="btn ghost" title={t('ANY, Number, String, Object, Event-Revenue-Metadata — skips ones that already exist')} onClick={() => run(async () => { const r = await post<{ created: string[] }>('/schemas/presets'); toast(r.created.length ? `Added ${r.created.join(', ')}` : 'Built-in validators already present'); q.reload(); })}>{t('Add built-in validators')}</button>
       </div>
       <ErrorBox error={error ?? q.error} />
       {edit && (
         <div className="card">
           <div className="row">
-            <label className="field"><span className="label">Name</span><input value={edit.name ?? ''} onChange={(e) => setEdit({ ...edit, name: e.target.value })} placeholder="shop_config" /></label>
-            <label className="field grow"><span className="label">Description</span><input value={edit.description ?? ''} onChange={(e) => setEdit({ ...edit, description: e.target.value })} /></label>
+            <label className="field"><span className="label">{t('Name')}</span><input value={edit.name ?? ''} onChange={(e) => setEdit({ ...edit, name: e.target.value })} placeholder="shop_config" /></label>
+            <label className="field grow"><span className="label">{t('Description')}</span><input value={edit.description ?? ''} onChange={(e) => setEdit({ ...edit, description: e.target.value })} /></label>
           </div>
           <div className="row">
-            <div className="grow"><Field label="JSON Schema (draft 2020-12 / 7)"><JsonField value={edit.schema} onChange={(v) => setEdit({ ...edit, schema: v })} rows={14} /></Field></div>
+            <div className="grow"><Field label={t('JSON Schema (draft 2020-12 / 7)')}><JsonField value={edit.schema} onChange={(v) => setEdit({ ...edit, schema: v })} rows={14} /></Field></div>
             <div className="grow">
-              <Field label="Try a value" hint={verdict ? <Badge tone={verdict === 'valid' ? 'ok' : 'bad'}>{verdict}</Badge> : 'Paste a sample value and validate'}>
+              <Field label={t('Try a value')} hint={verdict ? <Badge tone={verdict === 'valid' ? 'ok' : 'bad'}>{verdict}</Badge> : 'Paste a sample value and validate'}>
                 <JsonField value={sample} onChange={setSample} rows={10} />
               </Field>
-              <button className="btn ghost" onClick={test}>Validate sample</button>
+              <button className="btn ghost" onClick={test}>{t('Validate sample')}</button>
             </div>
           </div>
           <div className="actions">
-            <button className="btn" onClick={save} disabled={!edit.name}>Save</button>
-            <button className="btn ghost" onClick={() => setEdit(null)}>Cancel</button>
-            {edit.id && <Confirm danger onConfirm={() => run(async () => { await del(`/schemas/${edit.id}`); setEdit(null); q.reload(); })}>Delete</Confirm>}
+            <button className="btn" onClick={save} disabled={!edit.name}>{t('Save')}</button>
+            <button className="btn ghost" onClick={() => setEdit(null)}>{t('Cancel')}</button>
+            {edit.id && <Confirm danger onConfirm={() => run(async () => { await del(`/schemas/${edit.id}`); setEdit(null); q.reload(); })}>{t('Delete')}</Confirm>}
           </div>
         </div>
       )}
@@ -284,7 +283,7 @@ function Schemas() {
         rows={q.data}
         rowKey={(s) => s.id}
         onRow={(s) => { setEdit({ ...s }); setVerdict(null); }}
-        empty="No schemas yet"
+        empty={t('No schemas yet')}
         cols={[
           { h: 'Name', c: (s) => <strong>{s.name}</strong> },
           { h: 'Description', c: (s) => <span className="hint">{s.description}</span> },
@@ -313,21 +312,21 @@ function Labels() {
   return (
     <>
       <p className="muted">Labels (category tags) group flags, experiments, audiences, live events, messages and event definitions. Renaming a label updates every tagged item; clients can filter by label.</p>
-      <div className="actions"><button className="btn" onClick={() => setEdit({ name: '', color: COLORS[0], description: '' })}>New label</button></div>
+      <div className="actions"><button className="btn" onClick={() => setEdit({ name: '', color: COLORS[0], description: '' })}>{t('New label')}</button></div>
       <ErrorBox error={error ?? q.error} />
       {edit && (
         <div className="card">
           <div className="row" style={{ alignItems: 'end' }}>
-            <label className="field"><span className="label">Name</span><input value={edit.name ?? ''} onChange={(e) => setEdit({ ...edit, name: e.target.value })} placeholder="season-5" /></label>
-            <div className="field"><span className="label">Color</span>
+            <label className="field"><span className="label">{t('Name')}</span><input value={edit.name ?? ''} onChange={(e) => setEdit({ ...edit, name: e.target.value })} placeholder="season-5" /></label>
+            <div className="field"><span className="label">{t('Color')}</span>
               <div className="row" style={{ gap: 6 }}>{COLORS.map((c) => <button key={c} className="swatch" style={{ background: c, outline: edit.color === c ? '2px solid var(--fg)' : 'none' }} onClick={() => setEdit({ ...edit, color: c })} />)}</div>
             </div>
-            <label className="field grow"><span className="label">Description</span><input value={edit.description ?? ''} onChange={(e) => setEdit({ ...edit, description: e.target.value })} /></label>
+            <label className="field grow"><span className="label">{t('Description')}</span><input value={edit.description ?? ''} onChange={(e) => setEdit({ ...edit, description: e.target.value })} /></label>
           </div>
           <div className="actions">
-            <button className="btn" onClick={save} disabled={!edit.name}>Save</button>
-            <button className="btn ghost" onClick={() => setEdit(null)}>Cancel</button>
-            {edit.id && <Confirm danger onConfirm={() => run(async () => { await del(`/labels/${edit.id}`); setEdit(null); q.reload(); })}>Delete (removes it from every item)</Confirm>}
+            <button className="btn" onClick={save} disabled={!edit.name}>{t('Save')}</button>
+            <button className="btn ghost" onClick={() => setEdit(null)}>{t('Cancel')}</button>
+            {edit.id && <Confirm danger onConfirm={() => run(async () => { await del(`/labels/${edit.id}`); setEdit(null); q.reload(); })}>{t('Delete (removes it from every item)')}</Confirm>}
           </div>
         </div>
       )}
@@ -335,13 +334,13 @@ function Labels() {
         rows={q.data}
         rowKey={(l) => l.id}
         onRow={(l) => setEdit({ ...l })}
-        empty="No labels yet"
+        empty={t('No labels yet')}
         cols={[
           { h: 'Label', c: (l) => <span className="label-chip" style={{ background: l.color || '#64748b' }}>{l.name}</span> },
           { h: 'Description', c: (l) => <span className="hint">{l.description}</span> },
           { h: 'Used by', c: (l) => usage[l.id]
             ? usage[l.id].filter((u) => u.count > 0).map((u) => <Badge key={u.table}>{u.table}: {u.count}</Badge>)
-            : <a href="#" onClick={(e) => { e.preventDefault(); e.stopPropagation(); loadUsage(l.id); }}>show usage</a> },
+            : <a href="#" onClick={(e) => { e.preventDefault(); e.stopPropagation(); loadUsage(l.id); }}>{t('show usage')}</a> },
           { h: 'Created', w: '180px', c: (l) => fmtDate(l.created_at) },
         ]}
       />

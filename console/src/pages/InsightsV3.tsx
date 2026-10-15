@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { get, post, qs, useLoad } from '../api';
 import { Num, Text } from '../crud';
 import { Badge, ErrorBox, Field, Stat, Table, fmtDate, fmtNum } from '../ui';
+import { t as tr } from '../i18n';
 
 export type Filter = { country?: string; platform?: string; app_version?: string; experiment?: string; variant?: string };
 export const filterQs = (f: Filter) => Object.fromEntries(Object.entries(f).filter(([, v]) => v));
@@ -16,12 +17,12 @@ export function FilterBar({ value, onChange }: { value: Filter; onChange: (f: Fi
   const set = (k: keyof Filter) => (v: string) => onChange({ ...value, [k]: v || undefined });
   return (
     <div className="row filter-bar" style={{ alignItems: 'end' }}>
-      <Text label="Country" value={value.country ?? ''} onChange={set('country')} placeholder="DE" mono />
-      <Text label="Platform" value={value.platform ?? ''} onChange={set('platform')} placeholder="ios" mono />
-      <Text label="App version" value={value.app_version ?? ''} onChange={set('app_version')} placeholder="1.4.2" mono />
-      <Text label="Experiment" value={value.experiment ?? ''} onChange={set('experiment')} placeholder="key" mono />
-      <Text label="Variant" value={value.variant ?? ''} onChange={set('variant')} placeholder="b" mono />
-      {Object.values(value).some(Boolean) && <button className="btn ghost sm" onClick={() => onChange({})}>Clear</button>}
+      <Text label={tr('Country')} value={value.country ?? ''} onChange={set('country')} placeholder={tr('DE')} mono />
+      <Text label={tr('Platform')} value={value.platform ?? ''} onChange={set('platform')} placeholder="ios" mono />
+      <Text label={tr('App version')} value={value.app_version ?? ''} onChange={set('app_version')} placeholder="1.4.2" mono />
+      <Text label={tr('Experiment')} value={value.experiment ?? ''} onChange={set('experiment')} placeholder="key" mono />
+      <Text label={tr('Variant')} value={value.variant ?? ''} onChange={set('variant')} placeholder="b" mono />
+      {Object.values(value).some(Boolean) && <button className="btn ghost sm" onClick={() => onChange({})}>{tr('Clear')}</button>}
     </div>
   );
 }
@@ -54,34 +55,34 @@ export function StatusBoard() {
     <div className="stack">
       <ErrorBox error={q.error} />
       <div className="stats">
-        <Stat label="Online now" value={fmtNum(d?.online_now ?? 0)} sub="open play sessions, last 5 min" />
-        <Stat label="DAU today" value={fmtNum(d?.dau_today ?? 0)} sub={`${fmtNum(d?.active_last_hour ?? 0)} active last hour`} />
-        <Stat label="Events / min" value={fmtNum(Math.round((d?.events_last_hour ?? 0) / 60))} sub={`${fmtNum(d?.events_last_hour ?? 0)} in the last hour`} />
-        <Stat label="Errors (24 h)" value={<span style={{ color: (d?.errors_24h.rejected_events ?? 0) + failures > 0 ? 'var(--bad)' : undefined }}>{fmtNum((d?.errors_24h.rejected_events ?? 0) + failures)}</span>} sub={`${d?.errors_24h.rejected_events ?? 0} rejected events · ${failures} failed deliveries`} />
+        <Stat label={tr('Online now')} value={fmtNum(d?.online_now ?? 0)} sub="open play sessions, last 5 min" />
+        <Stat label={tr('DAU today')} value={fmtNum(d?.dau_today ?? 0)} sub={`${fmtNum(d?.active_last_hour ?? 0)} active last hour`} />
+        <Stat label={tr('Events / min')} value={fmtNum(Math.round((d?.events_last_hour ?? 0) / 60))} sub={`${fmtNum(d?.events_last_hour ?? 0)} in the last hour`} />
+        <Stat label={tr('Errors (24 h)')} value={<span style={{ color: (d?.errors_24h.rejected_events ?? 0) + failures > 0 ? 'var(--bad)' : undefined }}>{fmtNum((d?.errors_24h.rejected_events ?? 0) + failures)}</span>} sub={`${d?.errors_24h.rejected_events ?? 0} rejected events · ${failures} failed deliveries`} />
       </div>
       <div className="grid" style={{ gridTemplateColumns: 'repeat(3,minmax(0,1fr))' }}>
         <div className="card">
-          <strong>Live now</strong>
-          {d && d.running.live_events.length === 0 && <div className="hint">No live event is running.</div>}
+          <strong>{tr('Live now')}</strong>
+          {d && d.running.live_events.length === 0 && <div className="hint">{tr('No live event is running.')}</div>}
           {d?.running.live_events.slice(0, MAX_ROWS).map((e) => <div key={e.key} className="list-row"><Link to={`/live-events/${e.key}`}>{e.name || e.key}</Link><span className="hint">until {fmtShort(e.end)}</span></div>)}
           <MoreLink n={d?.running.live_events.length ?? 0} to="/live-events" />
-          <div className="hint" style={{ marginTop: 8 }}>Next 7 days</div>
+          <div className="hint" style={{ marginTop: 8 }}>{tr('Next 7 days')}</div>
           {d?.upcoming.live_events.slice(0, MAX_ROWS).map((e) => <div key={e.key + e.start} className="list-row"><Link to={`/live-events/${e.key}`}>{e.name || e.key}</Link><span className="hint">{fmtShort(e.start)}</span></div>)}
           <MoreLink n={d?.upcoming.live_events.length ?? 0} to="/insights?tab=calendar" />
         </div>
         <div className="card">
-          <strong>Experiments</strong>
-          {d && d.running.experiments.length === 0 && <div className="hint">Nothing running.</div>}
+          <strong>{tr('Experiments')}</strong>
+          {d && d.running.experiments.length === 0 && <div className="hint">{tr('Nothing running.')}</div>}
           {d?.running.experiments.slice(0, MAX_ROWS).map((e) => <div key={e.key} className="list-row"><Link to={`/experiments/${e.key}`}>{e.name || e.key}</Link><span><Badge tone={e.status === 'running' ? 'ok' : 'warn'}>{e.status}</Badge>{e.ends_at && <span className="hint"> ends {fmtShort(e.ends_at)}</span>}</span></div>)}
           <MoreLink n={d?.running.experiments.length ?? 0} to="/experiments" />
         </div>
         <div className="card">
-          <strong>Campaigns & journeys</strong>
+          <strong>{tr('Campaigns & journeys')}</strong>
           {d?.running.campaigns.slice(0, MAX_ROWS).map((c) => <div key={c.key} className="list-row"><Link to={`/messages/${c.key}`}>{c.name || c.key}</Link><Badge>campaign</Badge></div>)}
           <MoreLink n={d?.running.campaigns.length ?? 0} to="/messages" />
           {d?.running.journeys.slice(0, MAX_ROWS).map((j) => <div key={j.key} className="list-row"><Link to={`/journeys/${j.key}`}>{j.name || j.key}</Link><Badge tone="info">journey</Badge></div>)}
           <MoreLink n={d?.running.journeys.length ?? 0} to="/journeys" />
-          {d && d.running.campaigns.length + d.running.journeys.length === 0 && <div className="hint">Nothing enabled.</div>}
+          {d && d.running.campaigns.length + d.running.journeys.length === 0 && <div className="hint">{tr('Nothing enabled.')}</div>}
         </div>
       </div>
     </div>
@@ -112,8 +113,8 @@ export function Calendar() {
         <button className="btn ghost sm" onClick={() => setOffset(offset - 1)}>‹</button>
         <strong>{start.toISOString().slice(0, 10)} → {new Date(end.getTime() - 1).toISOString().slice(0, 10)}</strong>
         <button className="btn ghost sm" onClick={() => setOffset(offset + 1)}>›</button>
-        {offset !== 0 && <button className="btn ghost sm" onClick={() => setOffset(0)}>Today</button>}
-        <span className="hint">live events · experiments · campaigns (cron fire windows) · annotations, DAU overlay</span>
+        {offset !== 0 && <button className="btn ghost sm" onClick={() => setOffset(0)}>{tr('Today')}</button>}
+        <span className="hint">{tr('live events · experiments · campaigns (cron fire windows) · annotations, DAU overlay')}</span>
       </div>
       <ErrorBox error={q.error} />
       <div className="card calendar">
@@ -136,7 +137,7 @@ export function Calendar() {
             </div>
           </div>
         ))}
-        {q.data && q.data.items.length === 0 && <div className="hint" style={{ padding: 12 }}>Nothing scheduled in this range.</div>}
+        {q.data && q.data.items.length === 0 && <div className="hint" style={{ padding: 12 }}>{tr('Nothing scheduled in this range.')}</div>}
         <div className="cal-today" style={{ left: `calc(120px + (100% - 120px) * ${todayPos})` }} />
       </div>
     </div>
@@ -166,23 +167,23 @@ export function Explore({ filter }: { filter: Filter }) {
     <div className="stack">
       <div className="row" style={{ alignItems: 'end' }}>
         {r.picker}
-        <Text label="Event" value={event} onChange={setEvent} mono />
-        <Field label="Group by"><select value={groupBy} onChange={(e) => setGroupBy(e.target.value)}><option value="">none</option><option value="country">country</option><option value="platform">platform</option><option value="app_version">app version</option><option value="experiment:">experiment: …</option><option value="meta:">metadata: …</option></select></Field>
+        <Text label={tr('Event')} value={event} onChange={setEvent} mono />
+        <Field label={tr('Group by')}><select value={groupBy} onChange={(e) => setGroupBy(e.target.value)}><option value="">none</option><option value="country">country</option><option value="platform">platform</option><option value="app_version">{tr('app version')}</option><option value="experiment:">{tr('experiment: …')}</option><option value="meta:">{tr('metadata: …')}</option></select></Field>
         {(groupBy.startsWith('experiment:') || groupBy.startsWith('meta:')) && <Text label={groupBy.startsWith('meta:') ? 'Field' : 'Experiment key'} value={groupBy.split(':')[1] ?? ''} onChange={(v) => setGroupBy(groupBy.split(':')[0] + ':' + v)} mono />}
-        <Text label="Sum metadata field" value={sumField} onChange={setSumField} mono />
-        <Field label="Granularity"><select value={gran} onChange={(e) => setGran(e.target.value as typeof gran)}><option value="day">day</option><option value="hour">hour</option></select></Field>
-        <Text label="Overlay events" value={overlay} onChange={setOverlay} mono hint="comma-separated, up to 7 more" />
-        <button className="btn" onClick={() => { setMulti(null); run(); }} disabled={!event}>Run</button>
-        <button className="btn secondary" onClick={() => { setRes(null); runOverlay(); }} disabled={!event || overlayEvents.length === 0}>Overlay</button>
+        <Text label={tr('Sum metadata field')} value={sumField} onChange={setSumField} mono />
+        <Field label={tr('Granularity')}><select value={gran} onChange={(e) => setGran(e.target.value as typeof gran)}><option value="day">day</option><option value="hour">hour</option></select></Field>
+        <Text label={tr('Overlay events')} value={overlay} onChange={setOverlay} mono hint={tr('comma-separated, up to 7 more')} />
+        <button className="btn" onClick={() => { setMulti(null); run(); }} disabled={!event}>{tr('Run')}</button>
+        <button className="btn secondary" onClick={() => { setRes(null); runOverlay(); }} disabled={!event || overlayEvents.length === 0}>{tr('Overlay')}</button>
       </div>
       <ErrorBox error={err} />
       {multi && <OverlayChart series={multi} />}
       {res && <>
         <div className="stats">
-          <Stat label="Events" value={fmtNum(res.total.count)} />
+          <Stat label={tr('Events')} value={fmtNum(res.total.count)} />
           <Stat label="Σ value" value={money(res.total.sum)} />
           <Stat label={`Σ ${sumField || 'amount'}`} value={money(res.total.field_sum)} />
-          <Stat label="Groups" value={fmtNum(res.groups.length)} />
+          <Stat label={tr('Groups')} value={fmtNum(res.groups.length)} />
         </div>
         <div className="card">
           <svg viewBox={`0 0 600 136`} style={{ width: '100%', height: 150 }}>
@@ -261,24 +262,24 @@ export function Playtime({ filter }: { filter: Filter }) {
   const hmax = Math.max(1, ...(q.data?.histogram ?? []).map((h) => h.sessions));
   return (
     <div className="stack">
-      <div className="row" style={{ alignItems: 'center' }}>{r.picker}<span className="hint">from play sessions (platform / app version filters apply)</span></div>
+      <div className="row" style={{ alignItems: 'center' }}>{r.picker}<span className="hint">{tr('from play sessions (platform / app version filters apply)')}</span></div>
       <ErrorBox error={q.error} />
       <div className="stats">
-        <Stat label="Sessions" value={fmtNum(t?.sessions ?? 0)} sub={`${(t?.sessions_per_player_day ?? 0).toFixed(2)} per player-day`} />
-        <Stat label="Avg session" value={mins(t?.avg_session_secs ?? 0)} />
-        <Stat label="Playtime / player-day" value={mins(t?.playtime_per_player_day_secs ?? 0)} />
-        <Stat label="Total playtime" value={`${Math.round((t?.total_secs ?? 0) / 3600)} h`} />
+        <Stat label={tr('Sessions')} value={fmtNum(t?.sessions ?? 0)} sub={`${(t?.sessions_per_player_day ?? 0).toFixed(2)} per player-day`} />
+        <Stat label={tr('Avg session')} value={mins(t?.avg_session_secs ?? 0)} />
+        <Stat label={tr('Playtime / player-day')} value={mins(t?.playtime_per_player_day_secs ?? 0)} />
+        <Stat label={tr('Total playtime')} value={`${Math.round((t?.total_secs ?? 0) / 3600)} h`} />
       </div>
       <div className="row">
         <div className="card" style={{ flex: 2 }}>
-          <strong>Sessions per day · avg / median length</strong>
+          <strong>{tr('Sessions per day · avg / median length')}</strong>
           <Table rows={q.data?.series} rowKey={(d) => d.day} cols={[
             { h: 'Day', c: (d) => <code>{d.day}</code> }, { h: 'Sessions', c: (d) => fmtNum(d.sessions) }, { h: 'Players', c: (d) => fmtNum(d.players) },
             { h: 'Avg', c: (d) => mins(d.avg_secs) }, { h: 'Median', c: (d) => mins(d.median_secs) }, { h: 'Total', c: (d) => `${(d.total_secs / 3600).toFixed(1)} h` },
           ]} />
         </div>
         <div className="card" style={{ flex: 1 }}>
-          <strong>Session length</strong>
+          <strong>{tr('Session length')}</strong>
           {(q.data?.histogram ?? []).map((h) => <div key={h.bucket} className="row" style={{ alignItems: 'center', margin: '6px 0' }}><span className="mono" style={{ width: 56 }}>{h.bucket}</span><div style={{ flex: 1, background: 'var(--border)', height: 14, borderRadius: 4 }}><div style={{ width: `${(h.sessions / hmax) * 100}%`, background: '#1e8e3e', height: '100%', borderRadius: 4 }} /></div><span style={{ width: 60, textAlign: 'right' }}>{fmtNum(h.sessions)}</span></div>)}
         </div>
       </div>
@@ -303,16 +304,16 @@ export function Ltv({ filter }: { filter: Filter }) {
   const cell = (v: { revenue: number; ltv: number; roas: number } | null | undefined, showRoas: boolean) => v == null ? <span className="hint">—</span> : <span title={`revenue ${money(v.revenue)}`}>{money(v.ltv)}{showRoas && <span className="hint"> · {pct(v.roas)}</span>}</span>;
   return (
     <div className="stack">
-      <div className="row" style={{ alignItems: 'end' }}>{r.picker}<Text label="Day offsets" value={days} onChange={setDays} mono hint="LTV / RoAS at D-n, 0..180" /></div>
+      <div className="row" style={{ alignItems: 'end' }}>{r.picker}<Text label={tr('Day offsets')} value={days} onChange={setDays} mono hint={tr('LTV / RoAS at D-n, 0..180')} /></div>
       <ErrorBox error={q.error ?? spend.error ?? err} />
       <div className="stats">
-        <Stat label="Installs" value={fmtNum(t?.installs ?? 0)} sub="new identities in range" />
-        <Stat label="Ad spend" value={money(t?.spend ?? 0)} sub={`CPI ${money(t?.cpi ?? 0)}`} />
+        <Stat label={tr('Installs')} value={fmtNum(t?.installs ?? 0)} sub="new identities in range" />
+        <Stat label={tr('Ad spend')} value={money(t?.spend ?? 0)} sub={`CPI ${money(t?.cpi ?? 0)}`} />
         {(q.data?.days ?? []).slice(0, 2).map((d) => <Stat key={d} label={`LTV D${d}`} value={money(t?.at[`d${d}`]?.ltv)} sub={`RoAS ${pct(t?.at[`d${d}`]?.roas)}`} />)}
       </div>
       <div className="card">
-        <strong>Install cohorts</strong> <span className="hint">LTV = cumulative revenue per install · RoAS = revenue / spend</span>
-        <Table rows={q.data?.cohorts} rowKey={(c) => c.cohort} empty="No installs or spend in this range" cols={[
+        <strong>{tr('Install cohorts')}</strong> <span className="hint">LTV = cumulative revenue per install · RoAS = revenue / spend</span>
+        <Table rows={q.data?.cohorts} rowKey={(c) => c.cohort} empty={tr('No installs or spend in this range')} cols={[
           { h: 'Cohort', c: (c) => <code>{c.cohort}</code> }, { h: 'Installs', c: (c) => <>{fmtNum(c.installs)}{c.reported_installs > 0 && <span className="hint"> / {fmtNum(c.reported_installs)} reported</span>}</> },
           { h: 'Spend', c: (c) => money(c.spend) }, { h: 'CPI', c: (c) => money(c.cpi) },
           ...(q.data?.days ?? []).map((d) => ({ h: `D${d}`, c: (c: LtvRes['cohorts'][number]) => cell(c.at[`d${d}`], c.spend > 0) })),
@@ -320,27 +321,27 @@ export function Ltv({ filter }: { filter: Filter }) {
       </div>
       <div className="row" style={{ alignItems: 'stretch' }}>
         <div className="card stack" style={{ flex: 1 }}>
-          <strong>Import ad spend (CSV)</strong>
-          <span className="hint">day,platform,country,campaign,spend,installs[,currency] — platform / country may be empty, rows upsert by (day, platform, country, campaign)</span>
+          <strong>{tr('Import ad spend (CSV)')}</strong>
+          <span className="hint">{tr('day,platform,country,campaign,spend,installs[,currency] — platform / country may be empty, rows upsert by (day, platform, country, campaign)')}</span>
           <textarea rows={5} className="mono" value={csv} onChange={(e) => setCsv(e.target.value)} placeholder={'2026-10-01,ios,DE,launch-eu,1250.00,410\n2026-10-01,android,,launch-global,980.50,620'} />
-          <div><button className="btn" disabled={!csv.trim()} onClick={importCsv}>Import</button></div>
+          <div><button className="btn" disabled={!csv.trim()} onClick={importCsv}>{tr('Import')}</button></div>
         </div>
         <div className="card stack" style={{ flex: 1 }}>
-          <strong>Add a row</strong>
+          <strong>{tr('Add a row')}</strong>
           <div className="row" style={{ alignItems: 'end' }}>
-            <Field label="Day"><input type="date" value={row.day} onChange={(e) => setRow({ ...row, day: e.target.value })} /></Field>
-            <Text label="Platform" value={row.platform} onChange={(platform) => setRow({ ...row, platform })} mono />
-            <Text label="Country" value={row.country} onChange={(country) => setRow({ ...row, country: country.toUpperCase() })} mono />
+            <Field label={tr('Day')}><input type="date" value={row.day} onChange={(e) => setRow({ ...row, day: e.target.value })} /></Field>
+            <Text label={tr('Platform')} value={row.platform} onChange={(platform) => setRow({ ...row, platform })} mono />
+            <Text label={tr('Country')} value={row.country} onChange={(country) => setRow({ ...row, country: country.toUpperCase() })} mono />
           </div>
           <div className="row" style={{ alignItems: 'end' }}>
-            <Text label="Campaign" value={row.campaign} onChange={(campaign) => setRow({ ...row, campaign })} />
-            <Num label="Spend" value={row.spend} onChange={(v) => setRow({ ...row, spend: v ?? 0 })} min={0} />
-            <Num label="Installs" value={row.installs} onChange={(v) => setRow({ ...row, installs: v ?? 0 })} min={0} />
-            <button className="btn" onClick={addRow}>Save</button>
+            <Text label={tr('Campaign')} value={row.campaign} onChange={(campaign) => setRow({ ...row, campaign })} />
+            <Num label={tr('Spend')} value={row.spend} onChange={(v) => setRow({ ...row, spend: v ?? 0 })} min={0} />
+            <Num label={tr('Installs')} value={row.installs} onChange={(v) => setRow({ ...row, installs: v ?? 0 })} min={0} />
+            <button className="btn" onClick={addRow}>{tr('Save')}</button>
           </div>
         </div>
       </div>
-      <Table rows={spend.data?.items} rowKey={(s) => `${s.day}${s.platform}${s.country}${s.campaign}`} empty="No ad spend recorded in range" cols={[
+      <Table rows={spend.data?.items} rowKey={(s) => `${s.day}${s.platform}${s.country}${s.campaign}`} empty={tr('No ad spend recorded in range')} cols={[
         { h: 'Day', c: (s) => <code>{s.day}</code> }, { h: 'Platform', c: (s) => s.platform || <span className="hint">any</span> }, { h: 'Country', c: (s) => s.country || <span className="hint">any</span> },
         { h: 'Campaign', c: (s) => s.campaign }, { h: 'Spend', c: (s) => `${money(s.spend)} ${s.currency}` }, { h: 'Installs', c: (s) => fmtNum(s.installs) },
       ]} />
@@ -357,17 +358,17 @@ export function Errors() {
     <div className="stack">
       <ErrorBox error={q.error} />
       <div className="stats">
-        <Stat label="Rejected events" value={fmtNum(d?.rejected_events.count ?? 0)} sub={<Link to="/taxonomy">taxonomy debugger</Link>} />
+        <Stat label={tr('Rejected events')} value={fmtNum(d?.rejected_events.count ?? 0)} sub={<Link to="/taxonomy">{tr('taxonomy debugger')}</Link>} />
         {d?.failures.map((f) => <Stat key={f.source} label={f.source.replace('_', ' ')} value={<span style={{ color: f.count > 0 ? 'var(--bad)' : undefined }}>{fmtNum(f.count)}</span>} sub="failed in the last 24 h" />)}
       </div>
       <div className="row" style={{ alignItems: 'stretch' }}>
         <div className="card" style={{ flex: 1 }}>
-          <strong>Rejections by reason</strong>
+          <strong>{tr('Rejections by reason')}</strong>
           {Object.entries(d?.rejected_events.by_reason ?? {}).sort((a, b) => b[1] - a[1]).map(([r, n]) => <div key={r} className="row" style={{ justifyContent: 'space-between' }}><span>{r}</span><strong>{fmtNum(n)}</strong></div>)}
-          {d && d.rejected_events.count === 0 && <div className="hint">No rejected events. Validation mode is configured per event definition in Taxonomy.</div>}
+          {d && d.rejected_events.count === 0 && <div className="hint">{tr('No rejected events. Validation mode is configured per event definition in Taxonomy.')}</div>}
         </div>
         <div className="card" style={{ flex: 2 }}>
-          <strong>Recent rejections</strong>
+          <strong>{tr('Recent rejections')}</strong>
           <Table rows={d?.rejected_events.recent} rowKey={(r) => `${r.at}${r.name}${r.reason}`} cols={[{ h: 'When', c: (r) => fmtDate(r.at) }, { h: 'Event', c: (r) => <code>{r.name}</code> }, { h: 'Reason', c: (r) => r.reason }]} />
         </div>
       </div>

@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { get, useLoad } from '../api';
 import { ErrorBox, Page, Sparkline, Stat, fmtNum } from '../ui';
+import { t } from '../i18n';
 
 type Stats = { identities: number; uptime_seconds: number; clickhouse_enabled: boolean };
 type Series = { buckets: { bucket: string; count: number; identities: number }[] };
@@ -23,7 +24,7 @@ export default function Dashboard() {
   const s = stats.data;
   const up = s ? `${Math.floor(s.uptime_seconds / 3600)}h ${Math.floor((s.uptime_seconds % 3600) / 60)}m` : '';
   return (
-    <Page title="Overview">
+    <Page title={t('Overview')}>
       <ErrorBox error={stats.error} />
       {onboarding.data && onboarding.data.done < onboarding.data.total && !dismissed && (
         <GettingStarted
@@ -35,19 +36,19 @@ export default function Dashboard() {
         />
       )}
       <div className="grid c4">
-        <Stat label="Identities" value={fmtNum(s?.identities ?? 0)} sub={s ? `server up ${up} · analytics on ${s.clickhouse_enabled ? 'ClickHouse' : 'Postgres'}` : undefined} />
-        <Stat label="Feature flags" value={<Link to="/flags">{fmtNum(flags.data?.length ?? 0)}</Link>} sub={flags.data ? `${flags.data.filter((f) => f.enabled).length} enabled` : undefined} />
-        <Stat label="Experiments" value={<Link to="/experiments">{fmtNum(exps.data?.length ?? 0)}</Link>} sub={exps.data ? `${exps.data.filter((e) => e.status === 'running').length} running` : undefined} />
-        <Stat label="Audiences" value={<Link to="/audiences">{fmtNum(auds.data?.length ?? 0)}</Link>} />
-        <Stat label="Live events" value={<Link to="/live-events">{fmtNum(events.data?.length ?? 0)}</Link>} sub={events.data ? `${events.data.filter((e) => e.enabled).length} enabled` : undefined} />
-        <Stat label="Message campaigns" value={<Link to="/messages">{fmtNum(msgs.data?.length ?? 0)}</Link>} sub={msgs.data ? `${msgs.data.filter((m) => m.enabled).length} enabled` : undefined} />
-        <Stat label="Push devices" value={fmtNum(push.data?.tokens ?? 0)} sub={push.data ? `${fmtNum(push.data.identities)} identities · provider ${push.data.mode}` : undefined} />
-        <Stat label="Sessions, 24h" value={fmtNum((auth.data?.buckets ?? []).reduce((a, b) => a + b.count, 0))} sub="$authenticate events" />
+        <Stat label={t('Identities')} value={fmtNum(s?.identities ?? 0)} sub={s ? `${t('server up')} ${up} · ${t('analytics on')} ${s.clickhouse_enabled ? 'ClickHouse' : 'Postgres'}` : undefined} />
+        <Stat label={t('Feature flags')} value={<Link to="/flags">{fmtNum(flags.data?.length ?? 0)}</Link>} sub={flags.data ? `${flags.data.filter((f) => f.enabled).length} ${t('enabled')}` : undefined} />
+        <Stat label={t('Experiments')} value={<Link to="/experiments">{fmtNum(exps.data?.length ?? 0)}</Link>} sub={exps.data ? `${exps.data.filter((e) => e.status === 'running').length} ${t('running')}` : undefined} />
+        <Stat label={t('Audiences')} value={<Link to="/audiences">{fmtNum(auds.data?.length ?? 0)}</Link>} />
+        <Stat label={t('Live events')} value={<Link to="/live-events">{fmtNum(events.data?.length ?? 0)}</Link>} sub={events.data ? `${events.data.filter((e) => e.enabled).length} ${t('enabled')}` : undefined} />
+        <Stat label={t('Message campaigns')} value={<Link to="/messages">{fmtNum(msgs.data?.length ?? 0)}</Link>} sub={msgs.data ? `${msgs.data.filter((m) => m.enabled).length} ${t('enabled')}` : undefined} />
+        <Stat label={t('Push devices')} value={fmtNum(push.data?.tokens ?? 0)} sub={push.data ? `${fmtNum(push.data.identities)} ${t('identities')} · ${t('provider')} ${push.data.mode}` : undefined} />
+        <Stat label={t('Sessions, 24h')} value={fmtNum((auth.data?.buckets ?? []).reduce((a, b) => a + b.count, 0))} sub="$authenticate events" />
       </div>
       <div className="card" style={{ marginTop: 16 }}>
         <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-          <strong>Authentications per hour, last 24h</strong>
-          <Link to="/analytics" className="muted">analytics →</Link>
+          <strong>{t('Authentications per hour, last 24h')}</strong>
+          <Link to="/analytics" className="muted">{t('analytics →')}</Link>
         </div>
         <Sparkline points={(auth.data?.buckets ?? []).map((b) => b.count)} height={80} />
       </div>
@@ -59,12 +60,10 @@ function GettingStarted({ data, onDismiss }: { data: Onboarding; onDismiss: () =
   return (
     <div className="card" style={{ marginBottom: 16 }}>
       <div className="row" style={{ justifyContent: 'space-between', alignItems: 'baseline' }}>
-        <h3 style={{ margin: 0 }}>Getting started</h3>
+        <h3 style={{ margin: 0 }}>{t('Getting started')}</h3>
         <span className="muted">
-          {data.done} / {data.total} done ·{' '}
-          <button className="link" onClick={onDismiss}>
-            Dismiss
-          </button>
+          {data.done} / {data.total} {t('done')} ·{' '}
+          <button className="link" onClick={onDismiss}>{t('Dismiss')}</button>
         </span>
       </div>
       <ul className="checklist">

@@ -5,6 +5,7 @@ import { EntityPage, Text, Tags } from '../crud';
 import { RulesEditor, TypedValue } from '../RuleBuilder';
 import type { Rule } from '../RuleBuilder';
 import { Badge, Confirm, ErrorBox, Field, JsonField, Table, Toggle, fmtDate } from '../ui';
+import { t } from '../i18n';
 
 type Prerequisite = { flag: string; value?: unknown };
 type Schedule = { id: string; at: string; patch: unknown; status: string; created_by: string; note: string; error: string; applied_at?: string | null };
@@ -29,21 +30,21 @@ function Overrides({ flag, reload }: { flag: Flag; reload: () => void }) {
   };
   return (
     <div className="card">
-      <strong>Per-identity overrides</strong>
+      <strong>{t('Per-identity overrides')}</strong>
       <ErrorBox error={err ?? q.error} />
       <div className="row" style={{ marginTop: 10 }}>
-        <Field label="External id"><input value={ext} onChange={(e) => setExt(e.target.value)} placeholder="player-123" /></Field>
-        <Field label="Value (JSON)"><JsonField value={undefined} onChange={setVal} rows={1} placeholder="true" /></Field>
-        <div className="field fixed"><span className="label">&nbsp;</span><button className="btn" disabled={!ext || val === undefined} onClick={add}>Set</button></div>
+        <Field label={t('External id')}><input value={ext} onChange={(e) => setExt(e.target.value)} placeholder="player-123" /></Field>
+        <Field label={t('Value (JSON)')}><JsonField value={undefined} onChange={setVal} rows={1} placeholder="true" /></Field>
+        <div className="field fixed"><span className="label">&nbsp;</span><button className="btn" disabled={!ext || val === undefined} onClick={add}>{t('Set')}</button></div>
       </div>
       <Table<Override>
         rows={q.data}
         rowKey={(o) => o.identity_id}
-        empty="No overrides"
+        empty={t('No overrides')}
         cols={[
           { h: 'Identity', c: (o) => <span className="mono">{o.external_id}</span> },
           { h: 'Value', c: (o) => <code>{JSON.stringify(o.value)}</code> },
-          { h: '', w: '110px', c: (o) => <Confirm danger onConfirm={() => del(`/flags/${encodeURIComponent(flag.key)}/overrides/${o.identity_id}`).then(() => { q.reload(); reload(); }, setErr)}>Remove</Confirm> },
+          { h: '', w: '110px', c: (o) => <Confirm danger onConfirm={() => del(`/flags/${encodeURIComponent(flag.key)}/overrides/${o.identity_id}`).then(() => { q.reload(); reload(); }, setErr)}>{t('Remove')}</Confirm> },
         ]}
       />
     </div>
@@ -66,14 +67,14 @@ function Diff({ flag }: { flag: Flag }) {
   const run = () => get<FlagDiff>(`/flags/${flag.key}/diff?a=${encodeURIComponent(a)}&b=${encodeURIComponent(b)}`).then((r) => { setOut(r); setErr(null); }, setErr);
   return (
     <div className="card">
-      <strong>Payload sizes</strong>
-      <div className="hint">Bytes the client receives for each value (default, rule values and variants).</div>
+      <strong>{t('Payload sizes')}</strong>
+      <div className="hint">{t('Bytes the client receives for each value (default, rule values and variants).')}</div>
       <Table rows={opts} rowKey={(r) => r.selector} cols={[{ h: 'Value', c: (r) => <code>{r.selector}</code> }, { h: 'Bytes', c: (r) => r.bytes.toLocaleString() }]} />
-      <strong style={{ display: 'block', marginTop: 12 }}>Compare two values</strong>
+      <strong style={{ display: 'block', marginTop: 12 }}>{t('Compare two values')}</strong>
       <div className="row">
         <Field label="A"><select value={a} onChange={(e) => setA(e.target.value)}>{opts.map((o) => <option key={o.selector} value={o.selector}>{o.selector}</option>)}</select></Field>
         <Field label="B"><select value={b} onChange={(e) => setB(e.target.value)}>{opts.map((o) => <option key={o.selector} value={o.selector}>{o.selector}</option>)}</select></Field>
-        <button className="btn" onClick={run}>Diff</button>
+        <button className="btn" onClick={run}>{t('Diff')}</button>
       </div>
       <ErrorBox error={err} />
       {out && (out.changes.length === 0 ? <div className="hint">No differences ({out.a.bytes} vs {out.b.bytes} bytes).</div> : (
@@ -101,20 +102,20 @@ function Explain({ flag }: { flag: Flag }) {
   const layer = (name: string, hit: boolean, body: ReactNode) => <li key={name} style={{ opacity: hit ? 1 : 0.55 }}><Badge tone={hit ? 'ok' : undefined}>{name}</Badge> {body}</li>;
   return (
     <div className="card">
-      <strong>Explain for a player</strong>
-      <div className="hint">Override chain: identity override → experiment → live event → rules → default.</div>
+      <strong>{t('Explain for a player')}</strong>
+      <div className="hint">{t('Override chain: identity override → experiment → live event → rules → default.')}</div>
       <ErrorBox error={err} />
       <div className="row" style={{ marginTop: 10 }}>
-        <Field label="External id"><input value={ext} onChange={(e) => setExt(e.target.value)} placeholder="player-123" /></Field>
-        <div className="field fixed"><span className="label">&nbsp;</span><button className="btn ghost" disabled={!ext} onClick={run}>Explain</button></div>
+        <Field label={t('External id')}><input value={ext} onChange={(e) => setExt(e.target.value)} placeholder="player-123" /></Field>
+        <div className="field fixed"><span className="label">&nbsp;</span><button className="btn ghost" disabled={!ext} onClick={run}>{t('Explain')}</button></div>
       </div>
       {out && (
         <>
           <div style={{ marginTop: 10 }}>Result: {J(out.result.value)} <Badge tone="info">{out.result.reason.kind}</Badge> <span className="hint">clock {fmtDate(out.now)} · audiences: {out.audiences.join(', ') || '—'}</span></div>
           <ol className="chain">
             {layer('identity override', out.identity_override != null, out.identity_override != null ? J(out.identity_override) : <span className="muted">none</span>)}
-            {layer('experiment', !!out.experiment, out.experiment ? <>{out.experiment.experiment} / {out.experiment.variant} → {J(out.experiment.value)}</> : <span className="muted">not enrolled</span>)}
-            {layer('live event', !!out.live_event, out.live_event ? <>{out.live_event.live_event} → {J(out.live_event.value)}</> : <span className="muted">no active event overrides this flag</span>)}
+            {layer('experiment', !!out.experiment, out.experiment ? <>{out.experiment.experiment} / {out.experiment.variant} → {J(out.experiment.value)}</> : <span className="muted">{t('not enrolled')}</span>)}
+            {layer('live event', !!out.live_event, out.live_event ? <>{out.live_event.live_event} → {J(out.live_event.value)}</> : <span className="muted">{t('no active event overrides this flag')}</span>)}
             {out.rules.map((r) => layer(`rule ${r.name || r.id}`, r.condition_matches && r.audiences_match && r.in_rollout, <>{r.condition_matches ? 'condition ✓' : 'condition ✗'} · {r.audiences_match ? 'audiences ✓' : 'audiences ✗'} · {r.in_rollout ? 'rollout ✓' : 'rollout ✗'} → {J(r.value)}</>))}
             {layer('default', true, J(out.default_value))}
           </ol>
@@ -132,12 +133,12 @@ function DryRun({ flag }: { flag: Flag }) {
   const run = () => post(`/flags/${encodeURIComponent(flag.key)}/evaluate`, { subject, properties: props }).then((r) => { setOut(r); setErr(null); }, setErr);
   return (
     <div className="card">
-      <strong>Dry run</strong>
+      <strong>{t('Dry run')}</strong>
       <div className="hint" style={{ marginBottom: 8 }}>Evaluate this flag against hypothetical properties; the subject string drives percentage bucketing.</div>
       <ErrorBox error={err} />
-      <Field label="Subject"><input value={subject} onChange={(e) => setSubject(e.target.value)} /></Field>
-      <Field label="Properties"><JsonField value={props} onChange={setProps} rows={5} /></Field>
-      <button className="btn ghost" onClick={run}>Evaluate</button>
+      <Field label={t('Subject')}><input value={subject} onChange={(e) => setSubject(e.target.value)} /></Field>
+      <Field label={t('Properties')}><JsonField value={props} onChange={setProps} rows={5} /></Field>
+      <button className="btn ghost" onClick={run}>{t('Evaluate')}</button>
       {out !== null && <pre className="code" style={{ marginTop: 10 }}>{JSON.stringify(out, null, 2)}</pre>}
     </div>
   );
@@ -151,7 +152,7 @@ function PrerequisitesEditor({ self, value, onChange }: { self: string; value: P
     <div className="stack" style={{ gap: 6 }}>
       {value.map((p, i) => (
         <div className="row" key={i} style={{ alignItems: 'end' }}>
-          <label className="field"><span className="label">Flag</span>
+          <label className="field"><span className="label">{t('Flag')}</span>
             <select value={p.flag} onChange={(e) => upd(i, { flag: e.target.value })}>
               <option value="">— pick —</option>
               {flags.map((f) => <option key={f.key} value={f.key}>{f.key}</option>)}
@@ -181,17 +182,17 @@ function SchedulePanel({ flag, reload }: { flag: Flag; reload: () => void }) {
   return (
     <div className="stack">
       <div className="card">
-        <strong>Kill switch</strong> <span className="hint">disable the flag for everyone right now; clients fall back to the default</span>
+        <strong>{t('Kill switch')}</strong> <span className="hint">disable the flag for everyone right now; clients fall back to the default</span>
         <div style={{ marginTop: 8 }}>
           {flag.enabled
-            ? <Confirm danger onConfirm={() => post(`/flags/${encodeURIComponent(flag.key)}/kill`).then(reload, setErr)}>Kill flag</Confirm>
-            : <button className="btn" onClick={() => post(`/flags/${encodeURIComponent(flag.key)}/restore`).then(reload, setErr)}>Restore (enable)</button>}
+            ? <Confirm danger onConfirm={() => post(`/flags/${encodeURIComponent(flag.key)}/kill`).then(reload, setErr)}>{t('Kill flag')}</Confirm>
+            : <button className="btn" onClick={() => post(`/flags/${encodeURIComponent(flag.key)}/restore`).then(reload, setErr)}>{t('Restore (enable)')}</button>}
         </div>
       </div>
       <div className="card">
-        <strong>Scheduled changes</strong> <span className="hint">a patch applied at the given time (checked every minute)</span>
+        <strong>{t('Scheduled changes')}</strong> <span className="hint">{t('a patch applied at the given time (checked every minute)')}</span>
         <ErrorBox error={err ?? q.error} />
-        <Table<Schedule> rows={q.data?.items ?? []} rowKey={(s) => s.id} empty="Nothing scheduled."
+        <Table<Schedule> rows={q.data?.items ?? []} rowKey={(s) => s.id} empty={t('Nothing scheduled.')}
           cols={[
             { h: 'When', c: (s) => fmtDate(s.at) },
             { h: 'Patch', c: (s) => <code>{JSON.stringify(s.patch)}</code> },
@@ -201,10 +202,10 @@ function SchedulePanel({ flag, reload }: { flag: Flag; reload: () => void }) {
             { h: '', c: (s) => s.status === 'pending' ? <button className="btn ghost sm" onClick={() => del(`/flags/${encodeURIComponent(flag.key)}/schedules/${s.id}`).then(() => q.reload(), setErr)}>cancel</button> : null },
           ]} />
         <div className="row" style={{ alignItems: 'end', marginTop: 8 }}>
-          <label className="field"><span className="label">At (local time)</span><input type="datetime-local" value={at} onChange={(e) => setAt(e.target.value)} /></label>
-          <Field label="Patch (flag fields)"><textarea className="mono" rows={3} value={patch} onChange={(e) => setPatch(e.target.value)} /></Field>
-          <Text label="Note" value={note} onChange={setNote} />
-          <button className="btn" disabled={!at} onClick={submit}>Schedule</button>
+          <label className="field"><span className="label">{t('At (local time)')}</span><input type="datetime-local" value={at} onChange={(e) => setAt(e.target.value)} /></label>
+          <Field label={t('Patch (flag fields)')}><textarea className="mono" rows={3} value={patch} onChange={(e) => setPatch(e.target.value)} /></Field>
+          <Text label={t('Note')} value={note} onChange={setNote} />
+          <button className="btn" disabled={!at} onClick={submit}>{t('Schedule')}</button>
         </div>
       </div>
     </div>
@@ -219,13 +220,13 @@ function StatsPanel({ flag }: { flag: Flag; reload: () => void }) {
   return (
     <div className="card">
       <div className="row" style={{ alignItems: 'center' }}>
-        <strong>Evaluations</strong>
+        <strong>{t('Evaluations')}</strong>
         <select value={days} onChange={(e) => setDays(Number(e.target.value))}>{[7, 30, 90].map((d) => <option key={d} value={d}>last {d} days</option>)}</select>
-        {s && <span className="hint">{s.total.toLocaleString()} evaluations · last {s.last_day ?? '—'}{s.total === 0 ? ' · ' : ''}{s.total === 0 && <Badge tone="warn">no traffic — candidate for cleanup</Badge>}</span>}
+        {s && <span className="hint">{s.total.toLocaleString()} evaluations · last {s.last_day ?? '—'}{s.total === 0 ? ' · ' : ''}{s.total === 0 && <Badge tone="warn">{t('no traffic — candidate for cleanup')}</Badge>}</span>}
       </div>
       <ErrorBox error={q.error} />
       {s && (
-        <Table rows={Object.entries(s.by_variant)} rowKey={([v]) => v} empty="No evaluations in this window." cols={[
+        <Table rows={Object.entries(s.by_variant)} rowKey={([v]) => v} empty={t('No evaluations in this window.')} cols={[
           { h: 'Served variant', c: ([v]) => v ? <code>{v}</code> : <span className="hint">(value / default)</span> },
           { h: 'Evaluations', c: ([, n]) => n.toLocaleString() },
           { h: 'Share', c: ([, n]) => s.total ? ((n / s.total) * 100).toFixed(1) + '%' : '—' },
@@ -238,9 +239,9 @@ function StatsPanel({ flag }: { flag: Flag; reload: () => void }) {
 export default function Flags() {
   return (
     <EntityPage<Flag>
-      title="Feature flags"
+      title={t('Feature flags')}
       path="/flags"
-      blurb="Remote-configurable values with targeting rules, percentage rollouts and weighted variants. Changes reach connected clients instantly."
+      blurb={t('Remote-configurable values with targeting rules, percentage rollouts and weighted variants. Changes reach connected clients instantly.')}
       cols={[
         { h: 'Key', c: (f) => <><strong>{f.key}</strong><div className="hint">{f.name}</div></> },
         { h: 'Type', c: (f) => <Badge tone="info">{f.value_type}</Badge> },
@@ -253,32 +254,32 @@ export default function Flags() {
       form={(d, set, isNew) => (
         <>
           <div className="row">
-            <Text label="Key" value={d.key} onChange={(key) => set({ key })} disabled={!isNew} mono hint="immutable, used by SDKs" />
-            <Text label="Name" value={d.name} onChange={(name) => set({ name })} />
+            <Text label={t('Key')} value={d.key} onChange={(key) => set({ key })} disabled={!isNew} mono hint={t('immutable, used by SDKs')} />
+            <Text label={t('Name')} value={d.name} onChange={(name) => set({ name })} />
           </div>
-          <Text label="Description" value={d.description} onChange={(description) => set({ description })} />
+          <Text label={t('Description')} value={d.description} onChange={(description) => set({ description })} />
           <div className="row">
             <label className="field">
-              <span className="label">Value type</span>
+              <span className="label">{t('Value type')}</span>
               <select value={d.value_type} onChange={(e) => { const t = e.target.value as Flag['value_type']; set({ value_type: t, default_value: t === 'bool' ? false : t === 'number' ? 0 : t === 'string' ? '' : {} }); }}>
                 <option value="bool">bool</option><option value="string">string</option><option value="number">number</option><option value="json">json</option>
               </select>
             </label>
-            <Field label="Default value"><TypedValue type={d.value_type ?? 'bool'} value={d.default_value} onChange={(v) => set({ default_value: v })} compact /></Field>
-            <div className="field fixed"><span className="label">Enabled</span><Toggle value={!!d.enabled} onChange={(enabled) => set({ enabled })} label={d.enabled ? 'on' : 'off'} /></div>
+            <Field label={t('Default value')}><TypedValue type={d.value_type ?? 'bool'} value={d.default_value} onChange={(v) => set({ default_value: v })} compact /></Field>
+            <div className="field fixed"><span className="label">{t('Enabled')}</span><Toggle value={!!d.enabled} onChange={(enabled) => set({ enabled })} label={d.enabled ? 'on' : 'off'} /></div>
           </div>
-          <div className="label" style={{ margin: '4px 0 6px' }}>Rules <span className="hint">— evaluated top to bottom, first match wins</span></div>
+          <div className="label" style={{ margin: '4px 0 6px' }}>{t('Rules') + ' '}<span className="hint">— evaluated top to bottom, first match wins</span></div>
           <RulesEditor type={d.value_type ?? 'bool'} value={d.rules ?? []} onChange={(rules) => set({ rules })} />
-          <Field label="Prerequisites" hint="rules apply only while these flags are enabled and (optionally) equal the given value; otherwise the default is served">
+          <Field label={t('Prerequisites')} hint="rules apply only while these flags are enabled and (optionally) equal the given value; otherwise the default is served">
             <PrerequisitesEditor self={d.key ?? ''} value={d.prerequisites ?? []} onChange={(prerequisites) => set({ prerequisites })} />
           </Field>
           <Tags value={d.tags} onChange={(tags) => set({ tags })} />
         </>
       )}
       wizard={[
-        { label: 'Basics', render: (d, set) => (<><div className="row"><Text label="Key" value={d.key} onChange={(key) => set({ key })} mono hint="immutable, used by SDKs" /><Text label="Name" value={d.name} onChange={(name) => set({ name })} /></div><Text label="Description" value={d.description} onChange={(description) => set({ description })} /><Tags value={d.tags} onChange={(tags) => set({ tags })} /></>) },
-        { label: 'Value', render: (d, set) => (<div className="row"><label className="field"><span className="label">Value type</span><select value={d.value_type} onChange={(e) => { const t = e.target.value as Flag['value_type']; set({ value_type: t, default_value: t === 'bool' ? false : t === 'number' ? 0 : t === 'string' ? '' : {}, rules: [] }); }}><option value="bool">bool</option><option value="string">string</option><option value="number">number</option><option value="json">json</option></select></label><Field label="Default value"><TypedValue type={d.value_type ?? 'bool'} value={d.default_value} onChange={(v) => set({ default_value: v })} compact /></Field><div className="field fixed"><span className="label">Enabled</span><Toggle value={!!d.enabled} onChange={(enabled) => set({ enabled })} label={d.enabled ? 'on' : 'off'} /></div></div>) },
-        { label: 'Targeting', render: (d, set) => (<><div className="label" style={{ margin: '4px 0 6px' }}>Rules <span className="hint">— evaluated top to bottom, first match wins; leave empty to serve the default to everyone</span></div><RulesEditor type={d.value_type ?? 'bool'} value={d.rules ?? []} onChange={(rules) => set({ rules })} /></>) },
+        { label: 'Basics', render: (d, set) => (<><div className="row"><Text label={t('Key')} value={d.key} onChange={(key) => set({ key })} mono hint={t('immutable, used by SDKs')} /><Text label={t('Name')} value={d.name} onChange={(name) => set({ name })} /></div><Text label={t('Description')} value={d.description} onChange={(description) => set({ description })} /><Tags value={d.tags} onChange={(tags) => set({ tags })} /></>) },
+        { label: 'Value', render: (d, set) => (<div className="row"><label className="field"><span className="label">{t('Value type')}</span><select value={d.value_type} onChange={(e) => { const t = e.target.value as Flag['value_type']; set({ value_type: t, default_value: t === 'bool' ? false : t === 'number' ? 0 : t === 'string' ? '' : {}, rules: [] }); }}><option value="bool">bool</option><option value="string">string</option><option value="number">number</option><option value="json">json</option></select></label><Field label={t('Default value')}><TypedValue type={d.value_type ?? 'bool'} value={d.default_value} onChange={(v) => set({ default_value: v })} compact /></Field><div className="field fixed"><span className="label">{t('Enabled')}</span><Toggle value={!!d.enabled} onChange={(enabled) => set({ enabled })} label={d.enabled ? 'on' : 'off'} /></div></div>) },
+        { label: 'Targeting', render: (d, set) => (<><div className="label" style={{ margin: '4px 0 6px' }}>{t('Rules') + ' '}<span className="hint">— evaluated top to bottom, first match wins; leave empty to serve the default to everyone</span></div><RulesEditor type={d.value_type ?? 'bool'} value={d.rules ?? []} onChange={(rules) => set({ rules })} /></>) },
       ]}
       tabs={[
         { id: 'overrides', label: 'Overrides', render: (f, reload) => <Overrides flag={f} reload={reload} /> },

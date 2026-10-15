@@ -7,6 +7,7 @@ Release automation reads the section whose heading contains the tagged version.
 ## [Unreleased]
 
 ### Added
+- Console localization: every UI string goes through `t()`; Russian dictionary (`console/src/locales/ru.ts`), language picked from the browser (`ru` → Russian, otherwise English), switchable on the login screen and under Your account. Dates follow the chosen locale.
 - Platform → Health: `GET /admin/v1/health` and a console page with dependency checks, ingest queue
   depth and throughput, stream connections, per-job housekeeping history (stale / failed detection),
   integration, webhook, export, report and alert delivery health, plus a single `status` /

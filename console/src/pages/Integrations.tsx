@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { post } from '../api';
 import { EntityPage, Text } from '../crud';
 import { Badge, ErrorBox, Field, JsonField, Toggle, fmtDate } from '../ui';
+import { t } from '../i18n';
 
 type Kind = 'webhook' | 'onesignal' | 'fcm' | 'apns' | 'facebook';
 type Health = { last_status: string | null; last_error: string | null; last_at: string | null; sent_count: number; failed_count: number };
@@ -24,11 +25,11 @@ function TestSend({ i }: { i: Integration }) {
   const [err, setErr] = useState<Error | null>(null);
   return (
     <div className="card">
-      <strong>Test</strong>
+      <strong>{t('Test')}</strong>
       <ErrorBox error={err} />
       <div className="row" style={{ marginTop: 8, alignItems: 'end' }}>
-        <Text label="Player (external id)" value={ext} onChange={setExt} mono />
-        <button className="btn" disabled={!ext} onClick={() => post<{ status: string; detail: string }>(`/integrations/${encodeURIComponent(i.key)}/test`, { external_id: ext }).then((r) => { setOut(r); setErr(null); }, setErr)}>Send test message</button>
+        <Text label={t('Player (external id)')} value={ext} onChange={setExt} mono />
+        <button className="btn" disabled={!ext} onClick={() => post<{ status: string; detail: string }>(`/integrations/${encodeURIComponent(i.key)}/test`, { external_id: ext }).then((r) => { setOut(r); setErr(null); }, setErr)}>{t('Send test message')}</button>
       </div>
       {out && <div style={{ marginTop: 8 }}><Badge tone={out.status === 'sent' ? 'ok' : out.status === 'failed' ? 'bad' : 'warn'}>{out.status}</Badge> <span className="hint">{out.detail}</span></div>}
     </div>
@@ -36,7 +37,7 @@ function TestSend({ i }: { i: Integration }) {
 }
 
 function Health({ h }: { h?: Health }) {
-  if (!h || !h.last_status) return <span className="hint">never used</span>;
+  if (!h || !h.last_status) return <span className="hint">{t('never used')}</span>;
   const tone = h.last_status === 'failed' ? 'warn' : 'ok';
   return (
     <div>
@@ -49,9 +50,9 @@ function Health({ h }: { h?: Health }) {
 export default function Integrations() {
   return (
     <EntityPage<Integration>
-      title="Integrations"
+      title={t('Integrations')}
       path="/integrations"
-      blurb="Delivery channels beyond the inbox. Add an integration key to a campaign's channels and every delivery is also sent through it and logged per channel. Secrets are masked after saving."
+      blurb={t('Delivery channels beyond the inbox. Add an integration key to a campaign\'s channels and every delivery is also sent through it and logged per channel. Secrets are masked after saving.')}
       cols={[
         { h: 'Key', c: (i) => <><strong>{i.key}</strong><div className="hint">{i.name}</div></> },
         { h: 'Kind', c: (i) => <Badge tone="info">{i.kind}</Badge> },
@@ -63,14 +64,14 @@ export default function Integrations() {
       form={(d, set, isNew) => (
         <>
           <div className="row">
-            <Text label="Key" value={d.key} onChange={(key) => set({ key })} disabled={!isNew} mono />
-            <Text label="Name" value={d.name} onChange={(name) => set({ name })} />
-            <div className="field fixed"><span className="label">Enabled</span><Toggle value={!!d.enabled} onChange={(enabled) => set({ enabled })} label={d.enabled ? 'on' : 'off'} /></div>
+            <Text label={t('Key')} value={d.key} onChange={(key) => set({ key })} disabled={!isNew} mono />
+            <Text label={t('Name')} value={d.name} onChange={(name) => set({ name })} />
+            <div className="field fixed"><span className="label">{t('Enabled')}</span><Toggle value={!!d.enabled} onChange={(enabled) => set({ enabled })} label={d.enabled ? 'on' : 'off'} /></div>
           </div>
-          <Field label="Kind" hint={HINT[d.kind ?? 'webhook']}>
+          <Field label={t('Kind')} hint={HINT[d.kind ?? 'webhook']}>
             <select value={d.kind ?? 'webhook'} onChange={(e) => { const kind = e.target.value as Kind; set({ kind, config: isNew ? { ...BLANK[kind] } : d.config }); }}>{(Object.keys(HINT) as Kind[]).map((k) => <option key={k} value={k}>{k}</option>)}</select>
           </Field>
-          <Field label="Config (JSON)"><JsonField value={d.config} onChange={(config) => set({ config: (config as Record<string, unknown>) ?? {} })} rows={4} /></Field>
+          <Field label={t('Config (JSON)')}><JsonField value={d.config} onChange={(config) => set({ config: (config as Record<string, unknown>) ?? {} })} rows={4} /></Field>
         </>
       )}
       extra={(i) => <TestSend i={i} />}
