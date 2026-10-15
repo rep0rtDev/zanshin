@@ -100,6 +100,7 @@ variables. `zanshin --check-config` prints the effective configuration with secr
 | Multi-project: isolated games / environments per deployment (schema + Redis + ClickHouse per project, `x-zanshin-project`, console switcher) | ✅ |
 | Unity C# SDK `sdk/unity` (UPM, zero deps, netstandard2.1): same surface as the TS SDK incl. push-token registration and WebSocket stream | ✅ |
 | Swift `sdk/swift`, Kotlin / JVM `sdk/kotlin`, Dart / Flutter `sdk/dart` SDKs (zero deps, full client surface, live stream) | ✅ |
+| .NET server SDK `sdk/dotnet` (`Zanshin.Server`, netstandard2.0 / net8.0) with a change-stream-invalidated cache + `Zanshin.OpenFeature` provider | ✅ |
 | Nakama runtime modules for Go (`nakama/`), JavaScript (`nakama/ts`) and Lua (`nakama/lua`) with identical RPCs; gRPC at full parity with REST | ✅ |
 | Push notifications (FCM HTTP v1 / APNs token auth): device token registry, `push: true` on campaigns and direct messages, proactive campaign sweep | ✅ |
 
@@ -226,6 +227,9 @@ End-to-end example with Nakama and Unity: [rep0rtDev/zanshin-unity-example](http
 - [`sdk/unity`](sdk/unity) — Unity 2021.3+ UPM package (`https://github.com/rep0rtDev/zanshin.git?path=sdk/unity`):
   async `ZanshinClient` with auto refresh, flags / experiments / live events / inbox / push tokens /
   events, `ZanshinStream` over `System.Net.WebSockets`.
+- [`sdk/dotnet`](sdk/dotnet) — server-side .NET (`Zanshin.Server`, netstandard2.0 / net8.0): flags / experiments /
+  audiences / live events / inbox / events / messages by external id, cache dropped by the change stream;
+  `Zanshin.OpenFeature` provider on top.
 - [`sdk/unreal`](sdk/unreal) — Unreal Engine 5.3+ plugin: `FZanshinClient` (async, auto refresh, all client
   endpoints), `FZanshinStream` over the engine `WebSockets` module, Blueprint-friendly `UZanshinSubsystem`.
 - [`sdk/godot`](sdk/godot) — Godot 4.3+ GDScript addon (`Zanshin` autoload): awaitable client with auto refresh,

@@ -14,3 +14,8 @@ sdk/cpp/build/
 docs/index.md
 docs/CHANGELOG.md
 site/
+
+# .NET SDK build output
+sdk/dotnet/**/bin/
+sdk/dotnet/**/obj/
+sdk/dotnet/dist/

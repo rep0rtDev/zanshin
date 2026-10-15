@@ -60,6 +60,7 @@ curl -s -H "x-api-key: $ADMIN_KEY" http://localhost:7550/admin/v1/system | jq .b
 | Go (`github.com/rep0rtDev/zanshin/sdk/go`) | tag `sdk/go/vX.Y.Z`; the Go module proxy and pkg.go.dev pick it up |
 | Unity | UPM git dependency: `https://github.com/rep0rtDev/zanshin.git?path=sdk/unity#vX.Y.Z`; the release also carries a zip |
 | Unreal | `zanshin-unreal-plugin-X.Y.Z.zip` from the release → `Plugins/Zanshin` |
+| .NET (`Zanshin.Server`, `Zanshin.OpenFeature`) | `zanshin-dotnet-X.Y.Z.zip` from the release (sources; `dotnet pack` → `.nupkg`), or a project reference to `sdk/dotnet` |
 | Godot | `zanshin-godot-addon-X.Y.Z.zip` from the release → `addons/zanshin` |
 | Nakama module | `ghcr.io/<owner>/zanshin-nakama` image, or build `nakama/Dockerfile` with your Nakama version |
 
