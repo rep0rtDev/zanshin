@@ -950,3 +950,38 @@ Configure `admin.scim.token` (or `token_file`), optional `default_archetype` and
 | GET | `/server/v1/rules` | server / admin key | `{ generated_at, flags: [full flag definitions], audiences: [{ key, condition, percentage, salt, enabled }] (dynamic only), managed_audiences: [keys] }` — everything a server SDK needs to evaluate flags in-process with the server's exact semantics (xxh3 bucketing over `namespace \0 salt \0 subject`, 10 000 buckets). Managed audiences cannot be evaluated locally: SDKs treat them as "not a member" (`DependsOnManaged` / `dependsOnManaged` tells you when to prefer a remote call). Overrides, experiments and live events are not part of the bundle. |
 
 Go: `zanshin.New(url, key, zanshin.WithLocalEvaluation(time.Minute))` → `client.LocalFlags(ctx, externalID, props, names...)` / `client.LocalFlag(...)`; the bundle is re-fetched after the TTL and whenever the change stream reports a change. TypeScript: `new LocalEvaluator(await z.rules())` → `evaluate(key, subject, flatten(subject, props))`. OpenFeature: `sdk/go/openfeature` and `ZanshinProvider` (TypeScript) wrap either mode; `targetingKey` = player external id.
+||||||| 8fbff05
+
+## Console SSO: SAML 2.0
+
+Configure `admin.saml` (`idp_sso_url`, `idp_certs` (PEM or base64 DER), `acs_url`, optional `idp_entity_id`, `sp_entity_id`, `email_attribute`, `name_attribute`, `role_attribute`, `role_map`, `default_role`, `allowed_domains`, `allow_sha1`). SP-initiated login only; assertions must be **signed** (Response or Assertion), encrypted assertions are rejected.
+
+| Method | Path | Notes |
+|---|---|---|
+| GET | `/console/auth/saml/metadata` | SP metadata XML to register at the IdP |
+| GET | `/console/auth/saml/login` | redirects to the IdP (`SAMLRequest`, deflate + base64, `RelayState` pinned in a signed cookie) |
+| POST | `/console/auth/saml/acs` | assertion consumer service (`SAMLResponse` form field) → console session cookie, redirect to `/console/` |
+
+Checks: XML-DSig (exclusive C14N, enveloped-signature transform, RSA-SHA256; RSA-SHA1 only with `allow_sha1`), `Status`, `Destination`, `InResponseTo`, `Conditions` (NotBefore / NotOnOrAfter, ±2 min skew), `AudienceRestriction`, `SubjectConfirmationData` recipient / expiry, issuer. Roles come from `role_attribute` values via `role_map` (most privileged wins) or `default_role`.
+
+## SCIM 2.0 provisioning
+
+Configure `admin.scim.token` (or `token_file`), optional `default_archetype` and `group_archetypes` (`{ "Zanshin Admins": "admin" }`). All requests: `Authorization: Bearer <token>`; 404 when SCIM is not configured.
+
+| Method | Path | Notes |
+|---|---|---|
+| GET | `/scim/v2/ServiceProviderConfig`, `/ResourceTypes`, `/Schemas` | discovery |
+| GET | `/scim/v2/Users?filter=userName eq "x"&startIndex=&count=` | filters: `userName`, `emails.value`, `displayName`, `id`, `active` (`eq` only) |
+| POST | `/scim/v2/Users` | creates a console user (no password; SSO or reset link); `active: false` creates it disabled; group membership → archetype |
+| GET / PUT / PATCH / DELETE | `/scim/v2/Users/{id}` | PATCH supports `active`, `displayName`, `name.*`, `groups` with or without `path`; DELETE removes the user and its sessions |
+| GET | `/scim/v2/Groups` | one group per `group_archetypes` entry, members = users with that archetype |
+| GET / PATCH / PUT | `/scim/v2/Groups/{displayName}` | `add` / `remove` / `replace` members → set / clear the archetype |
+
+## Config as code & promotion
+
+- `zanshinctl config pull <dir>` writes `<dir>/<kind>/<key>.yaml`; `zanshinctl config apply <dir> [--prune] [--dry-run] [--kinds a,b]` imports the directory (merge, or replace with `--prune`); `zanshinctl config drift <dir>` prints the plan and exits with code 2 when the server differs. Files may also be `.json`; a missing `key` is taken from the file name.
+- GitHub Action `rep0rtDev/zanshin/.github/actions/zanshin-apply@main` with inputs `server`, `key`, `project`, `dir`, `mode` (`apply` / `plan` / `drift`), `prune`, `kinds`, `version`.
+
+| Method | Path | Permission | Notes |
+|---|---|---|---|
+| POST | `/admin/v1/config/promote` | `data:write` | `{ url, admin_key, project?, mode, kinds?, keys?, dry_run }` — exports this project's bundle and imports it into the target server (`x-zanshin-project` = `project`); returns the target's plan (`plan.kinds.<kind>.{added,changed,removed,unchanged}`, `plan.summary`) |

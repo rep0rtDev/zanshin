@@ -25,6 +25,16 @@ Release automation reads the section whose heading contains the tagged version.
   `.github/actions/zanshin-apply`, and **environment promotion** from the console / API
   (`POST /admin/v1/config/promote` pushes this project's configuration into another server with a
   dry-run plan).
+||||||| 8fbff05
+- Platform — identity & config: **SAML 2.0** console login (SP-initiated, HTTP-POST binding,
+  XML-DSig verification with exclusive C14N and RSA-SHA256 — no libxml; `admin.saml`, routes
+  `/console/auth/saml/{login,acs,metadata}`), **SCIM 2.0** provisioning of console users
+  (`/scim/v2` Users + Groups → archetypes, bearer token `admin.scim.token`), **config as code** in
+  `zanshinctl` (`config pull <dir>` / `config apply <dir> [--prune] [--dry-run]` /
+  `config drift <dir>` exits 2 on drift; `<kind>/<key>.yaml`) with the composite GitHub Action
+  `.github/actions/zanshin-apply`, and **environment promotion** from the console / API
+  (`POST /admin/v1/config/promote` pushes this project's configuration into another server with a
+  dry-run plan).
 - Analytics v5: read-only **SQL explorer** over ClickHouse (`POST /admin/v1/sql`, permission `sql`,
   single-statement guard, `readonly=1`, row / time caps), **saved queries**, **scheduled reports**
   (cron + timezone, saved query → Slack / Discord / webhook channels and/or email through an email
