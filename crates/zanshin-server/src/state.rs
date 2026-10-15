@@ -66,6 +66,7 @@ pub struct AppState {
     pub identity: IdentityService,
     pub api_keys: ApiKeyService,
     pub oidc: OidcService,
+    pub saml: crate::services::saml::SamlService,
     pub console_users: ConsoleUserService,
     pub limits: RateLimiter,
     pub audit: AuditService,
@@ -199,6 +200,8 @@ impl AppState {
             &cfg.auth.jwt_secret,
             cfg.admin.console_session_ttl,
         );
+        let saml =
+            crate::services::saml::SamlService::new(cfg.admin.saml.clone(), &cfg.auth.jwt_secret);
         let console_users = ConsoleUserService::new(
             ConsoleUserRepo::new(stores.pg.clone()),
             cfg.admin.console_session_ttl,
@@ -369,6 +372,7 @@ impl AppState {
             webhooks,
             journeys,
             analytics,
+            saml,
             analytics_v5,
             export,
             config_history,

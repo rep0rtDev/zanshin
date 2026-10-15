@@ -1,0 +1,75 @@
+name: Zanshin config apply
+description: Apply (or check drift of) a Zanshin configuration directory with zanshinctl — config as code.
+inputs:
+  server:
+    description: Zanshin server URL (https://zanshin.example.com)
+    required: true
+  key:
+    description: Admin API key with write permission on the applied kinds
+    required: true
+  project:
+    description: Project slug (multi-project deployments)
+    required: false
+    default: ''
+  dir:
+    description: Directory with <kind>/<key>.yaml files (see `zanshinctl config pull`)
+    required: false
+    default: zanshin
+  mode:
+    description: apply | drift | plan — apply changes, fail on drift, or print the plan only
+    required: false
+    default: apply
+  prune:
+    description: Delete server entities missing from the directory (replace mode)
+    required: false
+    default: 'false'
+  kinds:
+    description: Comma-separated entity kinds to limit to (empty = all)
+    required: false
+    default: ''
+  version:
+    description: zanshinctl release tag to download (empty = latest)
+    required: false
+    default: ''
+runs:
+  using: composite
+  steps:
+    - name: Install zanshinctl
+      shell: bash
+      env:
+        GH_TOKEN: ${{ github.token }}
+        VERSION: ${{ inputs.version }}
+      run: |
+        set -euo pipefail
+        os=$(uname -s | tr '[:upper:]' '[:lower:]'); arch=$(uname -m)
+        case "$arch" in x86_64) arch=x86_64;; aarch64|arm64) arch=aarch64;; esac
+        asset="zanshinctl-${os}-${arch}.tar.gz"
+        if [ -n "$VERSION" ]; then tag="$VERSION"; else tag=$(gh release view --repo rep0rtDev/zanshin --json tagName -q .tagName); fi
+        gh release download "$tag" --repo rep0rtDev/zanshin --pattern "$asset" --dir /tmp/zanshinctl
+        tar -xzf "/tmp/zanshinctl/$asset" -C /tmp/zanshinctl
+        install -m 0755 /tmp/zanshinctl/zanshinctl /usr/local/bin/zanshinctl
+        zanshinctl --version
+    - name: Run
+      shell: bash
+      env:
+        ZANSHIN_URL: ${{ inputs.server }}
+        ZANSHIN_KEY: ${{ inputs.key }}
+        PROJECT: ${{ inputs.project }}
+        DIR: ${{ inputs.dir }}
+        MODE: ${{ inputs.mode }}
+        PRUNE: ${{ inputs.prune }}
+        KINDS: ${{ inputs.kinds }}
+      run: |
+        set -euo pipefail
+        args=()
+        [ -n "$PROJECT" ] && args+=(--project "$PROJECT")
+        kinds=()
+        [ -n "$KINDS" ] && kinds+=(--kinds "$KINDS")
+        prune=()
+        [ "$PRUNE" = "true" ] && prune+=(--prune)
+        case "$MODE" in
+          apply) zanshinctl "${args[@]}" config apply "$DIR" "${kinds[@]}" "${prune[@]}" ;;
+          plan)  zanshinctl "${args[@]}" config apply "$DIR" "${kinds[@]}" "${prune[@]}" --dry-run ;;
+          drift) zanshinctl "${args[@]}" config drift "$DIR" "${kinds[@]}" ;;
+          *) echo "unknown mode $MODE" >&2; exit 1 ;;
+        esac

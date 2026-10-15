@@ -35,6 +35,7 @@ pub fn router() -> Router<AppState> {
         .route("/config/diff", post(diff_config))
         .route("/config/import", post(import_config))
         .route("/config/import-from", post(import_from))
+        .route("/config/promote", post(promote))
         .route("/config/history", get(history))
         .route("/config/history/{id}/revert", post(revert))
         .route("/config/kinds", get(kinds))
@@ -229,6 +230,42 @@ async fn import_config(
     Json(b): Json<ImportRequest>,
 ) -> ApiResult<Json<Value>> {
     Ok(Json(config::import(&state, &b).await?))
+}
+
+#[derive(Deserialize)]
+struct Promote {
+    url: String,
+    admin_key: String,
+    #[serde(default)]
+    project: Option<String>,
+    #[serde(default)]
+    mode: config::ImportMode,
+    #[serde(default)]
+    kinds: Option<Vec<String>>,
+    #[serde(default)]
+    keys: Option<Vec<String>>,
+    #[serde(default)]
+    dry_run: bool,
+}
+
+async fn promote(
+    State(state): State<AppState>,
+    AdminAuth(_): AdminAuth,
+    Json(b): Json<Promote>,
+) -> ApiResult<Json<Value>> {
+    Ok(Json(
+        config::promote(
+            &state,
+            &b.url,
+            &b.admin_key,
+            b.project.as_deref(),
+            b.mode,
+            b.kinds,
+            b.keys,
+            b.dry_run,
+        )
+        .await?,
+    ))
 }
 
 #[derive(Deserialize)]

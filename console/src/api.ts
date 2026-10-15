@@ -96,13 +96,13 @@ export type Role = 'viewer' | 'editor' | 'admin';
 export type Me = { name: string; auth: 'api_key' | 'bootstrap' | 'oidc' | 'user'; role: Role; read_only: boolean; permissions: Record<string, ('read' | 'write' | 'delete')[]>; user_id: string | null; mfa_enabled: boolean; must_change_password: boolean };
 
 /** Whether the server offers OIDC single sign-on for the console. */
-export type AuthConfig = { oidc: boolean; password: boolean; needs_bootstrap: boolean };
+export type AuthConfig = { oidc: boolean; saml: boolean; password: boolean; needs_bootstrap: boolean };
 export async function authConfig(): Promise<AuthConfig> {
   try {
     const r = await fetch('/console/auth/config', { credentials: 'same-origin' });
-    return r.ok ? ((await r.json()) as AuthConfig) : { oidc: false, password: false, needs_bootstrap: false };
+    return r.ok ? ((await r.json()) as AuthConfig) : { oidc: false, saml: false, password: false, needs_bootstrap: false };
   } catch {
-    return { oidc: false, password: false, needs_bootstrap: false };
+    return { oidc: false, saml: false, password: false, needs_bootstrap: false };
   }
 }
 

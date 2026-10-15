@@ -93,4 +93,5 @@ remaining feature and production distance. Everything below is checked against `
 - Unreal plugin is not compiled in CI (no engine toolchain); Swift / Kotlin / Dart are built on Linux
   hosts, not on devices.
 - FCM / APNs / OneSignal / Facebook / BigQuery providers are exercised against local fakes only.
-- OIDC is tested against a mock provider; no SAML / SCIM.
+- OIDC is tested against a mock provider; SAML is verified with self-signed assertions in unit tests and SCIM
+  against the e2e suite — neither against a real IdP (Okta / Entra / Keycloak).

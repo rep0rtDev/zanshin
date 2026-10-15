@@ -32,7 +32,7 @@ pub const KINDS: &[&str] = &[
     "export_sinks",
 ];
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, Deserialize, Default)]
 #[serde(rename_all = "snake_case")]
 pub enum ImportMode {
     #[default]
@@ -412,6 +412,49 @@ pub async fn import_from(
         },
     )
     .await
+}
+
+/// Push this project's configuration into another server (dev → staging → prod) and return
+/// the target's import plan.
+#[allow(clippy::too_many_arguments)]
+pub async fn promote(
+    state: &AppState,
+    url: &str,
+    admin_key: &str,
+    project: Option<&str>,
+    mode: ImportMode,
+    kinds: Option<Vec<String>>,
+    keys: Option<Vec<String>>,
+    dry_run: bool,
+) -> Result<Value> {
+    if !(url.starts_with("http://") || url.starts_with("https://")) {
+        return Err(Error::invalid("url must be http(s)"));
+    }
+    let bundle = export_bundle(state, kinds.as_deref(), keys.as_deref()).await?;
+    let endpoint = format!("{}/admin/v1/config/import", url.trim_end_matches('/'));
+    let mut req = reqwest::Client::new()
+        .post(&endpoint)
+        .bearer_auth(admin_key)
+        .timeout(std::time::Duration::from_secs(60))
+        .json(&json!({ "bundle": bundle, "mode": mode, "kinds": kinds, "keys": keys, "dry_run": dry_run }));
+    if let Some(p) = project.filter(|p| !p.is_empty()) {
+        req = req.header("x-zanshin-project", p);
+    }
+    let res = req
+        .send()
+        .await
+        .map_err(|e| Error::invalid(format!("target: {e}")))?;
+    let status = res.status();
+    let body: Value = res.json().await.unwrap_or(Value::Null);
+    if !status.is_success() {
+        return Err(Error::invalid(format!(
+            "target status {status}: {}",
+            body["message"].as_str().unwrap_or("")
+        )));
+    }
+    Ok(
+        json!({ "target": url.trim_end_matches('/'), "dry_run": dry_run, "plan": body.get("plan").cloned().unwrap_or(body) }),
+    )
 }
 
 // ---- history / undo

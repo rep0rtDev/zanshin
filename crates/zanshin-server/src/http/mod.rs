@@ -20,6 +20,7 @@ pub mod messaging_v2;
 pub mod notifications;
 pub mod overload;
 pub mod projects;
+pub mod scim;
 pub mod server_api;
 pub mod taxonomy;
 pub mod users;
@@ -139,6 +140,7 @@ pub fn router(state: AppState) -> Router {
                 .merge(users::router()),
         )
         .merge(console::router())
+        .merge(scim::router())
         .merge(docs::router())
         .layer(axum::middleware::from_fn_with_state(
             state.clone(),
