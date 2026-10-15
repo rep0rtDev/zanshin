@@ -364,3 +364,62 @@ jobs:
       - name: logs on failure
         if: failure()
         run: docker logs keycloak | tail -80; docker logs nakama | tail -80
+
+  backup-drill:
+    name: backup → restore drill → doctor
+    runs-on: ubuntu-latest
+    needs: rust
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: zanshin
+          POSTGRES_PASSWORD: zanshin
+          POSTGRES_DB: zanshin
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U zanshin -d zanshin"
+          --health-interval 5s --health-timeout 3s --health-retries 20
+      redis:
+        image: redis:7-alpine
+        ports: ["6379:6379"]
+    env:
+      ZANSHIN__DATABASE__URL: postgres://zanshin:zanshin@localhost:5432/zanshin
+      ZANSHIN__REDIS__URL: redis://localhost:6379/0
+      ZANSHIN__AUTH__JWT_SECRET: ci-drill-jwt-0123456789abcdef0123456789abcdef
+      ZANSHIN__ADMIN__BOOTSTRAP_KEY: drill-bootstrap-admin-key-50
+      ZANSHIN__PUSH__PROVIDER: log
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: build server
+        run: mkdir -p console/dist && touch console/dist/.gitkeep && cargo build -p zanshin-server --bin zanshin
+      - name: migrate + seed real data through the API
+        run: |
+          ./target/debug/zanshin --migrate
+          ZANSHIN__SERVER__HTTP_ADDR=127.0.0.1:7570 ./target/debug/zanshin > /tmp/zanshin.log 2>&1 &
+          for i in $(seq 1 60); do curl -sf http://127.0.0.1:7570/healthz >/dev/null && break; sleep 1; done
+          H="Authorization: Bearer drill-bootstrap-admin-key-50"
+          curl -sf -H "$H" -H 'content-type: application/json' -X POST http://127.0.0.1:7570/admin/v1/flags -d '{"key":"drill_flag","value_type":"bool","default_value":true}' >/dev/null
+          SK=$(curl -sf -H "$H" -H 'content-type: application/json' -X POST http://127.0.0.1:7570/admin/v1/api-keys -d '{"name":"drill","kind":"server"}' | python3 -c 'import json,sys;print(json.load(sys.stdin)["secret"])')
+          for i in 1 2 3; do
+            curl -sf -H "x-api-key: $SK" -H 'content-type: application/json' -X POST http://127.0.0.1:7570/server/v1/identities -d "{\"external_id\":\"drill-$i\",\"custom\":{\"level\":$i}}" >/dev/null
+            curl -sf -H "x-api-key: $SK" -H 'content-type: application/json' -X POST http://127.0.0.1:7570/server/v1/events -d "{\"external_id\":\"drill-$i\",\"events\":[{\"name\":\"drillEvent\",\"value\":\"$i\"}]}" >/dev/null
+          done
+          pkill -x zanshin || true
+      - name: backup image
+        run: docker build -t zanshin-backup:ci deploy/compose/backup
+      - name: backup + restore drill (scratch database)
+        run: |
+          mkdir -p /tmp/backups /tmp/secrets && printf zanshin > /tmp/secrets/pg && chmod 644 /tmp/secrets/pg && chmod 777 /tmp/backups
+          run() { docker run --rm --network host -e PGHOST=localhost -e PGUSER=zanshin -e PGDATABASE=zanshin -e PGPASSWORD_FILE=/s/pg -e CH_URL= -e KEEP_DRILL=1 -v /tmp/backups:/backups -v /tmp/secrets:/s:ro zanshin-backup:ci "$@"; }
+          run backup.sh
+          ls -la /tmp/backups/*/
+          run restore-drill.sh "/backups/$(ls /tmp/backups | tail -1)"
+      - name: doctor against the restored database
+        run: ZANSHIN__DATABASE__URL=postgres://zanshin:zanshin@localhost:5432/zanshin_drill ./target/debug/zanshin --doctor
+      - name: restored data is complete
+        run: |
+          PGPASSWORD=zanshin psql -h localhost -U zanshin -d zanshin_drill -Atc "SELECT (SELECT count(*) FROM flags WHERE key='drill_flag'), (SELECT count(*) FROM identities WHERE external_id LIKE 'drill-%'), (SELECT count(*) FROM events WHERE name='drillEvent')" | tee /tmp/counts
+          [ "$(cat /tmp/counts)" = "1|3|3" ]

@@ -6,7 +6,18 @@ Release automation reads the section whose heading contains the tagged version.
 
 ## [Unreleased]
 
+## [0.1.0] — 2026-10-15
+
+First release: the complete LiveOps platform — flags, audiences, experiments, live events,
+journeys, messaging, analytics, data lakes, multi-project tenancy, SSO (OIDC / SAML / SCIM),
+config as code, SDKs for 12 runtimes and the Nakama module. Highlights of the final round:
+
 ### Added
+- Ops: `restore-drill.sh` in the backup kit restores a dump into a scratch database and verifies
+  schema version + row counts; CI runs the full backup → drill → `zanshin --doctor` loop on every
+  push. Backup offsite mirror now uses `aws s3 sync` (any S3-compatible store, e.g. RustFS).
+  `docs/production.md` gained the step-by-step upgrade procedure, secret rotation table, degraded
+  mode matrix and an incident checklist.
 - Hardening: `zanshin --doctor [--json]` checks a deployment end to end (config sanity, PostgreSQL +
   pending migrations, Redis, ClickHouse, clock skew, integrations, console users, SSO) and exits 1
   on failures; CI job `live` runs the suite against real services — Keycloak (OIDC **and** SAML
@@ -227,7 +238,7 @@ Release automation reads the section whose heading contains the tagged version.
 ### Fixed
 - Console list pages backed by `{ items: [...] }` endpoints (templates, integrations, metrics, journeys, webhooks, export sinks) rendered a blank page; detail pages wrapped as `{ <kind>: ... }` loaded empty forms.
 
-## [0.1.0] - Unreleased
+## [pre-release] — development history
 
 Initial public release line. Everything below shipped on `main` while the API settled.
 

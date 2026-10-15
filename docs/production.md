@@ -167,7 +167,7 @@ secrets redacted.
 Compose ships the `backup` sidecar (`deploy/compose/backup`): `pg_dump` custom format (zstd) plus
 schema, a native ClickHouse `BACKUP DATABASE` into the ClickHouse volume **and** a per-table
 native export, `SHA256SUMS`, rotation by `BACKUP_KEEP_DAYS`, optional mirror to any S3-compatible
-bucket (`BACKUP_S3_URL`, key + secret file). Default schedule: 03:00 UTC daily.
+bucket via `aws s3 sync` (`BACKUP_S3_URL`, key + secret file; RustFS, AWS S3, R2, …). Default schedule: 03:00 UTC daily.
 
 ```sh
 docker compose run --rm backup backup.sh                 # ad-hoc backup now
@@ -182,8 +182,66 @@ On Kubernetes use the database's own tooling (CloudNativePG scheduled backups / 
 ClickHouse `BACKUP … TO S3(...)`). Minimum policy: daily full + 14 days retention + offsite copy;
 point-in-time recovery through WAL archiving for Postgres when you can.
 
-Test restores. A backup you have never restored is a hope, not a backup — `restore-pg.sh` into a
-scratch database on a schedule is cheap.
+Test restores. A backup you have never restored is a hope, not a backup. `restore-drill.sh` does it
+for you without touching production data: it restores the dump into `<db>_drill`, compares the
+schema version and the row counts of the core tables with the source, and drops the scratch database
+(`KEEP_DRILL=1` keeps it so you can point `zanshin --doctor` or `psql` at it). CI runs exactly this
+drill on every push (`backup-drill` job: seed through the API → `backup.sh` → `restore-drill.sh` →
+`zanshin --doctor` against the restored database → row counts). Schedule it weekly in production:
+
+```sh
+docker compose run --rm backup restore-drill.sh "/backups/$(docker compose exec -T backup ls /backups | tail -1)"
+```
+
+## Upgrade procedure (step by step)
+
+1. Read `CHANGELOG.md` for the target version (deprecations, new config keys, new permissions).
+2. `zanshin --doctor` on the current version — fix anything that FAILs first; a broken deployment is
+   harder to debug after an upgrade.
+3. Take a backup (`backup.sh`) and run `restore-drill.sh` on it. This is your rollback point.
+4. Pull the new images; run `zanshin --migrate` once (Compose `migrate` service / Helm hook does
+   this). Migrations are additive and transactional, old replicas keep working against the new schema.
+5. Roll replicas one at a time (`docker compose up -d --no-deps zanshin-1`, wait for `/readyz`,
+   then the next). Graceful shutdown drains in-flight requests and WebSocket streams
+   (`server.shutdown_grace`).
+6. `zanshin --doctor` on the new version; check `/readyz`, console login, one flag read with a client
+   key, `zanshin_events_ingested_total` still moving.
+7. Rollback = redeploy the previous image (schema stays). Only if a migration itself must be undone,
+   restore the step-3 backup.
+
+## Secret rotation
+
+| Secret | How | Effect |
+| --- | --- | --- |
+| `auth.jwt_secret` | change the value, restart replicas | **every player session and refresh token is invalidated** — clients get 401 and must call `authenticate` again with their API key; plan it for a low-traffic window |
+| `admin.bootstrap_key` | remove it once console users / admin API keys exist (`--doctor` warns while it is set in production) | nothing else depends on it |
+| Client / server / admin API keys | Console → Platform → API keys → *Rotate* (`POST /admin/v1/api-keys/{id}/rotate`, also in `zanshinctl`); the old secret keeps working for the grace period you pass | zero downtime: ship the new key to clients before the grace period ends |
+| Console user passwords / MFA | Settings → Users (admins can force a reset); SSO users rotate at the IdP | sessions of that user are revoked |
+| SAML IdP certificate | add the new certificate to `admin.saml.idp_certs` **before** the IdP switches (the list is tried in order), remove the old one after | no downtime |
+| OIDC client secret | update `admin.oidc.client_secret`, restart | logins in progress fail once |
+| SCIM token | set the new token (`admin.scim.token` / `token_file`), restart, update the IdP connector | provisioning fails until the IdP has the new token |
+| PostgreSQL / Redis / ClickHouse passwords | rotate in the database, update the URL / `*_FILE` secret, restart replicas one by one (each replica reconnects with its own config) | none when rolled |
+| Webhook signing secrets | edit the webhook's secret in the console and switch the receiver at the same time (one secret signs `x-zanshin-signature`); for zero downtime create a second webhook with the new secret, then delete the old one | receiver must accept the new secret before the switch |
+
+## Degraded mode — what keeps working
+
+| Component down | Keeps working | Stops / changes |
+| --- | --- | --- |
+| **Redis** | flag / audience / experiment / live-event evaluation (Postgres is the source of truth, each replica caches in memory), event ingest, console | rate limits **fail open**, cross-replica config invalidation falls back to the in-memory cache TTL, event dedupe window is lost, QA time travel resets, `/readyz` reports `degraded` |
+| **ClickHouse** | everything player-facing; ingest keeps accepting events into the in-memory queue | analytics dashboards / SQL explorer / paths / alerts return errors or stale data; after the queue fills (`ZanshinEventsDropped` alert) events are dropped — restore ClickHouse before that |
+| **One Zanshin replica** | everything (the load balancer routes around it; another replica takes the housekeeping leader lock when the lease expires) | — |
+| **Postgres** | nothing — `/readyz` 503 everywhere, clients back off and retry | restore from backup (see below) |
+| **IdP (OIDC / SAML)** | API keys, password logins, existing console sessions | SSO logins |
+| **Outbound internet** | all evaluation and ingest | pushes, email, webhooks, Slack / Discord, data-lake exports queue up and retry with backoff; `Integration health` turns red |
+
+## Incident checklist
+
+1. `zanshin --doctor` on one host (30 s): tells you which backend or config item is broken in plain words.
+2. `/readyz` (deep) on each replica — which backend is `degraded`.
+3. Grafana → *Zanshin overview*: request rate, 5xx, p99, ingest lag, housekeeping job age, integration failures.
+4. Logs: `docker compose logs --since 15m zanshin-1` (JSON; filter `level=error`).
+5. If a bad config change caused it: Console → Audit log shows who changed what; `zanshinctl config history` / `revert`, or **kill switch** on the flag.
+6. Communicate in the notifications channel (Platform → Notifications posts config changes and alerts there automatically).
 
 ## Disaster recovery
 
