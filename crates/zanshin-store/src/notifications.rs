@@ -39,11 +39,12 @@ impl TryFrom<Row> for NotificationChannel {
             name: r.name,
             kind: ChannelKind::parse(&r.kind)
                 .ok_or_else(|| Error::invalid(format!("unknown channel kind {}", r.kind)))?,
-            url: r.url,
+            url: crate::crypto::open_str(&r.url).map_err(zanshin_core::Error::internal)?,
             topics: r.topics,
             kinds: r.kinds,
             enabled: r.enabled,
-            headers: r.headers,
+            headers: crate::crypto::open_value(&r.headers)
+                .map_err(zanshin_core::Error::internal)?,
             last_status: r.last_status,
             last_error: r.last_error,
             last_sent_at: r.last_sent_at,
@@ -98,11 +99,11 @@ impl NotificationRepo {
         .bind(&c.key)
         .bind(&c.name)
         .bind(c.kind.as_str())
-        .bind(&c.url)
+        .bind(crate::crypto::seal_str(&c.url))
         .bind(&c.topics)
         .bind(&c.kinds)
         .bind(c.enabled)
-        .bind(&c.headers)
+        .bind(crate::crypto::seal_value(&c.headers))
         .bind(&c.tags)
         .fetch_one(&self.pool)
         .await
@@ -119,11 +120,11 @@ impl NotificationRepo {
         .bind(&c.key)
         .bind(&c.name)
         .bind(c.kind.as_str())
-        .bind(&c.url)
+        .bind(crate::crypto::seal_str(&c.url))
         .bind(&c.topics)
         .bind(&c.kinds)
         .bind(c.enabled)
-        .bind(&c.headers)
+        .bind(crate::crypto::seal_value(&c.headers))
         .bind(&c.tags)
         .fetch_optional(&self.pool)
         .await

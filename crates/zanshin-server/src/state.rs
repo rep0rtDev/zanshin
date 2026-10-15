@@ -14,6 +14,7 @@ use crate::services::{
     templates::TemplateService,
     webhooks::WebhookService,
 };
+use anyhow::Context as _;
 use std::sync::Arc;
 use zanshin_store::taxonomy::TaxonomyRepo;
 
@@ -104,6 +105,8 @@ pub struct AppState {
 
 impl AppState {
     pub async fn build(cfg: Arc<Config>) -> anyhow::Result<Self> {
+        zanshin_store::crypto::install(cfg.security.data_keys.as_deref())
+            .context("security.data_keys")?;
         Self::build_project(cfg, zanshin_store::projects::DEFAULT_SLUG, None).await
     }
 

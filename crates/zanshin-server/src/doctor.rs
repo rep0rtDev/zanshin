@@ -47,6 +47,24 @@ pub async fn run(cfg: &Config) -> Report {
 
     // ---- configuration sanity ------------------------------------------------------------------
     let t = Instant::now();
+    checks.push(match cfg.security.data_keys.as_deref().map(str::trim).filter(|s| !s.is_empty()) {
+        None => check(
+            "security.data_keys",
+            Status::Warn,
+            "not set — integration / export-sink / webhook / notification secrets are stored in plaintext in Postgres; set ZANSHIN__SECURITY__DATA_KEYS=k1:$(openssl rand -base64 32) and run `zanshin --rewrap-secrets`",
+            t,
+        ),
+        Some(spec) => match zanshin_store::crypto::parse(spec) {
+            Ok(keys) => check(
+                "security.data_keys",
+                Status::Ok,
+                format!("{} key(s), sealing with {:?}", keys.len(), keys[0].0),
+                t,
+            ),
+            Err(e) => check("security.data_keys", Status::Fail, e.to_string(), t),
+        },
+    });
+    let t = Instant::now();
     let secret = cfg.auth.jwt_secret.len();
     checks.push(if secret < 32 {
         check(

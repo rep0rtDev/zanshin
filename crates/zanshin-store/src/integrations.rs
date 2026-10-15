@@ -36,7 +36,7 @@ impl TryFrom<Row> for Integration {
             key: r.key,
             name: r.name,
             kind: r.kind.parse::<IntegrationKind>()?,
-            config: r.config,
+            config: crate::crypto::open_value(&r.config).map_err(Error::internal)?,
             enabled: r.enabled,
             health: IntegrationHealth {
                 last_status: r.last_status,
@@ -93,7 +93,7 @@ impl IntegrationRepo {
         .bind(&m.key)
         .bind(&m.name)
         .bind(m.kind.as_str())
-        .bind(&m.config)
+        .bind(crate::crypto::seal_value(&m.config))
         .bind(m.enabled)
         .fetch_one(&self.pg)
         .await
@@ -111,7 +111,7 @@ impl IntegrationRepo {
         .bind(&m.key)
         .bind(&m.name)
         .bind(m.kind.as_str())
-        .bind(&m.config)
+        .bind(crate::crypto::seal_value(&m.config))
         .bind(m.enabled)
         .fetch_optional(&self.pg)
         .await

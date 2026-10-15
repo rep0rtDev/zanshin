@@ -35,14 +35,15 @@ struct Row {
     updated_at: DateTime<Utc>,
 }
 
-impl From<Row> for Webhook {
-    fn from(r: Row) -> Self {
-        Webhook {
+impl TryFrom<Row> for Webhook {
+    type Error = zanshin_core::Error;
+    fn try_from(r: Row) -> Result<Self> {
+        Ok(Webhook {
             id: r.id,
             key: r.key,
             name: r.name,
             url: r.url,
-            secret: r.secret,
+            secret: crate::crypto::open_str(&r.secret).map_err(zanshin_core::Error::internal)?,
             events: r.events,
             enabled: r.enabled,
             batch_size: r.batch_size,
@@ -53,7 +54,7 @@ impl From<Row> for Webhook {
             version: r.version,
             created_at: r.created_at,
             updated_at: r.updated_at,
-        }
+        })
     }
 }
 
@@ -90,7 +91,7 @@ impl WebhookRepo {
             .fetch_all(&self.pg)
             .await
             .map_err(map_sqlx)?;
-        Ok(rows.into_iter().map(Webhook::from).collect())
+        rows.into_iter().map(Webhook::try_from).collect()
     }
 
     pub async fn get(&self, key: &str) -> Result<Webhook> {
@@ -100,7 +101,8 @@ impl WebhookRepo {
                 .fetch_optional(&self.pg)
                 .await
                 .map_err(map_sqlx)?;
-        row.map(Webhook::from)
+        row.map(Webhook::try_from)
+            .transpose()?
             .ok_or_else(|| Error::not_found(format!("webhook {key:?} not found")))
     }
 
@@ -113,7 +115,7 @@ impl WebhookRepo {
         .bind(&w.key)
         .bind(&w.name)
         .bind(&w.url)
-        .bind(&w.secret)
+        .bind(crate::crypto::seal_str(&w.secret))
         .bind(&w.events)
         .bind(w.enabled)
         .bind(w.batch_size)
@@ -127,7 +129,7 @@ impl WebhookRepo {
             Error::Conflict(_) => Error::conflict(format!("webhook {:?} already exists", w.key)),
             other => other,
         })?;
-        Ok(row.into())
+        Webhook::try_from(row)
     }
 
     pub async fn update(&self, w: &Webhook) -> Result<Webhook> {
@@ -139,7 +141,7 @@ impl WebhookRepo {
         .bind(&w.key)
         .bind(&w.name)
         .bind(&w.url)
-        .bind(&w.secret)
+        .bind(crate::crypto::seal_str(&w.secret))
         .bind(&w.events)
         .bind(w.enabled)
         .bind(w.batch_size)
@@ -150,7 +152,8 @@ impl WebhookRepo {
         .fetch_optional(&self.pg)
         .await
         .map_err(map_sqlx)?;
-        row.map(Webhook::from)
+        row.map(Webhook::try_from)
+            .transpose()?
             .ok_or_else(|| Error::not_found(format!("webhook {:?} not found", w.key)))
     }
 

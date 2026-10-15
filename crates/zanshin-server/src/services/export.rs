@@ -21,15 +21,6 @@ use zanshin_store::{
 use super::{events::EventService, flags::normalize_tags};
 
 const MASK: &str = "***";
-const SECRET_KEYS: &[&str] = &[
-    "secret_key",
-    "secret",
-    "private_key",
-    "token",
-    "password",
-    "authorization",
-];
-
 #[derive(Debug, Clone, Default, Deserialize)]
 pub struct SinkPatch {
     #[serde(default)]
@@ -68,7 +59,7 @@ pub fn mask_config(v: &Value) -> Value {
         Value::Object(m) => Value::Object(
             m.iter()
                 .map(|(k, v)| {
-                    if SECRET_KEYS.iter().any(|s| k.to_lowercase().contains(s)) && v.is_string() {
+                    if zanshin_core::integrations::is_secret_key(k) && v.is_string() {
                         (k.clone(), Value::String(MASK.into()))
                     } else {
                         (k.clone(), mask_config(v))

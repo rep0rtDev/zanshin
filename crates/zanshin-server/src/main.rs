@@ -28,12 +28,22 @@ struct Cli {
     /// With --doctor: machine-readable JSON report.
     #[arg(long)]
     json: bool,
+    /// Re-encrypt every stored secret under the first key in `security.data_keys` and exit
+    /// (run after adding a new key; then drop the old key from the list).
+    #[arg(long)]
+    rewrap_secrets: bool,
 }
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
     let cfg = Config::load(cli.config.as_deref()).context("loading configuration")?;
+    if let Err(err) = zanshin_store::crypto::install(cfg.security.data_keys.as_deref()) {
+        // `--doctor` reports a broken keyring as a failed check instead of aborting.
+        if !cli.doctor {
+            return Err(err.context("security.data_keys"));
+        }
+    }
     if cli.check_config {
         println!("{}", cfg.redacted_yaml()?);
         return Ok(());
@@ -49,6 +59,11 @@ async fn main() -> anyhow::Result<()> {
     }
     telemetry::init_with(&cfg.log, &cfg.telemetry)?;
     telemetry::prometheus();
+    if cli.rewrap_secrets {
+        let report = zanshin_store::rewrap::rewrap(&cfg.database.url).await?;
+        println!("{report}");
+        return Ok(());
+    }
     if cli.migrate {
         zanshin_store::Stores::migrate_only(&cfg.database).await?;
         tracing::info!("migrations applied");
