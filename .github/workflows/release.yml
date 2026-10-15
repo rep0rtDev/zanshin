@@ -107,7 +107,7 @@ jobs:
           (sha256sum "$f" 2>/dev/null || shasum -a 256 "$f") > "$f.sha256"
           rm -rf "$name"
           # raw binary for the container build (linux only)
-          case "${{ matrix.name }}" in linux-*) cp "../target/${{ matrix.target }}/release/zanshin" "linux-${{ matrix.name }}/" ;; esac
+          case "${{ matrix.name }}" in linux-*) cp "../target/${{ matrix.target }}/release/zanshin" "../target/${{ matrix.target }}/release/zanshinctl" "linux-${{ matrix.name }}/" ;; esac
       - uses: actions/upload-artifact@v4
         with:
           name: binary-${{ matrix.name }}
@@ -132,9 +132,9 @@ jobs:
       - name: layout binaries for Dockerfile.release
         run: |
           mkdir -p dist/linux-amd64 dist/linux-arm64
-          mv dist/linux-linux-amd64/zanshin dist/linux-amd64/zanshin
-          mv dist/linux-linux-arm64/zanshin dist/linux-arm64/zanshin
-          chmod +x dist/linux-*/zanshin
+          mv dist/linux-linux-amd64/zanshin dist/linux-linux-amd64/zanshinctl dist/linux-amd64/
+          mv dist/linux-linux-arm64/zanshin dist/linux-linux-arm64/zanshinctl dist/linux-arm64/
+          chmod +x dist/linux-*/zanshin dist/linux-*/zanshinctl
       - uses: docker/setup-qemu-action@v3
       - uses: docker/setup-buildx-action@v3
       - uses: docker/login-action@v3
