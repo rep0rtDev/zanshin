@@ -182,6 +182,11 @@ function Funnels({ filter }: { filter: Filter }) {
   const [err, setErr] = useState<Error | null>(null);
   const run = () => post<{ entered: number; steps: FunnelStep[]; truncated: boolean }>('/analytics/funnel', { steps, window_secs: windowSecs, from: r.from, model, count, cohort, filter }).then((d) => { setRes(d); setErr(null); }, setErr);
   const max = Math.max(1, res?.entered ?? 1);
+  const [cohortKey, setCohortKey] = useState('');
+  const [cohortStep, setCohortStep] = useState(1);
+  const [cohortReached, setCohortReached] = useState(true);
+  const [cohortMsg, setCohortMsg] = useState('');
+  const toAudience = () => post<{ audience: string; matched: number; members: number }>('/analytics/funnel/cohort', { steps, window_secs: windowSecs, from: r.from, model, count, cohort, filter, step: cohortStep, reached: cohortReached, audience_key: cohortKey }).then((d) => { setCohortMsg(`${d.matched} players → audience ${d.audience} (${d.members} members)`); setErr(null); }, setErr);
   return (
     <div className="stack">
       <div className="row" style={{ alignItems: 'end' }}>{r.picker}<Field label="Count" hint="unique: once per player · total: every entry"><select value={count} onChange={(e) => setCount(e.target.value as typeof count)}><option value="unique">unique players</option><option value="total">total entries</option></select></Field><Field label="Cohort" hint="static: entered in range · shifting: conversions in range, entry may be earlier"><select value={cohort} onChange={(e) => setCohort(e.target.value as typeof cohort)}><option value="static">static</option><option value="shifting">shifting</option></select></Field><Field label="Model"><select value={model} onChange={(e) => setModel(e.target.value as typeof model)}><option value="window">window — all steps within N s of the first</option><option value="step">step — each step within N s of the previous</option><option value="session">session — all steps in one play session</option><option value="unlimited">unlimited — any time in range</option></select></Field>{model !== 'session' && model !== 'unlimited' && <Num label="Window (s)" value={windowSecs} onChange={(v) => setWindowSecs(v ?? 86400)} min={1} />}<button className="btn" onClick={run} disabled={steps.some((s) => !s.name)}>Run</button></div>
@@ -197,6 +202,13 @@ function Funnels({ filter }: { filter: Filter }) {
               <span style={{ width: 220, textAlign: 'right' }}>{fmtNum(s.count ?? 0)} · {pct(s.conversion)} total{i > 0 && <span className="hint"> · {pct(s.step_conversion)} step, −{fmtNum(s.drop ?? 0)}</span>}</span>
             </div>
           ))}
+          <div className="row" style={{ alignItems: 'end', marginTop: 10 }}>
+            <Field label="Step"><select value={cohortStep} onChange={(e) => setCohortStep(parseInt(e.target.value, 10))}>{res.steps.map((_, i) => <option key={i} value={i + 1}>{i + 1}</option>)}</select></Field>
+            <Field label="Who"><select value={cohortReached ? 'reached' : 'dropped'} onChange={(e) => setCohortReached(e.target.value === 'reached')}><option value="reached">reached the step</option><option value="dropped">dropped before it</option></select></Field>
+            <Text label="Audience key" value={cohortKey} onChange={setCohortKey} mono />
+            <button className="btn ghost sm" disabled={!cohortKey} onClick={toAudience}>Save as audience</button>
+            {cohortMsg && <span className="hint">{cohortMsg}</span>}
+          </div>
         </div>
       )}
     </div>

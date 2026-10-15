@@ -890,6 +890,105 @@ impl EventStore {
         }
     }
 
+    /// Every `(identity, name, unix_ms)` in the window, oldest first — path analysis input.
+    pub async fn paths_rows(
+        &self,
+        from: DateTime<Utc>,
+        to: DateTime<Utc>,
+        limit: i64,
+    ) -> Result<Vec<(Uuid, String, i64)>> {
+        match self {
+            EventStore::ClickHouse(ch) => {
+                let rows: Vec<ChPathRow> = ch
+                    .client
+                    .query("SELECT identity_id, name, toUnixTimestamp64Milli(event_time) AS ts FROM events WHERE event_time >= fromUnixTimestamp64Milli(?) AND event_time < fromUnixTimestamp64Milli(?) ORDER BY event_time LIMIT ?")
+                    .bind(from.timestamp_millis())
+                    .bind(to.timestamp_millis())
+                    .bind(limit)
+                    .fetch_all()
+                    .await
+                    .map_err(ch_err)?;
+                Ok(rows
+                    .into_iter()
+                    .map(|r| (r.identity_id, r.name, r.ts))
+                    .collect())
+            }
+            EventStore::Postgres(pg) => {
+                let rows: Vec<(Uuid, String, DateTime<Utc>)> = sqlx::query_as(
+                    "SELECT identity_id, name, event_time FROM events WHERE event_time >= $1 AND event_time < $2 ORDER BY event_time LIMIT $3",
+                )
+                .bind(from)
+                .bind(to)
+                .bind(limit)
+                .fetch_all(pg)
+                .await
+                .map_err(map_sqlx)?;
+                Ok(rows
+                    .into_iter()
+                    .map(|(id, name, at)| (id, name, at.timestamp_millis()))
+                    .collect())
+            }
+        }
+    }
+
+    /// Single aggregate of one event over a window: `count`, `unique` identities or `sum` of a
+    /// numeric metadata field — metric alerts input.
+    pub async fn window_value(
+        &self,
+        name: &str,
+        aggregation: &str,
+        field: &str,
+        from: DateTime<Utc>,
+        to: DateTime<Utc>,
+    ) -> Result<f64> {
+        validate_name(name)?;
+        match self {
+            EventStore::ClickHouse(ch) => {
+                let expr = match aggregation {
+                    "unique" => "toFloat64(uniqExact(identity_id))".to_string(),
+                    "sum" => {
+                        if !field
+                            .chars()
+                            .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '.')
+                        {
+                            return Err(Error::invalid("bad field"));
+                        }
+                        format!("sum(toFloat64OrZero(JSONExtractRaw(metadata, '{field}')))")
+                    }
+                    _ => "toFloat64(count())".to_string(),
+                };
+                let v: Vec<f64> = ch
+                    .client
+                    .query(&format!("SELECT {expr} FROM events WHERE name = ? AND event_time >= fromUnixTimestamp64Milli(?) AND event_time < fromUnixTimestamp64Milli(?)"))
+                    .bind(name)
+                    .bind(from.timestamp_millis())
+                    .bind(to.timestamp_millis())
+                    .fetch_all()
+                    .await
+                    .map_err(ch_err)?;
+                Ok(v.first().copied().unwrap_or(0.0))
+            }
+            EventStore::Postgres(pg) => {
+                let expr = match aggregation {
+                    "unique" => "count(DISTINCT identity_id)::float8",
+                    "sum" => "coalesce(sum(CASE WHEN metadata->>$4 ~ '^-?[0-9]+(\\.[0-9]+)?$' THEN (metadata->>$4)::float8 ELSE 0 END), 0)",
+                    _ => "count(*)::float8",
+                };
+                let v: (f64,) = sqlx::query_as(&format!(
+                    "SELECT {expr} FROM events WHERE name = $1 AND event_time >= $2 AND event_time < $3 AND ($4 = $4)"
+                ))
+                .bind(name)
+                .bind(from)
+                .bind(to)
+                .bind(field)
+                .fetch_one(pg)
+                .await
+                .map_err(map_sqlx)?;
+                Ok(v.0)
+            }
+        }
+    }
+
     /// Distinct (identity, active day) pairs for the given identities — retention input.
     pub async fn active_days(
         &self,
@@ -1436,6 +1535,14 @@ struct ChRevenue {
     amount: f64,
     payers: u64,
     purchases: u64,
+}
+
+#[derive(Row, Deserialize)]
+struct ChPathRow {
+    #[serde(with = "clickhouse::serde::uuid")]
+    identity_id: Uuid,
+    name: String,
+    ts: i64,
 }
 
 #[derive(Row, Deserialize)]

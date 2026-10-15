@@ -29,6 +29,7 @@ pub const RESOURCES: &[&str] = &[
     "users",
     "settings",
     "approvals",
+    "sql",
 ];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
@@ -197,6 +198,7 @@ pub fn archetype(name: &str) -> Option<Permissions> {
             .grant("messages", w),
         "analyst" => Permissions::read_all()
             .grant("analytics", wd)
+            .grant("sql", wd)
             .grant("data", w),
         _ => return None,
     })
@@ -228,6 +230,7 @@ pub fn resource_for_path(path: &str) -> Option<&'static str> {
         "identities" => "identities",
         "taxonomy" | "labels" | "schemas" => "taxonomy",
         "analytics" | "dashboards" | "stats" | "currency-rates" => "analytics",
+        "sql" => "sql",
         "data" | "export-sinks" | "config" => "data",
         "audit" => "audit",
         "api-keys" => "api_keys",

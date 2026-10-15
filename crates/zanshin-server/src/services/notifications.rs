@@ -169,6 +169,28 @@ impl NotificationService {
         });
     }
 
+    /// Synchronous delivery to the named channels (or every channel subscribed to the topic when
+    /// `keys` is empty); returns `(channel, ok, error)` per channel.
+    pub async fn send_to(&self, keys: &[String], n: &Notice) -> Vec<(String, bool, String)> {
+        let mut out = Vec::new();
+        for c in self.channels().await {
+            let wanted = if keys.is_empty() {
+                c.wants(&n.topic, n.kind.as_deref())
+            } else {
+                keys.contains(&c.key)
+            };
+            if !wanted {
+                continue;
+            }
+            let (status, err) = self.send_one(&c, n).await;
+            if let Err(e) = self.repo.mark(c.id, status, &err).await {
+                tracing::warn!(error = %e, "notification status not recorded");
+            }
+            out.push((c.key.clone(), err.is_empty(), err));
+        }
+        out
+    }
+
     pub fn payload(c: &NotificationChannel, n: &Notice) -> Value {
         let fields = n
             .fields

@@ -7,6 +7,17 @@ Release automation reads the section whose heading contains the tagged version.
 ## [Unreleased]
 
 ### Added
+- Analytics v5: read-only **SQL explorer** over ClickHouse (`POST /admin/v1/sql`, permission `sql`,
+  single-statement guard, `readonly=1`, row / time caps), **saved queries**, **scheduled reports**
+  (cron + timezone, saved query → Slack / Discord / webhook channels and/or email through an email
+  integration), **metric alerts** (count / unique / sum of an event over a window; above / below
+  threshold or z-score anomaly vs previous windows; cooldown, fire history, `alert` notifications),
+  **path analysis** (`POST /admin/v1/analytics/paths`: what players do after / before an event),
+  **cohort → audience** from a funnel step (`POST /admin/v1/analytics/funnel/cohort`) or a SQL
+  result (`POST /admin/v1/sql/cohort`) as managed audiences, and the unified **player timeline**
+  (`GET /admin/v1/identities/{id}/timeline`: events, sessions, message deliveries, journeys).
+  Console: Analytics → Explorer (SQL / Saved queries / Paths / Alerts / Reports), "Save as
+  audience" on funnels, Timeline tab on the player page.
 - Messaging v3: native **email** integrations (`smtp` with STARTTLS / implicit TLS / AUTH LOGIN,
   `ses` via SESv2 + SigV4, `sendgrid`, `resend`; recipient from `to_prop`, default
   `default.email`), per-campaign **frequency caps**, **quiet hours** in the player's timezone

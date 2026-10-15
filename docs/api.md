@@ -885,3 +885,26 @@ Campaign fields (`POST/PUT /admin/v1/messages`):
 - Step `{ "kind": "split", "branches": [{ "step": "a", "weight": 70 }, { "step": "b", "weight": 30 }] }` — weighted random jump, sticky per run; the chosen branch is stored on the run (`branch`).
 - `goal`: `{ "event": "purchaseCompleted", "within_secs": 604800 }` — tracking the event marks the player's runs (entered within the deadline) as converted (`converted_at`); the runs report returns `conversions: { runs, converted, by_branch: [[branch, runs, converted]] }`.
 - `exit_when`: `{ "events": ["unsubscribe"], "on_goal": true }` — tracking one of the events (or the goal when `on_goal`) ends the player's active runs with status `exited`.
+
+## Analytics v5
+
+| Method | Path | Permission | Notes |
+|---|---|---|---|
+| GET | `/admin/v1/sql` | `sql:read` | `{ available, max_rows }` — the explorer needs ClickHouse |
+| POST | `/admin/v1/sql` | `sql:write` | `{ sql, limit? }` → `{ columns, types, rows, rows_read, elapsed_secs, truncated }`. One `SELECT` / `WITH` statement; DDL / DML / `SETTINGS` / table functions / comments are rejected (400); runs with `readonly=1`, ≤ 10 000 rows, 30 s |
+| POST | `/admin/v1/sql/cohort` | `sql:write` | `{ sql, audience_key, name? }` — the `identity_id` column becomes a managed audience (created if missing) |
+| GET/POST | `/admin/v1/analytics/queries` | `analytics` | saved queries `{ key, name, description, sql, tags }` |
+| GET/PUT/DELETE | `/admin/v1/analytics/queries/{key}` | `analytics` | |
+| POST | `/admin/v1/analytics/queries/{key}/run?limit=` | `analytics:write` | |
+| GET/POST | `/admin/v1/analytics/reports` | `analytics` | `{ key, name, enabled, query_key, cron (6-field, seconds first), timezone, channels: [notification channel keys] (empty = every channel subscribed to `report`), email: { integration, to: [] } | null, max_rows }` |
+| GET/PUT/DELETE | `/admin/v1/analytics/reports/{key}` | `analytics` | `last_run_at`, `last_status` (`ok` / `partial` / `error: …`) |
+| POST | `/admin/v1/analytics/reports/{key}/run` | `analytics:write` | run now; housekeeping runs due schedules every minute |
+| GET/POST | `/admin/v1/analytics/alerts` | `analytics` | `{ key, name, enabled, event, aggregation: count|unique|sum, field, condition, window_secs, cooldown_secs }`; `condition` = `{ "kind": "above"|"below", "threshold" }` or `{ "kind": "anomaly", "zscore": 3, "baseline_windows": 7, "min_delta": 0 }` |
+| GET/PUT/DELETE | `/admin/v1/analytics/alerts/{key}` | `analytics` | `last_value`, `last_checked_at`, `last_fired_at` |
+| POST | `/admin/v1/analytics/alerts/{key}/check?force=` | `analytics:write` | evaluate now → `{ value, history, fired, suppressed, fire }` |
+| GET | `/admin/v1/analytics/alerts/{key}/fires?limit=` | `analytics:read` | fire history |
+| POST | `/admin/v1/analytics/paths` | `analytics:write` | `{ event, direction: after|before, depth (1–10), max_gap_secs, from, to, top }` → `{ anchors, levels: [{ depth, items: [{ name, count, share }] }], sequences: [{ steps, count }] }`; `$end` = no further event |
+| POST | `/admin/v1/analytics/funnel/cohort` | `analytics:write` | funnel query fields + `{ step (1-based), reached: true|false, audience_key, name? }` → `{ audience, matched, added, members, truncated }` |
+| GET | `/admin/v1/identities/{id}/timeline?limit=` | `identities:read` | `{ items: [{ at, kind: event|session|message|journey, title, detail }] }` newest first |
+
+Alerts fire a notification on topic `alert` (kind `metric_alert`); reports use topic `report` (kind = report key). Both run inside the locked housekeeping sweep (`metric_alerts`, `report_schedules`).
