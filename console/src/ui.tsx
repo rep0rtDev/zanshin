@@ -101,7 +101,16 @@ export function Confirm({ onConfirm, children, danger }: { onConfirm: () => void
   );
 }
 
-export const fmtDate = (s?: string | null) => (s ? new Date(s).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' }) : '—');
+const TZ_KEY = 'zanshin.tz';
+let displayTz: string | undefined = localStorage.getItem(TZ_KEY) || undefined;
+/** Console-wide display timezone (Settings → General); empty = the browser's. Invalid names fall back silently. */
+export const setDisplayTz = (tz: string) => {
+  try { new Intl.DateTimeFormat(undefined, { timeZone: tz || undefined }); } catch { tz = ''; }
+  displayTz = tz || undefined;
+  if (tz) localStorage.setItem(TZ_KEY, tz); else localStorage.removeItem(TZ_KEY);
+};
+export const displayTimezone = () => displayTz ?? Intl.DateTimeFormat().resolvedOptions().timeZone;
+export const fmtDate = (s?: string | null) => (s ? new Date(s).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short', timeZone: displayTz }) : '—');
 export const fmtNum = (n: number) => new Intl.NumberFormat().format(n);
 export const short = (s: string, n = 8) => (s.length > n ? s.slice(0, n) + '…' : s);
 

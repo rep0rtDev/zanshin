@@ -101,6 +101,151 @@ impl Lcg {
 }
 
 /// Generate a deterministic population of players with sessions, progression and purchases spread over the past days.
+/// Default audiences, in Satori's naming: key, name, description, expression.
+pub const DEFAULT_AUDIENCES: &[(&str, &str, &str, &str)] = &[
+    (
+        "tier_1_countries",
+        "Tier-1-Countries",
+        "Players in high-ARPU markets.",
+        r#"default.country in ["US", "CA", "GB", "AU", "DE", "FR", "JP", "KR"]"#,
+    ),
+    (
+        "spenders",
+        "Spenders",
+        "Made at least one purchase.",
+        "computed.purchases >= 1",
+    ),
+    (
+        "whales",
+        "Whales",
+        "Lifetime spend of 100 USD or more.",
+        "computed.spend_usd >= 100",
+    ),
+    (
+        "non_spenders",
+        "Non-Spenders",
+        "Never purchased.",
+        "not computed.purchases >= 1",
+    ),
+    (
+        "new_players",
+        "New-Players",
+        "First seen within the last 7 days.",
+        "computed.first_seen_at within_last 7d",
+    ),
+    (
+        "lapsed_players",
+        "Lapsed-Players",
+        "Not seen for 7 days or more.",
+        "computed.last_seen_at older_than 7d",
+    ),
+    (
+        "ios",
+        "iOS-Players",
+        "Playing on iOS.",
+        r#"default.platform == "ios""#,
+    ),
+    (
+        "android",
+        "Android-Players",
+        "Playing on Android.",
+        r#"default.platform == "android""#,
+    ),
+];
+
+/// Default metrics: key, name, kind, event, aggregation, field.
+pub const DEFAULT_METRICS: &[(&str, &str, &str, &str, &str, &str)] = &[
+    (
+        "active_users",
+        "Active-Users",
+        "monitor",
+        "$session_start",
+        "unique",
+        "",
+    ),
+    (
+        "sessions",
+        "Sessions",
+        "monitor",
+        "$session_start",
+        "count",
+        "",
+    ),
+    (
+        "revenue",
+        "Revenue",
+        "goal",
+        "purchaseCompleted",
+        "sum",
+        "amount_usd",
+    ),
+    (
+        "purchases",
+        "Purchases",
+        "goal",
+        "purchaseCompleted",
+        "count",
+        "",
+    ),
+    (
+        "paying_users",
+        "Paying-Users",
+        "goal",
+        "purchaseCompleted",
+        "unique",
+        "",
+    ),
+    (
+        "ad_impressions",
+        "Ad-Impressions",
+        "monitor",
+        "adImpression",
+        "count",
+        "",
+    ),
+];
+
+/// Creates whichever default audiences / metrics are missing. Existing keys are left as they are.
+pub async fn seed_defaults(state: &AppState) -> Result<Value> {
+    use crate::services::{audiences::AudiencePatch, metrics::MetricPatch};
+    let mut audiences = Vec::new();
+    for (key, name, description, expr) in DEFAULT_AUDIENCES {
+        if state.audiences.get(key).await.is_ok() {
+            continue;
+        }
+        let condition = zanshin_core::expr::parse(expr)?;
+        state
+            .audiences
+            .create(
+                key,
+                AudiencePatch {
+                    name: Some(name.to_string()),
+                    description: Some(description.to_string()),
+                    condition: Some(condition),
+                    enabled: Some(true),
+                    tags: Some(vec!["default".into()]),
+                    ..Default::default()
+                },
+            )
+            .await?;
+        audiences.push(*key);
+    }
+    let mut metrics_created = Vec::new();
+    for (key, name, kind, event, agg, field) in DEFAULT_METRICS {
+        if state.metrics.get(key).await.is_ok() {
+            continue;
+        }
+        let patch: MetricPatch = serde_json::from_value(json!({
+            "name": name, "kind": kind, "event_name": event, "aggregation": agg,
+            "field": if field.is_empty() { Value::Null } else { json!(field) },
+            "tags": ["default"],
+        }))?;
+        state.metrics.create(key, patch).await?;
+        metrics_created.push(*key);
+    }
+    Ok(json!({ "audiences": audiences, "metrics": metrics_created }))
+}
+
 pub async fn generate_sample(state: &AppState, req: &SampleRequest) -> Result<Value> {
     if !(1..=5000).contains(&req.players) || !(1..=90).contains(&req.days) {
         return Err(Error::invalid("players must be 1..5000 and days 1..90"));

@@ -179,6 +179,11 @@ function ToolsTab() {
         </div>
       </div>
       <div className="card">
+        <strong>Default data</strong>
+        <p className="hint">Out-of-the-box audiences (Tier-1-Countries, Spenders, Whales, New-Players, Lapsed-Players, iOS / Android…) and metrics (Active-Users, Sessions, Revenue, Purchases…). Only missing ones are created — safe to run again after deleting some.</p>
+        <button className="btn ghost" onClick={() => show(post('/data/defaults'))}>Restore default audiences & metrics</button>
+      </div>
+      <div className="card">
         <strong>Player data (GDPR)</strong>
         <div className="row" style={{ alignItems: 'end' }}>
           <Text label="Identity id" value={pid} onChange={setPid} mono />

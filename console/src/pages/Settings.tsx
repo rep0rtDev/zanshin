@@ -3,7 +3,7 @@ import { NavLink, Route, Routes } from 'react-router-dom';
 import { get, post, project, put, useLoad } from '../api';
 import { useMe } from '../me';
 import { toast } from '../toast';
-import { Badge, ErrorBox, Field, Page, fmtDate, fmtNum } from '../ui';
+import { Badge, ErrorBox, Field, Page, displayTimezone, fmtDate, fmtNum, setDisplayTz } from '../ui';
 
 type System = { version: string; started_at: string; uptime_secs: number; stores: { postgres: boolean; redis: boolean; clickhouse: boolean; event_store: string }; push: { provider: string }; auth: { oidc: boolean; access_ttl_secs: number; refresh_ttl_secs: number }; limits: Record<string, number>; taxonomy: { mode: string; auto_discover: boolean; geoip: boolean }; audit_retention_days: number; counts: Record<string, number> };
 type TaxSettings = { mode: string; auto_discover: boolean; geoip_enabled: boolean; session_inactivity_secs: number };
@@ -41,6 +41,7 @@ function General() {
               <dt>Audit retention</dt><dd>{s.audit_retention_days} days</dd>
             </dl>
           </div>
+          <ConsolePrefs />
           <div className="card">
             <strong>Rate limits</strong>
             <p className="hint">Requests per minute per caller, by scope. Change them in the server config (<code>limits.*</code>).</p>
@@ -52,6 +53,80 @@ function General() {
           </div>
         </>
       )}
+    </div>
+  );
+}
+
+type ConsoleSettings = { timezone: string; default_range_days: number | null };
+
+const TZ_CHOICES = ['UTC', 'Europe/London', 'Europe/Berlin', 'Europe/Moscow', 'Asia/Dubai', 'Asia/Kolkata', 'Asia/Singapore', 'Asia/Tokyo', 'Australia/Sydney', 'America/Sao_Paulo', 'America/New_York', 'America/Chicago', 'America/Los_Angeles'];
+
+/** Console-wide display preferences shared by every user (stored server-side). */
+function ConsolePrefs() {
+  const q = useLoad(() => get<ConsoleSettings>('/console/settings'), []);
+  const [d, setD] = useState<ConsoleSettings | null>(null);
+  const [err, setErr] = useState<Error | null>(null);
+  const cur = d ?? q.data;
+  const save = () => cur && put<ConsoleSettings>('/console/settings', cur).then((r) => { setDisplayTz(r.timezone); toast('Console settings saved'); setD(null); q.reload(); }, setErr);
+  if (!cur) return <ErrorBox error={q.error} />;
+  const tzs = TZ_CHOICES.includes(cur.timezone) || !cur.timezone ? TZ_CHOICES : [cur.timezone, ...TZ_CHOICES];
+  return (
+    <div className="card">
+      <strong>Console</strong>
+      <ErrorBox error={err} />
+      <div className="row" style={{ alignItems: 'end', marginTop: 8 }}>
+        <Field label="Display timezone" hint={`Applies to every date shown in the console, for all users. Currently ${displayTimezone()}.`}>
+          <select value={cur.timezone} onChange={(e) => setD({ ...cur, timezone: e.target.value })}>
+            <option value="">Browser default</option>
+            {tzs.map((t) => <option key={t} value={t}>{t}</option>)}
+          </select>
+        </Field>
+        <Field label="Or type an IANA name"><input value={cur.timezone} onChange={(e) => setD({ ...cur, timezone: e.target.value })} placeholder="Europe/Berlin" style={{ width: 180 }} /></Field>
+        <Field label="Default analytics range (days)"><input type="number" min={1} max={365} value={cur.default_range_days ?? ''} onChange={(e) => setD({ ...cur, default_range_days: e.target.value ? Number(e.target.value) : null })} style={{ width: 90 }} /></Field>
+        <button className="btn" onClick={save} disabled={!d}>Save</button>
+      </div>
+    </div>
+  );
+}
+
+/** Effective server configuration with secrets masked, exportable as JSON. */
+function Configuration() {
+  const q = useLoad(() => get<{ config: Record<string, unknown>; sources: string[] }>('/system/config'), []);
+  const [filter, setFilter] = useState('');
+  const download = () => {
+    if (!q.data) return;
+    const blob = new Blob([JSON.stringify(q.data.config, null, 2)], { type: 'application/json' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `zanshin-config-${project.get()}.json`;
+    a.click();
+    URL.revokeObjectURL(a.href);
+  };
+  const flat: [string, unknown][] = [];
+  const walk = (v: unknown, path: string) => {
+    if (v && typeof v === 'object' && !Array.isArray(v)) Object.entries(v as Record<string, unknown>).forEach(([k, x]) => walk(x, path ? `${path}.${k}` : k));
+    else flat.push([path, v]);
+  };
+  if (q.data) walk(q.data.config, '');
+  const rows = flat.filter(([k]) => !filter || k.includes(filter));
+  return (
+    <div className="stack">
+      <ErrorBox error={q.error} />
+      <div className="card">
+        <div className="row" style={{ alignItems: 'center' }}>
+          <strong>Effective configuration</strong>
+          <span className="hint">defaults → <code>zanshin.yml</code> → <code>ZANSHIN__*</code> environment; secrets are masked as <code>***</code>. Read-only here — change it in the file / environment and restart.</span>
+          <div className="spacer" />
+          <input placeholder="filter keys" value={filter} onChange={(e) => setFilter(e.target.value)} style={{ maxWidth: 220 }} />
+          <button className="btn ghost" onClick={download} disabled={!q.data}>Export JSON</button>
+        </div>
+        {q.data && (
+          <table className="table" style={{ marginTop: 10 }}>
+            <thead><tr><th style={{ width: 320 }}>Key</th><th>Value</th></tr></thead>
+            <tbody>{rows.map(([k, v]) => <tr key={k}><td className="mono">{k}</td><td className="mono hint" style={{ wordBreak: 'break-all' }}>{v === null || v === undefined ? '—' : typeof v === 'string' ? v : JSON.stringify(v)}</td></tr>)}</tbody>
+          </table>
+        )}
+      </div>
     </div>
   );
 }
@@ -126,6 +201,7 @@ export default function Settings() {
         <NavLink to="" end>General</NavLink>
         <NavLink to="players">Players & events</NavLink>
         <NavLink to="projects">Projects</NavLink>
+        <NavLink to="configuration">Configuration</NavLink>
         <NavLink to="/taxonomy">Taxonomy →</NavLink>
         {me?.role === 'admin' && <NavLink to="/api-keys">API keys →</NavLink>}
         <NavLink to="/data">Data & backups →</NavLink>
@@ -134,6 +210,7 @@ export default function Settings() {
         <Route index element={<General />} />
         <Route path="players" element={<Players />} />
         <Route path="projects" element={<Projects />} />
+        <Route path="configuration" element={<Configuration />} />
       </Routes>
     </Page>
   );

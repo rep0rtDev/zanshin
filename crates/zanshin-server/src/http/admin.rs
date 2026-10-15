@@ -177,6 +177,11 @@ pub fn router() -> Router<AppState> {
         .route("/stats", get(stats))
         .route("/me", get(me))
         .route("/system", get(system))
+        .route("/system/config", get(system_config))
+        .route(
+            "/console/settings",
+            get(console_settings).put(put_console_settings),
+        )
         .route("/audit", get(list_audit))
 }
 
@@ -458,7 +463,38 @@ async fn update_flag(
     Path(key): Path<String>,
     Json(patch): Json<FlagPatch>,
 ) -> ApiResult<Json<Flag>> {
-    Ok(Json(state.flags.update(&key, patch.into()).await?))
+    let before = state.flags.get(&key).await?;
+    let after = state.flags.update(&key, patch.into()).await?;
+    emit_rule_events(&state, &before, &after);
+    Ok(Json(after))
+}
+
+/// Satori's `FEATURE_FLAG_VARIANT_{CREATED,UPDATED,DELETED}`: one webhook per targeting rule
+/// (our "variant") that appeared, changed or vanished in this update.
+fn emit_rule_events(state: &AppState, before: &Flag, after: &Flag) {
+    let old: std::collections::HashMap<&str, &zanshin_core::flags::Rule> =
+        before.rules.iter().map(|r| (r.id.as_str(), r)).collect();
+    let new: std::collections::HashMap<&str, &zanshin_core::flags::Rule> =
+        after.rules.iter().map(|r| (r.id.as_str(), r)).collect();
+    let data = |r: &zanshin_core::flags::Rule| {
+        serde_json::json!({
+            "flag": after.key, "version": after.version,
+            "rule": { "id": r.id, "name": r.name, "percentage": r.percentage,
+                      "audiences": r.audiences, "variants": r.variants.iter().map(|v| &v.key).collect::<Vec<_>>() },
+        })
+    };
+    for (id, r) in &new {
+        match old.get(id) {
+            None => state.webhooks.emit("flag.rule.created", data(r)),
+            Some(o) if *o != *r => state.webhooks.emit("flag.rule.updated", data(r)),
+            Some(_) => {}
+        }
+    }
+    for (id, r) in &old {
+        if !new.contains_key(id) {
+            state.webhooks.emit("flag.rule.deleted", data(r));
+        }
+    }
 }
 
 async fn delete_flag(
@@ -1597,6 +1633,80 @@ pub struct Me {
     pub must_change_password: bool,
 }
 
+/// Effective server configuration (defaults + file + environment) with secrets masked —
+/// Settings → Configuration in the console, exportable as JSON.
+async fn system_config(
+    State(state): State<AppState>,
+    AdminAuth(_): AdminAuth,
+) -> ApiResult<Json<serde_json::Value>> {
+    Ok(Json(serde_json::json!({
+        "config": state.cfg.redacted(),
+        "sources": ["defaults", "zanshin.yml (if present)", "ZANSHIN__SECTION__KEY environment", "ZANSHIN_FILE__SECTION__KEY secret files"],
+    })))
+}
+
+const CONSOLE_SETTINGS_KEY: &str = "console.settings";
+
+#[derive(Debug, Default, Serialize, Deserialize)]
+struct ConsoleSettings {
+    /// IANA timezone used to display every date in the console for all users; empty = browser's.
+    #[serde(default)]
+    timezone: String,
+    /// Default date range (days) for analytics pages.
+    #[serde(default)]
+    default_range_days: Option<u32>,
+}
+
+async fn console_settings(
+    State(state): State<AppState>,
+    AdminAuth(_): AdminAuth,
+) -> ApiResult<Json<ConsoleSettings>> {
+    let v = state
+        .taxonomy
+        .repo
+        .get_setting(CONSOLE_SETTINGS_KEY)
+        .await?;
+    Ok(Json(
+        v.and_then(|v| serde_json::from_value(v).ok())
+            .unwrap_or_default(),
+    ))
+}
+
+async fn put_console_settings(
+    State(state): State<AppState>,
+    AdminAuth(_): AdminAuth,
+    Json(input): Json<ConsoleSettings>,
+) -> ApiResult<Json<ConsoleSettings>> {
+    if !input.timezone.is_empty() {
+        let ok = input.timezone.len() <= 64
+            && input
+                .timezone
+                .chars()
+                .all(|c| c.is_ascii_alphanumeric() || matches!(c, '/' | '_' | '-' | '+'));
+        if !ok {
+            return Err(zanshin_core::Error::invalid(
+                "timezone must be an IANA name like Europe/Berlin",
+            )
+            .into());
+        }
+    }
+    if input
+        .default_range_days
+        .is_some_and(|d| !(1..=365).contains(&d))
+    {
+        return Err(zanshin_core::Error::invalid("default_range_days must be 1..365").into());
+    }
+    state
+        .taxonomy
+        .repo
+        .set_setting(
+            CONSOLE_SETTINGS_KEY,
+            &serde_json::to_value(&input).map_err(zanshin_core::Error::from)?,
+        )
+        .await?;
+    Ok(Json(input))
+}
+
 async fn system(
     State(state): State<AppState>,
     AdminAuth(_): AdminAuth,
@@ -1629,6 +1739,9 @@ async fn system(
             "event_store": if state.stores.clickhouse.is_some() { "clickhouse" } else { "postgres" },
         },
         "push": { "provider": cfg.push.provider },
+        "console": {
+            "audience_delete_all_enabled": cfg.admin.audience_delete_all_enabled && !cfg.server.production,
+        },
         "auth": {
             "oidc": cfg.admin.oidc.is_some(),
             "access_ttl_secs": cfg.auth.access_ttl.as_secs(),

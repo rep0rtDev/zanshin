@@ -14,6 +14,7 @@ use crate::state::AppState;
 pub fn router() -> Router<AppState> {
     Router::new()
         .route("/flags/{key}/explain/{identity_id}", get(explain_flag))
+        .route("/identities/{identity_id}/flags", get(identity_flags))
         .route("/live-events/{key}/participants", get(participants))
         .route("/live-events/{key}/timeline", get(timeline))
         .route(
@@ -29,6 +30,18 @@ async fn explain_flag(
 ) -> ApiResult<Json<serde_json::Value>> {
     let identity = state.identity.get(identity_id).await?;
     Ok(Json(state.eval.explain_flag(&identity, &key).await?))
+}
+
+/// Every flag as this player resolves it right now, with `reason` (default / rule / variant /
+/// override / experiment / live event) — the console "Flags" tab on an identity.
+async fn identity_flags(
+    State(state): State<AppState>,
+    AdminAuth(_): AdminAuth,
+    Path(identity_id): Path<Uuid>,
+) -> ApiResult<Json<serde_json::Value>> {
+    let identity = state.identity.get(identity_id).await?;
+    let items = state.eval.flags(&identity, &[]).await?;
+    Ok(Json(serde_json::json!({ "items": items })))
 }
 
 #[derive(Debug, Default, Deserialize)]

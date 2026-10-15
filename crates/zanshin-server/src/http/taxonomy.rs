@@ -55,6 +55,7 @@ pub fn router() -> Router<AppState> {
             get(get_schema).put(update_schema).delete(delete_schema),
         )
         .route("/schemas/validate", post(validate_schema))
+        .route("/schemas/presets", post(create_schema_presets))
         .route("/identities/{id}/sessions", get(identity_sessions))
         .route("/identities/{id}/merges", get(identity_merges))
 }
@@ -382,6 +383,60 @@ async fn list_schemas(
     AdminAuth(_): AdminAuth,
 ) -> ApiResult<Json<Vec<ValueSchema>>> {
     Ok(Json(svc(&state).repo.list_schemas().await?))
+}
+
+/// Built-in validators (Satori parity): ANY / Number / String / Object / Revenue metadata.
+/// Idempotent — presets that already exist by name are left untouched.
+pub const SCHEMA_PRESETS: &[(&str, &str, &str)] = &[
+    ("ANY", "Accepts any value; no validation.", r#"{}"#),
+    ("Number", "Expects a numeric value.", r#"{"type":"number"}"#),
+    ("String", "Expects a string.", r#"{"type":"string"}"#),
+    (
+        "Object",
+        "Expects a JSON object (arbitrary keys / values).",
+        r#"{"type":"object"}"#,
+    ),
+    (
+        "Event-Revenue-Metadata",
+        "Revenue events: `amount` and ISO-4217 `currency` are required so USD conversion and revenue reports work; optional `test`, `product_id`, `store`.",
+        r#"{"type":"object","required":["amount","currency"],"properties":{"amount":{"type":"number","minimum":0},"currency":{"type":"string","pattern":"^[A-Z]{3}$"},"test":{"type":"boolean"},"product_id":{"type":"string"},"store":{"type":"string"}}}"#,
+    ),
+];
+
+async fn create_schema_presets(
+    State(state): State<AppState>,
+    AdminAuth(_): AdminAuth,
+) -> ApiResult<Json<serde_json::Value>> {
+    let existing: std::collections::HashSet<String> = svc(&state)
+        .repo
+        .list_schemas()
+        .await?
+        .into_iter()
+        .map(|s| s.name)
+        .collect();
+    let mut created = Vec::new();
+    for (name, description, schema) in SCHEMA_PRESETS {
+        if existing.contains(*name) {
+            continue;
+        }
+        let schema: Value = serde_json::from_str(schema).expect("preset schema");
+        svc(&state)
+            .repo
+            .create_schema(ValueSchemaInput {
+                name: name.to_string(),
+                description: description.to_string(),
+                schema,
+            })
+            .await?;
+        created.push(*name);
+    }
+    if !created.is_empty() {
+        svc(&state).invalidate();
+    }
+    Ok(Json(serde_json::json!({
+        "created": created,
+        "skipped": SCHEMA_PRESETS.len() - created.len(),
+    })))
 }
 
 async fn create_schema(

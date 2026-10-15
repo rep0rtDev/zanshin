@@ -77,7 +77,7 @@ function QaTime({ id }: { id: string }) {
 function Detail() {
   const { id } = useParams();
   const nav = useNavigate();
-  const [tab, setTab] = useState<'props' | 'events' | 'inbox' | 'push' | 'journeys'>('props');
+  const [tab, setTab] = useState<'props' | 'flags' | 'events' | 'inbox' | 'push' | 'journeys'>('props');
   const [err, setErr] = useState<Error | null>(null);
   const q = useLoad(() => get<Identity>(`/identities/${id}`), [id]);
   const i = q.data;
@@ -99,9 +99,10 @@ function Detail() {
           </div>
           <QaTime id={i.id} />
           <div className="tabs">
-            {(['props', 'events', 'inbox', 'push', 'journeys'] as const).map((t) => <button key={t} className={tab === t ? 'active' : ''} onClick={() => setTab(t)}>{{ props: 'Properties', events: 'Events', inbox: 'Inbox', push: 'Push devices', journeys: 'Journeys' }[t]}</button>)}
+            {(['props', 'flags', 'events', 'inbox', 'push', 'journeys'] as const).map((t) => <button key={t} className={tab === t ? 'active' : ''} onClick={() => setTab(t)}>{{ props: 'Properties', flags: 'Flags', events: 'Events', inbox: 'Inbox', push: 'Push devices', journeys: 'Journeys' }[t]}</button>)}
           </div>
           {tab === 'props' && <Props i={i} onSaved={(n) => q.setData(n)} />}
+          {tab === 'flags' && <FlagsTab id={i.id} />}
           {tab === 'events' && <Events id={i.id} />}
           {tab === 'inbox' && <InboxTab id={i.id} />}
           {tab === 'push' && <PushTab id={i.id} />}
@@ -159,6 +160,55 @@ function Events({ id }: { id: string }) {
 type JRun = { id: string; step: number; status: 'active' | 'done' | 'exited' | 'failed'; wake_at: string | null; error: string; entered_at: string; updated_at: string; context: Record<string, unknown> };
 type JLog = { step: number; action: string; detail: string; at: string };
 const JTONE: Record<JRun['status'], 'ok' | 'bad' | 'warn' | 'info'> = { done: 'ok', failed: 'bad', exited: 'warn', active: 'info' };
+
+type Resolved = { key: string; value: unknown; value_type: string; variant?: string; version: number; reason: { kind: string; rule_id?: string; variant?: string; experiment?: string; live_event?: string } };
+
+const SOURCE_TONE: Record<string, 'ok' | 'info' | 'warn' | 'muted' | 'bad'> = { default: 'muted', disabled: 'muted', rule: 'info', variant: 'info', override: 'warn', experiment: 'ok', live_event: 'ok' };
+
+/** Every flag as this player resolves it right now, with the source of the value (Satori "Player View → Feature Flags"). */
+function FlagsTab({ id }: { id: string }) {
+  const q = useLoad(() => get<{ items: Resolved[] }>(`/identities/${id}/flags`), [id]);
+  const [filter, setFilter] = useState('');
+  const [changedOnly, setChangedOnly] = useState(false);
+  const rows = (q.data?.items ?? []).filter((r) => (!filter || r.key.includes(filter)) && (!changedOnly || !['default', 'disabled'].includes(r.reason.kind)));
+  const source = (r: Resolved) => {
+    const k = r.reason.kind;
+    if (k === 'experiment') return `experiment ${r.reason.experiment} · ${r.reason.variant}`;
+    if (k === 'live_event') return `live event ${r.reason.live_event}`;
+    if (k === 'variant') return `rule ${r.reason.rule_id} · variant ${r.reason.variant}`;
+    if (k === 'rule') return `rule ${r.reason.rule_id}`;
+    if (k === 'override') return 'identity override';
+    return k;
+  };
+  return (
+    <div className="card">
+      <div className="row" style={{ alignItems: 'center', marginBottom: 8 }}>
+        <input placeholder="filter by key" value={filter} onChange={(e) => setFilter(e.target.value)} style={{ maxWidth: 240 }} />
+        <label className="hint" style={{ display: 'flex', gap: 6, alignItems: 'center' }}><input type="checkbox" checked={changedOnly} onChange={(e) => setChangedOnly(e.target.checked)} /> only values changed from default</label>
+        <div className="spacer" />
+        <span className="hint">{rows.length} of {q.data?.items.length ?? 0} flags</span>
+      </div>
+      <ErrorBox error={q.error} />
+      {q.data && rows.length === 0 && <div className="empty">No flags match.</div>}
+      {rows.length > 0 && (
+        <table className="table">
+          <thead><tr><th>Flag</th><th>Value</th><th>Source</th><th style={{ width: 60 }}>v</th><th /></tr></thead>
+          <tbody>
+            {rows.map((r) => (
+              <tr key={r.key}>
+                <td><Link to={`/flags/${encodeURIComponent(r.key)}`} className="mono">{r.key}</Link></td>
+                <td className="mono" style={{ maxWidth: 320, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={JSON.stringify(r.value)}>{JSON.stringify(r.value)}</td>
+                <td><Badge tone={SOURCE_TONE[r.reason.kind] ?? 'muted'}>{source(r)}</Badge></td>
+                <td className="hint">{r.version}</td>
+                <td><Link to={`/flags/${encodeURIComponent(r.key)}?explain=${id}`} className="hint">explain</Link></td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+    </div>
+  );
+}
 
 function JourneysTab({ id }: { id: string }) {
   const q = useLoad(() => get<{ items: { journey: string; run: JRun; log: JLog[] }[] }>(`/identities/${id}/journeys`), [id]);

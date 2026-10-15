@@ -23,6 +23,10 @@ pub fn router() -> Router<AppState> {
             "/audiences/{key}/lists",
             get(lists).put(set_list).delete(unset_list),
         )
+        .route(
+            "/audiences/{key}/members/all",
+            axum::routing::delete(delete_all_members),
+        )
         .route("/audiences/{key}/recompute", post(recompute))
         .route("/audiences/{key}/usage", get(usage))
         .route("/audiences/{key}/copy", post(copy))
@@ -164,6 +168,46 @@ async fn copy(
 ) -> ApiResult<(axum::http::StatusCode, Json<Audience>)> {
     let a = state.audiences.copy(&key, &b.key, b.name).await?;
     Ok((axum::http::StatusCode::CREATED, Json(a)))
+}
+
+/// Permanently deletes every identity in the audience (GDPR-style, events included). Gated by
+/// `admin.audience_delete_all_enabled` and refused in production, like Satori's
+/// `console.audience.is_delete_all_identities_enabled`.
+async fn delete_all_members(
+    State(state): State<AppState>,
+    AdminAuth(p): AdminAuth,
+    Path(key): Path<String>,
+) -> ApiResult<Json<serde_json::Value>> {
+    if !state.cfg.admin.audience_delete_all_enabled || state.cfg.server.production {
+        return Err(zanshin_core::Error::denied(
+            "delete-all is disabled: set admin.audience_delete_all_enabled on a non-production server",
+        )
+        .into());
+    }
+    if !p.allows("identities", zanshin_core::permissions::Action::Delete) {
+        return Err(zanshin_core::Error::denied("permission required: identities:delete").into());
+    }
+    state.audiences.get(&key).await?;
+    let mut deleted = 0usize;
+    let mut after = None;
+    loop {
+        let page = state.audiences.members(&key, after, 500).await?;
+        if page.is_empty() {
+            break;
+        }
+        after = page.last().map(|m| m.identity_id);
+        for m in &page {
+            if crate::services::data::gdpr_delete(&state, m.identity_id)
+                .await
+                .is_ok()
+            {
+                deleted += 1;
+            }
+        }
+    }
+    Ok(Json(
+        serde_json::json!({ "audience": key, "deleted": deleted }),
+    ))
 }
 
 async fn expression(

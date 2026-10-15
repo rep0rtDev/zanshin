@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { api, get, post, put, useLoad } from '../api';
+import { api, del, get, post, put, useLoad } from '../api';
 import { EntityPage, Text, Num, Tags } from '../crud';
 import { ConditionEditor } from '../RuleBuilder';
 import type { Cond } from '../RuleBuilder';
@@ -37,6 +37,7 @@ function Members({ aud }: { aud: Audience }) {
   const q = useLoad(() => get<{ items: Member[] }>(`/audiences/${k}/members?limit=200`), [aud.key, aud.member_count]);
   const lists = useLoad(() => get<ListEntry[]>(`/audiences/${k}/lists`), [aud.key]);
   const usage = useLoad(() => get<UsageRef[]>(`/audiences/${k}/usage`), [aud.key]);
+  const sys = useLoad(() => get<{ console?: { audience_delete_all_enabled: boolean } }>('/system'), []);
   const [ext, setExt] = useState('');
   const [mode, setMode] = useState<'include' | 'exclude' | 'managed'>(aud.kind === 'managed' ? 'managed' : 'include');
   const [hours, setHours] = useState('');
@@ -56,6 +57,9 @@ function Members({ aud }: { aud: Audience }) {
           <span className="hint">{aud.last_computed_at ? `computed ${fmtDate(aud.last_computed_at)}` : aud.recompute === 'live' ? 'mirrored from live evaluation' : 'never computed'}</span>
           <div className="spacer" />
           {aud.kind === 'dynamic' && <button className="btn ghost" onClick={() => run(() => post(`/audiences/${k}/recompute`), 'recomputed')}>Recompute now</button>}
+          {sys.data?.console?.audience_delete_all_enabled && (
+            <button className="btn danger" title="Development servers only (admin.audience_delete_all_enabled)" onClick={() => confirm(`Permanently delete ALL ${aud.member_count} identities in "${aud.key}" and their events?`) && run(() => del(`/audiences/${k}/members/all`), 'all identities deleted')}>Delete all identities</button>
+          )}
         </div>
         <ErrorBox error={err} />
         {msg && <div className="hint">{msg}</div>}

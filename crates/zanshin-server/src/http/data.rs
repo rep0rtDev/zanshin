@@ -43,6 +43,7 @@ pub fn router() -> Router<AppState> {
         .route("/data/identities/{id}/takeout", get(takeout))
         .route("/data/events/purge", post(purge_events))
         .route("/data/sample", post(sample))
+        .route("/data/defaults", post(defaults))
 }
 
 async fn list_sinks(
@@ -310,6 +311,15 @@ async fn purge_events(
     Json(b): Json<PurgeRequest>,
 ) -> ApiResult<Json<Value>> {
     Ok(Json(data::purge_events(&state, &b).await?))
+}
+
+/// Re-creates the out-of-the-box audiences and metrics (Satori's "default data") without
+/// touching anything the user already defined.
+async fn defaults(
+    State(state): State<AppState>,
+    AdminAuth(_): AdminAuth,
+) -> ApiResult<Json<Value>> {
+    Ok(Json(crate::services::data::seed_defaults(&state).await?))
 }
 
 async fn sample(

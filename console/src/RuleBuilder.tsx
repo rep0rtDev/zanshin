@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import type { ReactNode } from 'react';
-import { get } from './api';
+import { get, post } from './api';
 import { JsonField, KeyPicker } from './ui';
 
 export type Cmp = { prop: string; op: string; value?: unknown };
@@ -98,17 +98,46 @@ function Node({ c, onChange, onRemove, root }: { c: Cond; onChange: (c: Cond) =>
 }
 
 /** Visual editor for a targeting condition. `optional` renders a "match everyone" state for `null`. */
+const EXPR_PLACEHOLDER = 'custom.level >= 10 and (default.country in ["DE", "FR"] or computed.session_count > 3) and computed.last_seen_at within_last 7d';
+
+/** Text ("query view") editor for a condition; round-trips through the server's expression parser. */
+function ExpressionMode({ value, onChange, onBack }: { value: Cond | null | undefined; onChange: (c: Cond | null) => void; onBack: () => void }) {
+  const [text, setText] = useState<string | null>(null);
+  const [err, setErr] = useState<Error | null>(null);
+  useEffect(() => {
+    if (value === null || value === undefined) { setText(''); return; }
+    post<{ expression: string }>('/audiences/expression', { condition: value }).then((r) => setText(r.expression), (e) => { setErr(e); setText(''); });
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  const apply = () => post<{ condition: Cond }>('/audiences/expression', { expression: text ?? '' })
+    .then((r) => { onChange(text?.trim() ? r.condition : null); setErr(null); onBack(); }, setErr);
+  if (text === null) return <span className="hint">Loading…</span>;
+  return (
+    <>
+      <textarea className="mono" rows={4} value={text} onChange={(e) => setText(e.target.value)} placeholder={EXPR_PLACEHOLDER} />
+      <div className="hint" style={{ marginTop: 4 }}>
+        <code>and</code> / <code>or</code> / <code>not</code>, parentheses; operators <code>== != &lt; &lt;= &gt; &gt;= in not_in contains starts_with ends_with matches exists semver_gte within_last older_than</code>; durations <code>30s 15m 2h 7d 4w</code>.
+      </div>
+      {err && <div className="error" style={{ marginTop: 6 }}>{err.message}</div>}
+      <div className="actions"><button className="btn sm" type="button" onClick={apply}>Apply expression</button></div>
+    </>
+  );
+}
+
 export function ConditionEditor({ value, onChange, optional }: { value: Cond | null | undefined; onChange: (c: Cond | null) => void; optional?: boolean }) {
-  const [raw, setRaw] = useState(false);
+  const [mode, setMode] = useState<'visual' | 'json' | 'expr'>('visual');
   const empty = value === null || value === undefined;
   return (
     <div className="rb">
       <datalist id="rb-props">{PROP_SUGGESTIONS.map((p) => <option key={p} value={p} />)}</datalist>
       <div className="rb-tools">
         {optional && !empty && <button type="button" className="btn ghost sm" onClick={() => onChange(null)}>clear (everyone)</button>}
-        <button type="button" className="btn ghost sm" onClick={() => setRaw(!raw)}>{raw ? 'visual' : 'JSON'}</button>
+        {(['visual', 'expr', 'json'] as const).filter((m) => m !== mode).map((m) => (
+          <button key={m} type="button" className="btn ghost sm" onClick={() => setMode(m)}>{{ visual: 'visual', expr: 'expression', json: 'JSON' }[m]}</button>
+        ))}
       </div>
-      {raw ? (
+      {mode === 'expr' ? (
+        <ExpressionMode value={value} onChange={onChange} onBack={() => setMode('visual')} />
+      ) : mode === 'json' ? (
         <JsonField value={empty ? undefined : value} onChange={(v) => onChange((v as Cond) ?? null)} rows={6} placeholder='{"all": []}' />
       ) : empty ? (
         <div className="rb-empty">
