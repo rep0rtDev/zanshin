@@ -107,6 +107,7 @@ pub fn evaluation_to_proto(e: Evaluation) -> Flag {
         Reason::Variant { rule_id, .. } => ("variant", rule_id.clone(), String::new()),
         Reason::Experiment { experiment, .. } => ("experiment", String::new(), experiment.clone()),
         Reason::LiveEvent { live_event } => ("live_event", live_event.clone(), String::new()),
+        Reason::Prerequisite { flag } => ("prerequisite", flag.clone(), String::new()),
     };
     Flag {
         name: e.key,

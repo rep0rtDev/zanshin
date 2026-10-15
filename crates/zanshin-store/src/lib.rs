@@ -13,6 +13,7 @@ pub mod events;
 pub mod experiments;
 pub mod export;
 pub mod flags;
+pub mod flags_v3;
 pub mod holdouts;
 pub mod identities;
 pub mod integrations;

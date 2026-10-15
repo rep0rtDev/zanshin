@@ -10,6 +10,7 @@ pub mod data;
 pub mod docs;
 pub mod error;
 pub mod experiments_v2;
+pub mod flags_v3;
 pub mod http_metrics;
 pub mod journeys;
 pub mod limits;
@@ -129,6 +130,7 @@ pub fn router(state: AppState) -> Router {
                 .merge(webhooks::router())
                 .merge(notifications::router())
                 .merge(projects::router())
+                .merge(flags_v3::router())
                 .merge(journeys::router())
                 .merge(analytics_v2::router())
                 .merge(data::router())

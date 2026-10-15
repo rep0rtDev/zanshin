@@ -1,6 +1,9 @@
 //! Per-identity evaluation that stitches audiences, experiments, overrides and flags together.
 
-use std::collections::{HashMap, HashSet};
+use std::{
+    collections::{HashMap, HashSet},
+    sync::Arc,
+};
 
 use serde_json::Value;
 use uuid::Uuid;
@@ -28,6 +31,9 @@ pub struct Evaluator {
     pub messages: MessageService,
     identities: IdentityRepo,
     cache: zanshin_store::cache::Cache,
+    /// (flag, served variant or "") → evaluations since the last flush (housekeeping writes
+    /// them to `flag_eval_stats`).
+    eval_counts: Arc<std::sync::Mutex<HashMap<(String, String), u64>>>,
 }
 
 /// Everything known about one identity for one evaluation pass.
@@ -62,7 +68,13 @@ impl Evaluator {
             messages,
             identities,
             cache,
+            eval_counts: Default::default(),
         }
+    }
+
+    /// Take the evaluation counters accumulated since the last call.
+    pub fn drain_eval_counts(&self) -> HashMap<(String, String), u64> {
+        std::mem::take(&mut *self.eval_counts.lock().unwrap())
     }
 
     fn qa_key(&self, identity_id: Uuid) -> String {
@@ -278,6 +290,59 @@ impl Evaluator {
                 })
             };
             out.push(flag.evaluate(&identity.external_id, &ctx.flat, &member, pinned));
+        }
+        // Prerequisites: a flag whose dependency is disabled / missing / not at the expected value
+        // falls back to its default. Dependencies outside `names` are evaluated on demand.
+        let needs: Vec<usize> = out
+            .iter()
+            .enumerate()
+            .filter(|(_, e)| !snapshot[&e.key].prerequisites.is_empty())
+            .map(|(i, _)| i)
+            .collect();
+        if !needs.is_empty() {
+            let mut resolved: HashMap<String, Evaluation> =
+                out.iter().map(|e| (e.key.clone(), e.clone())).collect();
+            for i in needs {
+                let flag = &snapshot[&out[i].key];
+                let mut unmet = None;
+                for p in &flag.prerequisites {
+                    let dep = match resolved.get(&p.flag) {
+                        Some(d) => d.clone(),
+                        None => match snapshot.get(&p.flag) {
+                            Some(df) => {
+                                let d =
+                                    df.evaluate(&identity.external_id, &ctx.flat, &member, None);
+                                resolved.insert(p.flag.clone(), d.clone());
+                                d
+                            }
+                            None => {
+                                unmet = Some(p.flag.clone());
+                                break;
+                            }
+                        },
+                    };
+                    let ok = dep.reason != zanshin_core::flags::Reason::Disabled
+                        && !matches!(dep.reason, zanshin_core::flags::Reason::Prerequisite { .. })
+                        && p.value.as_ref().is_none_or(|v| *v == dep.value);
+                    if !ok {
+                        unmet = Some(p.flag.clone());
+                        break;
+                    }
+                }
+                if let Some(dep) = unmet {
+                    out[i].value = flag.default_value.clone();
+                    out[i].variant = None;
+                    out[i].reason = zanshin_core::flags::Reason::Prerequisite { flag: dep };
+                }
+            }
+        }
+        {
+            let mut counts = self.eval_counts.lock().unwrap();
+            for e in &out {
+                *counts
+                    .entry((e.key.clone(), e.variant.clone().unwrap_or_default()))
+                    .or_insert(0) += 1;
+            }
         }
         metrics::counter!("zanshin_flag_evaluations_total").increment(out.len() as u64);
         out

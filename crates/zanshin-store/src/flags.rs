@@ -23,6 +23,7 @@ struct FlagRow {
     rules: Value,
     salt: String,
     tags: Vec<String>,
+    prerequisites: Value,
     version: i64,
     created_at: DateTime<Utc>,
     updated_at: DateTime<Utc>,
@@ -43,6 +44,7 @@ impl TryFrom<FlagRow> for Flag {
             rules,
             salt: r.salt,
             tags: r.tags,
+            prerequisites: serde_json::from_value(r.prerequisites).map_err(Error::internal)?,
             version: r.version,
             created_at: r.created_at,
             updated_at: r.updated_at,
@@ -50,7 +52,7 @@ impl TryFrom<FlagRow> for Flag {
     }
 }
 
-const COLS: &str = "id, key, name, description, value_type, default_value, enabled, rules, salt, tags, version, created_at, updated_at";
+const COLS: &str = "id, key, name, description, value_type, default_value, enabled, rules, salt, tags, prerequisites, version, created_at, updated_at";
 
 /// Fields an admin may set; everything else is derived.
 #[derive(Debug, Clone, Default)]
@@ -63,6 +65,7 @@ pub struct FlagInput {
     pub rules: Option<Vec<Rule>>,
     pub salt: Option<String>,
     pub tags: Option<Vec<String>>,
+    pub prerequisites: Option<Vec<zanshin_core::flags::Prerequisite>>,
 }
 
 #[derive(Clone)]
@@ -97,8 +100,8 @@ impl FlagRepo {
 
     pub async fn create(&self, flag: &Flag) -> Result<Flag> {
         let row: FlagRow = sqlx::query_as(&format!(
-            "INSERT INTO flags (id, key, name, description, value_type, default_value, enabled, rules, salt, tags)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING {COLS}"
+            "INSERT INTO flags (id, key, name, description, value_type, default_value, enabled, rules, salt, tags, prerequisites)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) RETURNING {COLS}"
         ))
         .bind(flag.id)
         .bind(&flag.key)
@@ -110,6 +113,7 @@ impl FlagRepo {
         .bind(serde_json::to_value(&flag.rules).map_err(Error::internal)?)
         .bind(&flag.salt)
         .bind(&flag.tags)
+        .bind(serde_json::to_value(&flag.prerequisites).map_err(Error::internal)?)
         .fetch_one(&self.pg)
         .await
         .map_err(|e| match map_sqlx(e) {
@@ -122,7 +126,7 @@ impl FlagRepo {
     /// Full replace of the mutable fields; bumps `version`.
     pub async fn update(&self, flag: &Flag) -> Result<Flag> {
         let row: Option<FlagRow> = sqlx::query_as(&format!(
-            "UPDATE flags SET name = $2, description = $3, value_type = $4, default_value = $5, enabled = $6, rules = $7, salt = $8, tags = $9,
+            "UPDATE flags SET name = $2, description = $3, value_type = $4, default_value = $5, enabled = $6, rules = $7, salt = $8, tags = $9, prerequisites = $10,
                               version = version + 1, updated_at = now()
              WHERE key = $1 RETURNING {COLS}"
         ))
@@ -135,6 +139,7 @@ impl FlagRepo {
         .bind(serde_json::to_value(&flag.rules).map_err(Error::internal)?)
         .bind(&flag.salt)
         .bind(&flag.tags)
+        .bind(serde_json::to_value(&flag.prerequisites).map_err(Error::internal)?)
         .fetch_optional(&self.pg)
         .await
         .map_err(map_sqlx)?;

@@ -71,6 +71,8 @@ async fn sweeps(state: &AppState) {
         }
     })
     .await;
+    locked(state, "flag_schedules", || flag_schedules(state)).await;
+    flag_eval_flush(state).await;
     locked(state, "experiment_guardrails", || guardrails(state)).await;
     locked(state, "experiment_bandit", || bandit(state)).await;
     locked(state, "label_sync", || async {
@@ -372,4 +374,51 @@ async fn bandit(state: &AppState) {
             Err(e) => tracing::warn!(experiment = %exp.key, error = %e, "bandit update failed"),
         }
     }
+}
+
+/// Apply flag patches whose scheduled time has come.
+async fn flag_schedules(state: &AppState) {
+    let now = chrono::Utc::now();
+    let due = match state.flags_v3.due_schedules(now).await {
+        Ok(d) => d,
+        Err(e) => {
+            tracing::warn!(error = %e, "flag schedules: query failed");
+            return;
+        }
+    };
+    for s in due {
+        let res = crate::services::config::apply(state, "flags", &s.flag_key, &s.patch).await;
+        let (status, err) = match &res {
+            Ok(_) => ("applied", String::new()),
+            Err(e) => ("failed", e.to_string()),
+        };
+        if let Err(e) = state.flags_v3.finish_schedule(s.id, status, &err).await {
+            tracing::warn!(error = %e, "flag schedules: finish failed");
+        }
+        state.webhooks.emit(
+            "flag.schedule_applied",
+            serde_json::json!({ "flag": s.flag_key, "schedule_id": s.id, "at": s.at, "status": status, "error": err, "patch": s.patch }),
+        );
+    }
+}
+
+/// Flush in-memory flag evaluation counters (every node, no lock needed: the upsert adds).
+async fn flag_eval_flush(state: &AppState) {
+    let counts = state.eval.drain_eval_counts();
+    if counts.is_empty() {
+        return;
+    }
+    let rows: Vec<(String, String, i64)> = counts
+        .into_iter()
+        .map(|((f, v), n)| (f, v, n as i64))
+        .collect();
+    if let Err(e) = state.flags_v3.add_eval_counts(&rows).await {
+        tracing::warn!(error = %e, "flag eval counters: flush failed");
+    }
+}
+
+/// Run the flag jobs once (tests / `zanshinctl`), without the cluster lock.
+pub async fn sweep_once(state: &AppState) {
+    flag_schedules(state).await;
+    flag_eval_flush(state).await;
 }

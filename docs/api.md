@@ -480,6 +480,20 @@ Experiment fields added: `split_key` (`identity` or `property:<flat path>` — b
 | `GET /admin/v1/experiments/{key}/results.csv` | Results as CSV, one row per metric × variant (value, lift, credible interval, probability to beat control) plus assignment rows. |
 | `srm` and `stats` on `GET /admin/v1/experiments/{key}/results` | `srm { chi2, p_value, suspicious }` compares assignment counts with the variant weights (chi-square; `suspicious` below p = 0.001). Conversion metrics carry `stats { rate, ci_low, ci_high, prob_beats_control, expected_uplift }` from Beta(1,1) posteriors (deterministic Monte Carlo); the control has no comparison fields. |
 
+### Flags v3: prerequisites, kill switch, schedules, evaluation stats, change requests
+
+Flag field `prerequisites: [{ flag, value? }]` — the flag's rules only apply while every prerequisite flag is
+enabled and (when `value` is given) resolves to that value for the same player; otherwise the default is served
+with `reason: { kind: "prerequisite", flag }`. Missing prerequisites and cycles are rejected with 400.
+
+| Route | Purpose |
+|-------|---------|
+| `POST /admin/v1/flags/{key}/kill`, `POST /admin/v1/flags/{key}/restore` | Kill switch: disable / re-enable in one call (webhooks `flag.killed` / `flag.restored`). |
+| `GET/POST /admin/v1/flags/{key}/schedules`, `DELETE /admin/v1/flags/{key}/schedules/{id}` | Scheduled changes: `{ at, patch, note }` where `patch` is a flag patch body; housekeeping applies due schedules every minute (`status` pending → applied / failed, webhook `flag.schedule_applied`). |
+| `GET /admin/v1/flags/{key}/stats?days=30` | Evaluation counters per day and served variant (flushed every minute). |
+| `GET /admin/v1/flags/stale?days=30` | Flags with no evaluations and no changes in the window. |
+| `GET/POST /admin/v1/change-requests`, `GET /admin/v1/change-requests/{id}`, `POST …/approve`, `…/reject`, `…/apply`, `…/cancel` | Change requests (permission resource `approvals`): `{ kind, key, body, title, description, required_approvals }` for any config kind. Four-eyes: the author cannot approve; `apply` needs status `approved` and `<kind>:write` on the actor, then runs the same path as config import. Webhooks `change_request.created / approved / rejected / applied`. |
+
 ### Experiments v4: layers, holdouts, guardrails, bandits, sequential testing, CUPED
 
 Experiment fields: `layer` (experiments sharing a layer are mutually exclusive — one bucket space split by

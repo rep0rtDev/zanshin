@@ -91,11 +91,13 @@ impl FlagService {
             rules: input.rules.unwrap_or_default(),
             salt: input.salt.unwrap_or_default(),
             tags: normalize_tags(input.tags.unwrap_or_default())?,
+            prerequisites: input.prerequisites.unwrap_or_default(),
             version: 1,
             created_at: now,
             updated_at: now,
         };
         flag.validate()?;
+        self.check_prerequisites(&flag).await?;
         let created = self.repo.create(&flag).await?;
         self.bus
             .publish(
@@ -133,7 +135,11 @@ impl FlagService {
         if let Some(v) = input.tags {
             flag.tags = normalize_tags(v)?;
         }
+        if let Some(v) = input.prerequisites {
+            flag.prerequisites = v;
+        }
         flag.validate()?;
+        self.check_prerequisites(&flag).await?;
         let updated = self.repo.update(&flag).await?;
         self.bus
             .publish(
@@ -143,6 +149,41 @@ impl FlagService {
             .await;
         metrics::counter!("zanshin_flag_writes_total", "op" => "update").increment(1);
         Ok(updated)
+    }
+
+    /// Prerequisites must exist and must not form a cycle through this flag.
+    async fn check_prerequisites(&self, flag: &Flag) -> Result<()> {
+        if flag.prerequisites.is_empty() {
+            return Ok(());
+        }
+        let all = self.repo.list().await?;
+        let by_key: HashMap<&str, &Flag> = all.iter().map(|f| (f.key.as_str(), f)).collect();
+        for p in &flag.prerequisites {
+            if !by_key.contains_key(p.flag.as_str()) {
+                return Err(Error::invalid(format!(
+                    "prerequisite flag {:?} does not exist",
+                    p.flag
+                )));
+            }
+        }
+        // DFS from each prerequisite following stored prerequisites; reaching `flag` is a cycle.
+        let mut stack: Vec<&str> = flag.prerequisites.iter().map(|p| p.flag.as_str()).collect();
+        let mut seen = std::collections::HashSet::new();
+        while let Some(k) = stack.pop() {
+            if k == flag.key {
+                return Err(Error::invalid(format!(
+                    "prerequisite cycle: {} depends on itself through its prerequisites",
+                    flag.key
+                )));
+            }
+            if !seen.insert(k) {
+                continue;
+            }
+            if let Some(f) = by_key.get(k) {
+                stack.extend(f.prerequisites.iter().map(|p| p.flag.as_str()));
+            }
+        }
+        Ok(())
     }
 
     pub async fn delete(&self, key: &str) -> Result<()> {
@@ -217,6 +258,8 @@ pub struct FlagPatch {
     pub salt: Option<String>,
     #[serde(default)]
     pub tags: Option<Vec<String>>,
+    #[serde(default)]
+    pub prerequisites: Option<Vec<zanshin_core::flags::Prerequisite>>,
 }
 
 impl From<FlagPatch> for FlagInput {
@@ -230,6 +273,7 @@ impl From<FlagPatch> for FlagInput {
             rules: p.rules,
             salt: p.salt,
             tags: p.tags,
+            prerequisites: p.prerequisites,
         }
     }
 }

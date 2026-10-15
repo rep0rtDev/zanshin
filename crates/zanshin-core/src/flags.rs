@@ -116,9 +116,21 @@ pub struct Flag {
     pub salt: String,
     #[serde(default)]
     pub tags: Vec<String>,
+    /// Other flags that must resolve to the expected value for this flag's rules to apply;
+    /// otherwise the default is served (`Reason::Prerequisite`).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub prerequisites: Vec<Prerequisite>,
     pub version: i64,
     pub created_at: chrono::DateTime<chrono::Utc>,
     pub updated_at: chrono::DateTime<chrono::Utc>,
+}
+
+/// A dependency on another flag: it must be enabled and, when `value` is given, resolve to it.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Prerequisite {
+    pub flag: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub value: Option<Value>,
 }
 
 /// Why a particular value was served; returned to admins for debugging and to clients as `reason`.
@@ -128,10 +140,24 @@ pub enum Reason {
     Disabled,
     Default,
     Override,
-    Rule { rule_id: String },
-    Variant { rule_id: String, variant: String },
-    Experiment { experiment: String, variant: String },
-    LiveEvent { live_event: String },
+    Rule {
+        rule_id: String,
+    },
+    Variant {
+        rule_id: String,
+        variant: String,
+    },
+    Experiment {
+        experiment: String,
+        variant: String,
+    },
+    LiveEvent {
+        live_event: String,
+    },
+    /// A prerequisite flag did not resolve to its expected value; the default was served.
+    Prerequisite {
+        flag: String,
+    },
 }
 
 /// A value fixed for this identity before rules are consulted.
@@ -244,6 +270,15 @@ impl Flag {
                 }
             }
         }
+        for p in &self.prerequisites {
+            validate_key(&p.flag)?;
+            if p.flag == self.key {
+                return Err(Error::invalid("a flag cannot be its own prerequisite"));
+            }
+        }
+        if self.prerequisites.len() > 16 {
+            return Err(Error::invalid("too many prerequisites (max 16)"));
+        }
         Ok(())
     }
 
@@ -354,6 +389,7 @@ mod tests {
             rules: serde_json::from_value(rules).unwrap(),
             salt: String::new(),
             tags: vec![],
+            prerequisites: vec![],
             version: 3,
             created_at: chrono::Utc::now(),
             updated_at: chrono::Utc::now(),
