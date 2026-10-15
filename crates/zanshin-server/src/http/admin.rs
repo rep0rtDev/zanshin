@@ -1726,6 +1726,8 @@ pub struct Me {
     pub user_id: Option<Uuid>,
     pub mfa_enabled: bool,
     pub must_change_password: bool,
+    /// Console language saved for this console user (`PUT /admin/v1/me/locale`); null = browser default.
+    pub locale: Option<String>,
 }
 
 /// Effective server configuration (defaults + file + environment) with secrets masked —
@@ -1882,6 +1884,7 @@ async fn me(State(state): State<AppState>, AdminAuth(p): AdminAuth) -> ApiResult
         user_id: p.user_id,
         mfa_enabled: user.as_ref().is_some_and(|u| u.totp_enabled),
         must_change_password: user.as_ref().is_some_and(|u| u.must_change_password),
+        locale: user.as_ref().and_then(|u| u.locale.clone()),
     }))
 }
 

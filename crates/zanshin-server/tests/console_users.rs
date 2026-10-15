@@ -157,6 +157,47 @@ async fn users_permissions_mfa_and_key_rotation() {
         .unwrap();
     assert_eq!(r.status(), 403);
 
+    // Console language is saved per user and surfaces in /me; garbage is rejected, null clears it.
+    let r = http
+        .put(format!("{base}/admin/v1/me/locale"))
+        .json(&json!({"locale": "ru"}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(r.status(), 204, "{}", r.text().await.unwrap());
+    let me: Value = http
+        .get(format!("{base}/admin/v1/me"))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(me["locale"], "ru", "{me}");
+    let r = http
+        .put(format!("{base}/admin/v1/me/locale"))
+        .json(&json!({"locale": "not a tag!"}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(r.status(), 400);
+    let r = http
+        .put(format!("{base}/admin/v1/me/locale"))
+        .json(&json!({"locale": null}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(r.status(), 204);
+    let me: Value = http
+        .get(format!("{base}/admin/v1/me"))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert!(me["locale"].is_null(), "{me}");
+
     // Password change invalidates the session; logging in again works with the new password.
     let r = http
         .post(format!("{base}/admin/v1/me/password"))

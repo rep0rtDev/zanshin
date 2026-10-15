@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import QRCode from 'qrcode';
-import { del, get, post, useLoad } from '../api';
+import { del, get, post, useLoad, put } from '../api';
 import { Badge, ErrorBox, Field, Page, Table, fmtDate } from '../ui';
 import { useMe } from '../me';
 import { toast } from '../toast';
@@ -47,7 +47,7 @@ export default function Account({ onChanged }: { onChanged: () => void }) {
     <Page title={t('Your account')}>
       <ErrorBox error={err} />
       <div className="card stack">
-        <label className="field fixed"><span className="label">{t('Language')}</span><select value={locale} onChange={(e) => setLocale(e.target.value as Locale)}>{LOCALES.map(([k, n]) => <option key={k} value={k}>{n}</option>)}</select></label>
+        <label className="field fixed"><span className="label">{t('Language')}</span><select value={locale} onChange={(e) => { const l = e.target.value as Locale; (isUser ? put('/me/locale', { locale: l }) : Promise.resolve()).finally(() => setLocale(l)); }}>{LOCALES.map(([k, n]) => <option key={k} value={k}>{n}</option>)}</select></label>
         <div><strong>{me.name}</strong> <Badge tone="info">{me.auth === 'user' ? 'password login' : me.auth === 'oidc' ? 'single sign-on' : me.auth === 'bootstrap' ? 'bootstrap key' : 'API key'}</Badge> {me.mfa_enabled && <Badge tone="ok">{t('MFA on')}</Badge>}</div>
         {cat && <PermissionMatrix value={me.permissions} onChange={() => undefined} resources={cat.resources} actions={cat.actions} disabled />}
       </div>

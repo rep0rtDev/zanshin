@@ -6,6 +6,14 @@ Release automation reads the section whose heading contains the tagged version.
 
 ## [Unreleased]
 
+## [0.2.2] — 2026-10-15
+
+### Added
+- Console language is saved per console user: `PUT /admin/v1/me/locale` (`{"locale": "ru" | null}`), surfaced as `locale` in `GET /admin/v1/me`; the console applies it on every device after login. API-key / SSO sessions keep the browser setting.
+
+### Fixed
+- Config as code: `config diff` / `config drift` / `--dry-run` no longer report drift for keys a file does not mention (imports are patches — an absent key keeps the server's value) nor for runtime state the server maintains itself (`last_computed_at`, integration `health`, experiment `winner` / `interrupted_at` / `interrupt_reason`, counters). `config pull` strips those runtime fields from the files it writes, so a pulled directory is drift-free right away.
+
 ## [0.2.1] — 2026-10-15
 
 ### Fixed

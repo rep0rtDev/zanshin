@@ -527,7 +527,11 @@ fn write_bundle_dir(dir: &std::path::Path, bundle: &Value) -> Result<usize> {
                 })
                 .collect();
             let path = kd.join(format!("{safe}.yaml"));
-            std::fs::write(&path, serde_yaml::to_string(it)?)
+            let mut it = it.clone();
+            if let Some(o) = it.as_object_mut() {
+                o.retain(|k, _| !zanshin_core::export::VOLATILE.contains(&k.as_str()));
+            }
+            std::fs::write(&path, serde_yaml::to_string(&it)?)
                 .with_context(|| format!("write {}", path.display()))?;
             n += 1;
         }

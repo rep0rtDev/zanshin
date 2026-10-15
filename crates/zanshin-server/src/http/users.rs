@@ -3,7 +3,7 @@
 use axum::{
     extract::{Path, State},
     http::StatusCode,
-    routing::{delete, get, post},
+    routing::{delete, get, post, put},
     Json, Router,
 };
 use serde::{Deserialize, Serialize};
@@ -30,6 +30,7 @@ pub fn router() -> Router<AppState> {
         .route("/users/{id}/mfa", delete(admin_disable_mfa))
         .route("/users/{id}/sessions", delete(admin_revoke_sessions))
         .route("/me/password", post(change_password))
+        .route("/me/locale", put(set_locale))
         .route("/me/mfa/setup", post(mfa_setup))
         .route("/me/mfa/enable", post(mfa_enable))
         .route("/me/mfa/disable", post(mfa_disable))
@@ -279,6 +280,40 @@ async fn change_password(
     state
         .console_users
         .change_password(&user, &req.current_password, &req.new_password)
+        .await?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+#[derive(Deserialize)]
+pub struct LocaleRequest {
+    /// BCP 47 language tag the console should render in, or null for the browser default.
+    pub locale: Option<String>,
+}
+
+/// Console language for the signed-in console user; the console applies it on every device.
+async fn set_locale(
+    State(state): State<AppState>,
+    AdminAuth(p): AdminAuth,
+    Json(req): Json<LocaleRequest>,
+) -> ApiResult<StatusCode> {
+    let user = current_user(&state, &p).await?;
+    let locale = match req.locale.as_deref().map(str::trim) {
+        None | Some("") => None,
+        Some(l) => {
+            let ok = (2..=16).contains(&l.len())
+                && l.chars().all(|c| c.is_ascii_alphanumeric() || c == '-');
+            if !ok {
+                return Err(
+                    Error::invalid("locale must be a language tag such as en or pt-BR").into(),
+                );
+            }
+            Some(l)
+        }
+    };
+    state
+        .console_users
+        .repo()
+        .set_locale(user.id, locale)
         .await?;
     Ok(StatusCode::NO_CONTENT)
 }

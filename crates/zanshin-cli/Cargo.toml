@@ -11,6 +11,7 @@ name = "zanshinctl"
 path = "src/main.rs"
 
 [dependencies]
+zanshin-core = { path = "../zanshin-core" }
 chrono = { workspace = true }
 regex = { workspace = true }
 anyhow.workspace = true

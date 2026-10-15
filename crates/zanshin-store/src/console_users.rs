@@ -29,6 +29,7 @@ pub struct ConsoleUserRow {
     pub last_login_at: Option<DateTime<Utc>>,
     pub password_changed_at: Option<DateTime<Utc>>,
     pub created_by: Option<String>,
+    pub locale: Option<String>,
 }
 
 impl ConsoleUserRow {
@@ -37,7 +38,7 @@ impl ConsoleUserRow {
     }
 }
 
-const COLS: &str = "id, email, name, password_hash, permissions, archetype, totp_secret, totp_enabled, recovery_codes, disabled, must_change_password, created_at, updated_at, last_login_at, password_changed_at, created_by";
+const COLS: &str = "id, email, name, password_hash, permissions, archetype, totp_secret, totp_enabled, recovery_codes, disabled, must_change_password, created_at, updated_at, last_login_at, password_changed_at, created_by, locale";
 
 #[derive(Debug, Clone, FromRow)]
 pub struct ConsoleSessionRow {
@@ -115,6 +116,16 @@ impl ConsoleUserRepo {
         .fetch_all(&self.pg)
         .await
         .map_err(map_sqlx)
+    }
+
+    pub async fn set_locale(&self, id: Uuid, locale: Option<&str>) -> Result<()> {
+        sqlx::query("UPDATE console_users SET locale = $2, updated_at = now() WHERE id = $1")
+            .bind(id)
+            .bind(locale)
+            .execute(&self.pg)
+            .await
+            .map_err(map_sqlx)?;
+        Ok(())
     }
 
     pub async fn get(&self, id: Uuid) -> Result<ConsoleUserRow> {
