@@ -219,12 +219,26 @@ func parseNames(payload string) namesPayload {
 }
 
 // rpcFlags: payload {"names":["a","b"]} → {"flags":[…]}
+// ensureIdentity handles the first-login race: afterAuth syncs the Zanshin identity in the
+// background, so a read RPC issued right after authentication can hit "identity not found".
+// On that error the identity is created synchronously and the caller retries once.
+func (m *module) ensureIdentity(ctx context.Context, uid string, err error) bool {
+	if err == nil || !zanshin.IsNotFound(err) {
+		return false
+	}
+	_, uerr := m.z.UpsertIdentity(ctx, uid, nil, nil)
+	return uerr == nil
+}
+
 func (m *module) rpcFlags(ctx context.Context, _ runtime.Logger, _ *sql.DB, _ runtime.NakamaModule, payload string) (string, error) {
 	uid, err := userID(ctx)
 	if err != nil {
 		return "", err
 	}
 	flags, err := m.z.Flags(ctx, uid, parseNames(payload).Names...)
+	if m.ensureIdentity(ctx, uid, err) {
+		flags, err = m.z.Flags(ctx, uid, parseNames(payload).Names...)
+	}
 	if err != nil {
 		return "", rpcErr(err)
 	}
@@ -237,6 +251,9 @@ func (m *module) rpcAudiences(ctx context.Context, _ runtime.Logger, _ *sql.DB, 
 		return "", err
 	}
 	a, err := m.z.Audiences(ctx, uid)
+	if m.ensureIdentity(ctx, uid, err) {
+		a, err = m.z.Audiences(ctx, uid)
+	}
 	if err != nil {
 		return "", rpcErr(err)
 	}
@@ -249,6 +266,9 @@ func (m *module) rpcExperiments(ctx context.Context, _ runtime.Logger, _ *sql.DB
 		return "", err
 	}
 	e, err := m.z.Experiments(ctx, uid, parseNames(payload).Names...)
+	if m.ensureIdentity(ctx, uid, err) {
+		e, err = m.z.Experiments(ctx, uid, parseNames(payload).Names...)
+	}
 	if err != nil {
 		return "", rpcErr(err)
 	}
@@ -280,6 +300,9 @@ func (m *module) rpcLiveEvents(ctx context.Context, _ runtime.Logger, _ *sql.DB,
 	}
 	p := parseNames(payload)
 	e, err := m.z.LiveEvents(ctx, uid, p.Upcoming, p.Names...)
+	if m.ensureIdentity(ctx, uid, err) {
+		e, err = m.z.LiveEvents(ctx, uid, p.Upcoming, p.Names...)
+	}
 	if err != nil {
 		return "", rpcErr(err)
 	}
@@ -292,6 +315,9 @@ func (m *module) rpcInbox(ctx context.Context, _ runtime.Logger, _ *sql.DB, _ ru
 		return "", err
 	}
 	msgs, err := m.z.Inbox(ctx, uid, parseNames(payload).Limit)
+	if m.ensureIdentity(ctx, uid, err) {
+		msgs, err = m.z.Inbox(ctx, uid, parseNames(payload).Limit)
+	}
 	if err != nil {
 		return "", rpcErr(err)
 	}
@@ -316,6 +342,9 @@ func (m *module) rpcTrack(ctx context.Context, _ runtime.Logger, _ *sql.DB, _ ru
 		}
 	}
 	n, err := m.z.Track(ctx, uid, p.Events...)
+	if m.ensureIdentity(ctx, uid, err) {
+		n, err = m.z.Track(ctx, uid, p.Events...)
+	}
 	if err != nil {
 		return "", rpcErr(err)
 	}
@@ -335,6 +364,9 @@ func (m *module) rpcProperties(ctx context.Context, _ runtime.Logger, _ *sql.DB,
 		return "", runtime.NewError("custom properties are required", 3)
 	}
 	props, err := m.z.UpdateProperties(ctx, uid, nil, p.Custom)
+	if m.ensureIdentity(ctx, uid, err) {
+		props, err = m.z.UpdateProperties(ctx, uid, nil, p.Custom)
+	}
 	if err != nil {
 		return "", rpcErr(err)
 	}
@@ -367,6 +399,9 @@ func (m *module) rpcFlag(ctx context.Context, _ runtime.Logger, _ *sql.DB, _ run
 		return "", runtime.NewError("name is required", 3)
 	}
 	f, err := m.z.Flag(ctx, uid, p.Key)
+	if m.ensureIdentity(ctx, uid, err) {
+		f, err = m.z.Flag(ctx, uid, p.Key)
+	}
 	if err != nil {
 		return "", rpcErr(err)
 	}
@@ -387,6 +422,9 @@ func (m *module) rpcFlagExplain(ctx context.Context, _ runtime.Logger, _ *sql.DB
 		return "", runtime.NewError("name is required", 3)
 	}
 	raw, err := m.z.ExplainFlag(ctx, uid, p.Key)
+	if m.ensureIdentity(ctx, uid, err) {
+		raw, err = m.z.ExplainFlag(ctx, uid, p.Key)
+	}
 	if err != nil {
 		return "", rpcErr(err)
 	}
@@ -404,6 +442,9 @@ func (m *module) rpcJoinEvent(ctx context.Context, _ runtime.Logger, _ *sql.DB, 
 		return "", runtime.NewError("key is required", 3)
 	}
 	ev, err := m.z.JoinLiveEvent(ctx, uid, p.Key)
+	if m.ensureIdentity(ctx, uid, err) {
+		ev, err = m.z.JoinLiveEvent(ctx, uid, p.Key)
+	}
 	if err != nil {
 		return "", rpcErr(err)
 	}
@@ -421,6 +462,9 @@ func (m *module) rpcLeaveEvent(ctx context.Context, _ runtime.Logger, _ *sql.DB,
 		return "", runtime.NewError("key is required", 3)
 	}
 	left, err := m.z.LeaveLiveEvent(ctx, uid, p.Key)
+	if m.ensureIdentity(ctx, uid, err) {
+		left, err = m.z.LeaveLiveEvent(ctx, uid, p.Key)
+	}
 	if err != nil {
 		return "", rpcErr(err)
 	}
@@ -447,6 +491,9 @@ func (m *module) rpcInboxRead(ctx context.Context, _ runtime.Logger, _ *sql.DB, 
 		return respond(map[string]any{"consumed": p.ID})
 	}
 	msg, err := m.z.MarkRead(ctx, uid, p.ID)
+	if m.ensureIdentity(ctx, uid, err) {
+		msg, err = m.z.MarkRead(ctx, uid, p.ID)
+	}
 	if err != nil {
 		return "", rpcErr(err)
 	}

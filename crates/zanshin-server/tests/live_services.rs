@@ -478,19 +478,26 @@ async fn live_services() {
             .await
             .unwrap();
         let uid = acct["user"]["id"].as_str().unwrap().to_string();
-        let r = c
-            .post(format!("{nk}/v2/rpc/zanshin.flags"))
-            .bearer_auth(&token)
-            .json(&"{}")
-            .send()
-            .await
-            .unwrap();
-        assert_eq!(
-            r.status().as_u16(),
-            200,
-            "rpc zanshin.flags through the module: {}",
-            r.text().await.unwrap()
-        );
+        // the after-authenticate hook syncs the identity in the background — poll briefly
+        let mut last = String::new();
+        let mut ok = false;
+        for _ in 0..40 {
+            let r = c
+                .post(format!("{nk}/v2/rpc/zanshin.flags"))
+                .bearer_auth(&token)
+                .json(&"{}")
+                .send()
+                .await
+                .unwrap();
+            let st = r.status().as_u16();
+            last = r.text().await.unwrap_or_default();
+            if st == 200 {
+                ok = true;
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(250)).await;
+        }
+        assert!(ok, "rpc zanshin.flags through the module: {last}");
         let r = c
             .post(format!("{nk}/v2/rpc/zanshin.track"))
             .bearer_auth(&token)
