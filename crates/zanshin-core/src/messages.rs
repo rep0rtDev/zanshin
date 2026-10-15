@@ -61,9 +61,146 @@ pub struct MessageCampaign {
     pub channels: Vec<String>,
     #[serde(default)]
     pub tags: Vec<String>,
+    /// Max deliveries of this campaign to one player inside a rolling window.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub frequency_cap: Option<FrequencyCap>,
+    /// Do-not-disturb window in the player's timezone; deliveries are deferred to its end.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub quiet_hours: Option<QuietHours>,
+    /// Copy variants for A/B tests; a player sticks to one variant (hash of key + player).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub variants: Vec<MessageVariant>,
+    /// Rich push extras (action buttons, sound, badge).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub push_options: Option<crate::push::PushOptions>,
     pub version: i64,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct FrequencyCap {
+    pub max: i32,
+    pub per_secs: i64,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct QuietHours {
+    /// Start hour (0-23) in the player's timezone.
+    pub start_hour: u32,
+    /// End hour (0-23); may be smaller than start for windows crossing midnight.
+    pub end_hour: u32,
+    /// Identity property holding an IANA timezone; default `default.timezone`, UTC when missing.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub timezone_prop: Option<String>,
+}
+
+impl QuietHours {
+    /// Whether the local hour falls inside the window (`start == end` means always).
+    pub fn contains_hour(&self, hour: u32) -> bool {
+        if self.start_hour == self.end_hour {
+            return true;
+        }
+        if self.start_hour < self.end_hour {
+            hour >= self.start_hour && hour < self.end_hour
+        } else {
+            hour >= self.start_hour || hour < self.end_hour
+        }
+    }
+
+    /// Seconds from `hour:minute` until the window ends.
+    pub fn secs_until_end(&self, hour: u32, minute: u32) -> i64 {
+        let now = (hour * 60 + minute) as i64;
+        let end = (self.end_hour * 60) as i64;
+        let d = end - now;
+        if d > 0 {
+            d * 60
+        } else {
+            (d + 24 * 60) * 60
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct MessageVariant {
+    pub key: String,
+    #[serde(default = "default_weight")]
+    pub weight: f64,
+    #[serde(default)]
+    pub title: String,
+    #[serde(default)]
+    pub body: String,
+    #[serde(default)]
+    pub image_url: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub template_key: Option<String>,
+}
+
+fn default_weight() -> f64 {
+    1.0
+}
+
+impl MessageCampaign {
+    /// Validation for the v3 fields (caps, quiet hours, variants).
+    pub fn validate_v3(&self) -> Result<()> {
+        if let Some(c) = &self.frequency_cap {
+            if c.max < 1 || c.per_secs < 60 {
+                return Err(Error::invalid("frequency_cap: max >= 1 and per_secs >= 60"));
+            }
+        }
+        if let Some(q) = &self.quiet_hours {
+            if q.start_hour > 23 || q.end_hour > 23 {
+                return Err(Error::invalid("quiet_hours: hours must be 0..23"));
+            }
+        }
+        if self.variants.len() > 10 {
+            return Err(Error::invalid("at most 10 variants"));
+        }
+        let mut keys = std::collections::HashSet::new();
+        for v in &self.variants {
+            crate::flags::validate_key(&v.key)?;
+            if !keys.insert(v.key.as_str()) {
+                return Err(Error::invalid(format!("duplicate variant {:?}", v.key)));
+            }
+            if v.weight <= 0.0 || !v.weight.is_finite() {
+                return Err(Error::invalid(format!(
+                    "variant {:?}: weight must be > 0",
+                    v.key
+                )));
+            }
+            if v.title.trim().is_empty() && v.template_key.is_none() {
+                return Err(Error::invalid(format!(
+                    "variant {:?}: title or template_key required",
+                    v.key
+                )));
+            }
+            if let Some(t) = &v.template_key {
+                crate::flags::validate_key(t)?;
+            }
+        }
+        if let Some(o) = &self.push_options {
+            o.validate()?;
+        }
+        Ok(())
+    }
+
+    /// Sticky variant for a player: weighted bucket of `hash(key, external_id)`.
+    pub fn variant_for(&self, external_id: &str) -> Option<&MessageVariant> {
+        if self.variants.is_empty() {
+            return None;
+        }
+        let total: f64 = self.variants.iter().map(|v| v.weight).sum();
+        let mut point = crate::hash::bucket("msg-variant", &self.key, external_id) as f64
+            / crate::hash::BUCKETS as f64
+            * total;
+        for v in &self.variants {
+            if point < v.weight {
+                return Some(v);
+            }
+            point -= v.weight;
+        }
+        self.variants.last()
+    }
 }
 
 fn default_percentage() -> f64 {

@@ -962,7 +962,7 @@ impl ExportService {
     /// AWS SigV4 for a single request. `extra` are additional headers to sign (lowercase names,
     /// sorted together with `host` and `x-amz-date`). Returns (authorization, x-amz-date, payload sha256).
     #[allow(clippy::too_many_arguments)]
-    fn sigv4(
+    pub(crate) fn sigv4(
         method: &str,
         host: &str,
         path: &str,

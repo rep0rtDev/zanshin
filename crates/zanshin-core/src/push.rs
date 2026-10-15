@@ -63,6 +63,61 @@ pub struct Notification {
     pub image_url: String,
     /// Delivered as data payload; the inbox message id lets the client open it.
     pub data: serde_json::Map<String, serde_json::Value>,
+    /// Rich push extras (actions, sound, badge, collapse key, deep link).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub options: Option<PushOptions>,
+}
+
+/// Rich push extras shared by campaigns, direct messages and journeys.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct PushOptions {
+    /// Action buttons (FCM: `data.actions` + click action; APNs: `category` = first action id).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub actions: Vec<PushAction>,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub sound: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub badge: Option<i32>,
+    /// Android notification channel id.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub channel_id: String,
+    /// Collapse key (FCM) / `apns-collapse-id`: newer pushes replace older ones.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub collapse_key: String,
+    /// Deep link opened on tap.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub deep_link: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct PushAction {
+    pub id: String,
+    pub title: String,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub url: String,
+}
+
+impl PushOptions {
+    pub fn validate(&self) -> Result<()> {
+        if self.actions.len() > 4 {
+            return Err(Error::invalid("at most 4 push actions"));
+        }
+        for a in &self.actions {
+            if a.id.is_empty() || a.id.len() > 64 || a.title.is_empty() || a.title.len() > 64 {
+                return Err(Error::invalid(
+                    "push action: id and title must be 1..64 chars",
+                ));
+            }
+        }
+        if self.badge.is_some_and(|b| b < 0) {
+            return Err(Error::invalid("push badge must be >= 0"));
+        }
+        Ok(())
+    }
+
+    pub fn is_empty(&self) -> bool {
+        *self == Self::default()
+    }
 }
 
 #[cfg(test)]

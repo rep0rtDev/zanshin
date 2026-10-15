@@ -94,6 +94,14 @@ pub struct MessagePatch {
     pub schedule: Option<Schedule>,
     #[serde(default)]
     pub channels: Option<Vec<String>>,
+    #[serde(default, deserialize_with = "double_option")]
+    pub frequency_cap: Option<Option<zanshin_core::messages::FrequencyCap>>,
+    #[serde(default, deserialize_with = "double_option")]
+    pub quiet_hours: Option<Option<zanshin_core::messages::QuietHours>>,
+    #[serde(default)]
+    pub variants: Option<Vec<zanshin_core::messages::MessageVariant>>,
+    #[serde(default, deserialize_with = "double_option")]
+    pub push_options: Option<Option<zanshin_core::push::PushOptions>>,
 }
 
 /// A direct (server-sent) message.
@@ -127,6 +135,8 @@ pub struct DirectMessage {
     pub priority: i32,
     #[serde(default)]
     pub ttl_secs: Option<i64>,
+    #[serde(default)]
+    pub push_options: Option<zanshin_core::push::PushOptions>,
 }
 
 #[derive(Clone)]
@@ -184,6 +194,7 @@ impl MessageService {
             body: body.to_string(),
             image_url: image_url.to_string(),
             data,
+            options: None,
         }
     }
 
@@ -301,8 +312,77 @@ impl MessageService {
         if !m.targets(&identity.external_id, flat, &member) {
             return Ok(None);
         }
+        if let Some(cap) = &m.frequency_cap {
+            let since = now - chrono::Duration::seconds(cap.per_secs);
+            let n = self.repo.sent_since(identity.id, Some(m.id), since).await?;
+            if n >= cap.max as i64 {
+                let _ = self
+                    .repo
+                    .record_delivery(
+                        m.id,
+                        identity.id,
+                        occurrence,
+                        "inbox",
+                        "capped",
+                        &format!("{n}/{} in {}s", cap.max, cap.per_secs),
+                    )
+                    .await;
+                metrics::counter!("zanshin_messages_capped_total", "message" => m.key.clone())
+                    .increment(1);
+                return Ok(None);
+            }
+        }
+        if let Some(q) = &m.quiet_hours {
+            use chrono::Timelike;
+            let prop = q.timezone_prop.as_deref().unwrap_or("default.timezone");
+            let tz: chrono_tz::Tz = flat
+                .get(prop)
+                .and_then(|v| v.as_str())
+                .and_then(|z| z.parse().ok())
+                .unwrap_or(chrono_tz::UTC);
+            let local = now.with_timezone(&tz);
+            if q.start_hour != q.end_hour && q.contains_hour(local.hour()) {
+                let due =
+                    now + chrono::Duration::seconds(q.secs_until_end(local.hour(), local.minute()));
+                if self
+                    .repo
+                    .defer(m.id, identity.id, occurrence, due, "quiet_hours")
+                    .await?
+                {
+                    let _ = self
+                        .repo
+                        .record_delivery(
+                            m.id,
+                            identity.id,
+                            occurrence,
+                            "inbox",
+                            "deferred",
+                            &format!("quiet hours until {}", due.to_rfc3339()),
+                        )
+                        .await;
+                    metrics::counter!("zanshin_messages_deferred_total", "message" => m.key.clone()).increment(1);
+                }
+                return Ok(None);
+            }
+        }
+        let variant = m.variant_for(&identity.external_id);
+        let v_template = variant
+            .and_then(|v| v.template_key.clone())
+            .or_else(|| m.template_key.clone());
+        let v_title: &str = variant
+            .filter(|v| !v.title.is_empty())
+            .map(|v| v.title.as_str())
+            .unwrap_or(&m.title);
+        let v_body: &str = variant
+            .filter(|v| !v.body.is_empty())
+            .map(|v| v.body.as_str())
+            .unwrap_or(&m.body);
+        let v_image: &str = variant
+            .filter(|v| !v.image_url.is_empty())
+            .map(|v| v.image_url.as_str())
+            .unwrap_or(&m.image_url);
         let locale_pref = Template::locale_of(flat);
-        let (title, body, image_url, payload, locale) = match &m.template_key {
+        let (title, body, image_url, payload, locale) = match &v_template {
             Some(tk) => match self.templates.get(tk).await {
                 Ok(t) => {
                     let r = t.render(locale_pref.as_deref(), flat);
@@ -311,28 +391,28 @@ impl MessageService {
                     } else {
                         m.payload.clone()
                     };
-                    let image = if m.image_url.is_empty() {
+                    let image = if v_image.is_empty() {
                         t.image_url.clone()
                     } else {
-                        m.image_url.clone()
+                        v_image.to_string()
                     };
                     (r.title, r.body, image, payload, r.locale)
                 }
                 Err(e) => {
                     tracing::warn!(message = %m.key, template = %tk, error = %e, "template missing; using inline copy");
                     (
-                        MessageCampaign::render(&m.title, flat),
-                        MessageCampaign::render(&m.body, flat),
-                        m.image_url.clone(),
+                        MessageCampaign::render(v_title, flat),
+                        MessageCampaign::render(v_body, flat),
+                        v_image.to_string(),
                         m.payload.clone(),
                         locale_pref.clone().unwrap_or_default(),
                     )
                 }
             },
             None => (
-                MessageCampaign::render(&m.title, flat),
-                MessageCampaign::render(&m.body, flat),
-                m.image_url.clone(),
+                MessageCampaign::render(v_title, flat),
+                MessageCampaign::render(v_body, flat),
+                v_image.to_string(),
                 m.payload.clone(),
                 locale_pref.clone().unwrap_or_default(),
             ),
@@ -362,6 +442,12 @@ impl MessageService {
                 .repo
                 .record_delivery(m.id, identity.id, occurrence, "inbox", "sent", "")
                 .await;
+            if let Some(v) = variant {
+                let _ = self
+                    .repo
+                    .set_delivery_variant(m.id, identity.id, occurrence, &v.key)
+                    .await;
+            }
             let _ = self.hooks.send(zanshin_core::webhooks::WebhookEvent::new(
                 "message.delivered",
                 serde_json::json!({
@@ -370,12 +456,9 @@ impl MessageService {
                 }),
             ));
             if m.push {
-                self.push_copy(
-                    identity.id,
-                    id,
-                    &Self::notification(&title, &body, &image_url, id, Some(&m.key)),
-                )
-                .await;
+                let mut n = Self::notification(&title, &body, &image_url, id, Some(&m.key));
+                n.options = m.push_options.clone();
+                self.push_copy(identity.id, id, &n).await;
             }
             let out = super::integrations::Outbound {
                 message_key: &m.key,
@@ -729,12 +812,9 @@ impl MessageService {
             Uuid::new_v4()
         };
         if msg.push {
-            self.push_copy(
-                identity.id,
-                id,
-                &Self::notification(&title, &body, &msg.image_url, id, None),
-            )
-            .await;
+            let mut n = Self::notification(&title, &body, &msg.image_url, id, None);
+            n.options = msg.push_options.clone();
+            self.push_copy(identity.id, id, &n).await;
         }
         for ch in &msg.channels {
             let out = super::integrations::Outbound {
@@ -799,11 +879,16 @@ impl MessageService {
             schedule: p.schedule.unwrap_or_default(),
             channels: p.channels.unwrap_or_else(default_channels),
             tags: normalize_tags(p.tags.unwrap_or_default())?,
+            frequency_cap: p.frequency_cap.flatten(),
+            quiet_hours: p.quiet_hours.flatten(),
+            variants: p.variants.unwrap_or_default(),
+            push_options: p.push_options.flatten().filter(|o| !o.is_empty()),
             version: 1,
             created_at: now,
             updated_at: now,
         };
         m.validate()?;
+        m.validate_v3()?;
         self.check_refs(&m).await?;
         let created = self.repo.create(&m).await?;
         self.bus
@@ -850,6 +935,18 @@ impl MessageService {
         if let Some(v) = p.ends_at {
             m.ends_at = v;
         }
+        if let Some(v) = p.frequency_cap {
+            m.frequency_cap = v;
+        }
+        if let Some(v) = p.quiet_hours {
+            m.quiet_hours = v;
+        }
+        if let Some(v) = p.variants {
+            m.variants = v;
+        }
+        if let Some(v) = p.push_options {
+            m.push_options = v.filter(|o| !o.is_empty());
+        }
         if let Some(v) = p.ttl_secs {
             m.ttl_secs = v;
         }
@@ -875,6 +972,7 @@ impl MessageService {
             m.tags = normalize_tags(v)?;
         }
         m.validate()?;
+        m.validate_v3()?;
         self.check_refs(&m).await?;
         let updated = self.repo.update(&m).await?;
         self.bus
@@ -901,4 +999,60 @@ impl MessageService {
 
 fn default_true() -> bool {
     true
+}
+
+impl MessageService {
+    /// Retry deliveries deferred by quiet hours whose window has ended (housekeeping, once a minute).
+    pub async fn sweep_deferrals(
+        &self,
+        eval: &super::eval::Evaluator,
+        identities: &zanshin_store::identities::IdentityRepo,
+    ) -> Result<usize> {
+        let now = chrono::Utc::now();
+        let due = self.repo.due_deferrals(now, 1000).await?;
+        if due.is_empty() {
+            return Ok(0);
+        }
+        let campaigns = self.catalog.list().await;
+        let mut delivered = 0;
+        for d in due {
+            self.repo.delete_deferral(d.id).await?;
+            let Some(m) = campaigns.iter().find(|m| m.id == d.message_id) else {
+                continue;
+            };
+            if !m.enabled {
+                continue;
+            }
+            let Ok(identity) = identities.get(d.identity_id).await else {
+                continue;
+            };
+            let flat = super::eval::flatten_with_identity(&identity, &identity.properties);
+            let audiences = eval.audiences.memberships(&identity, &flat).await;
+            if self
+                .deliver_campaign(m, &identity, &flat, &audiences, now, d.occurrence)
+                .await?
+                .is_some()
+            {
+                delivered += 1;
+            }
+        }
+        Ok(delivered)
+    }
+
+    pub async fn variant_stats(
+        &self,
+        key: &str,
+    ) -> Result<(
+        Arc<MessageCampaign>,
+        Vec<zanshin_store::messages::VariantStat>,
+    )> {
+        let m = self.get(key).await?;
+        let stats = self.repo.variant_stats(m.id, &m.key).await?;
+        Ok((m, stats))
+    }
+
+    pub async fn deferrals(&self, key: &str) -> Result<Vec<zanshin_store::messages::Deferral>> {
+        let m = self.get(key).await?;
+        self.repo.deferrals_for(m.id).await
+    }
 }

@@ -852,3 +852,36 @@ recorded after this release and matches nothing older. `variant` requires `exper
 
 `GET /analytics/overview` and the dashboard `number` / `timeseries` / `funnel` / `retention`
 widgets apply the same filter; a dashboard's `filters` object is used as its event filter.
+
+## Messaging v3
+
+Campaign fields (`POST/PUT /admin/v1/messages`):
+
+| Field | Meaning |
+|---|---|
+| `frequency_cap` | `{ "max": 1, "per_secs": 86400 }` — inbox deliveries of this campaign per player in the window; excess is recorded as `capped`. |
+| `quiet_hours` | `{ "start_hour": 22, "end_hour": 8, "timezone_prop": "default.timezone" }` — local window in which nothing is delivered; the delivery is deferred to the window end (`deferred`) and retried by housekeeping. UTC when the player has no timezone. |
+| `variants` | up to 8 `{ "key", "weight", "title", "body", "image_url", "template_key" }`; a player is assigned one deterministically (sticky, weighted). Empty variant fields fall back to the campaign's. |
+| `push_options` | `{ "sound", "badge", "channel_id", "collapse_key", "deep_link", "actions": [{ "id", "title", "url" }] }` — mapped to FCM (`android.notification`, `collapse_key`, `data.zanshin_actions`, `data.zanshin_deep_link`) and APNs (`aps.sound/badge/category`, `mutable-content`). Also accepted on direct messages (`POST /server/v1/messages`). |
+
+| Method | Path | Permission | Notes |
+|---|---|---|---|
+| GET | `/admin/v1/messages/{key}/variants` | `messages:read` | sent / read / consumed / read_rate per variant (`untagged` = deliveries before variants existed) |
+| GET | `/admin/v1/messages/{key}/deferrals` | `messages:read` | pending quiet-hour deferrals (`due_at`, `reason`) |
+
+### Email integrations
+
+`kind` is `smtp`, `ses`, `sendgrid` or `resend`; the campaign lists the integration key in `channels`. All take `from`, optional `reply_to` and `to_prop` (property holding the player's address, default `default.email`); a player without one is recorded as `skipped`.
+
+| Kind | Config |
+|---|---|
+| `smtp` | `host`, `port` (587), `tls` = `starttls` (default) / `implicit` / `none`, `username`, `password`, `helo` |
+| `ses` | `region`, `access_key`, `secret_key`, optional `host` (SESv2 `SendEmail`) |
+| `sendgrid` | `api_key`, optional `url` |
+| `resend` | `api_key`, optional `url` |
+
+## Journeys v3
+
+- Step `{ "kind": "split", "branches": [{ "step": "a", "weight": 70 }, { "step": "b", "weight": 30 }] }` — weighted random jump, sticky per run; the chosen branch is stored on the run (`branch`).
+- `goal`: `{ "event": "purchaseCompleted", "within_secs": 604800 }` — tracking the event marks the player's runs (entered within the deadline) as converted (`converted_at`); the runs report returns `conversions: { runs, converted, by_branch: [[branch, runs, converted]] }`.
+- `exit_when`: `{ "events": ["unsubscribe"], "on_goal": true }` — tracking one of the events (or the goal when `on_goal`) ends the player's active runs with status `exited`.

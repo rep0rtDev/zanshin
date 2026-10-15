@@ -7,6 +7,16 @@ Release automation reads the section whose heading contains the tagged version.
 ## [Unreleased]
 
 ### Added
+- Messaging v3: native **email** integrations (`smtp` with STARTTLS / implicit TLS / AUTH LOGIN,
+  `ses` via SESv2 + SigV4, `sendgrid`, `resend`; recipient from `to_prop`, default
+  `default.email`), per-campaign **frequency caps**, **quiet hours** in the player's timezone
+  (deferred deliveries retried by housekeeping, `GET /messages/{key}/deferrals`), sticky weighted
+  **copy variants** (A/B titles / bodies / templates, `GET /messages/{key}/variants` with
+  sent / read per variant) and **rich push** options (sound, badge, channel, collapse key, deep
+  link, action buttons) on campaigns and direct messages, mapped to FCM / APNs payloads.
+- Journeys v3: **Split** step (weighted random branching, sticky per run, branch recorded on the
+  run), **goal** event with optional deadline (runs marked converted; `conversions` in the runs
+  report, per branch), **exit criteria** (`exit_when.events`, `exit_when.on_goal` end active runs).
 - Flags v3: **prerequisites** between flags (dependency must be enabled / at a value, cycles
   rejected, `reason: prerequisite`), one-click **kill switch** (`/kill`, `/restore`), **scheduled
   changes** applied by housekeeping, **evaluation counters** per flag / variant with a

@@ -173,6 +173,10 @@ impl IntegrationService {
             IntegrationKind::Webhook => self.webhook(&i, out).await,
             IntegrationKind::Onesignal => self.onesignal(&i, out).await,
             IntegrationKind::Facebook => self.facebook(&i, out).await,
+            IntegrationKind::Smtp
+            | IntegrationKind::Ses
+            | IntegrationKind::Sendgrid
+            | IntegrationKind::Resend => self.email(&i, out).await,
             IntegrationKind::Fcm | IntegrationKind::Apns => {
                 if !self.push.enabled() {
                     return Outcome::skipped(key, "no push provider configured on the server");
@@ -192,6 +196,8 @@ impl IntegrationService {
                     body: out.body.to_string(),
                     image_url: out.image_url.to_string(),
                     data,
+
+                    options: None,
                 };
                 match self.push.notify(out.identity_id, &n).await {
                     0 => Outcome::skipped(key, "no registered devices"),
@@ -343,4 +349,402 @@ pub fn sign(secret: &str, timestamp: &str, body: &[u8]) -> String {
         let _ = write!(hex, "{b:02x}");
     }
     hex
+}
+
+/// Look a property up by flattened key (`default.email`) or nested path.
+fn prop_str<'a>(props: &'a PropertyMap, key: &str) -> Option<&'a str> {
+    if let Some(v) = props.get(key).and_then(|v| v.as_str()) {
+        return Some(v);
+    }
+    let mut cur: &Value = &Value::Null;
+    for (n, part) in key.split('.').enumerate() {
+        cur = if n == 0 {
+            props.get(part)?
+        } else {
+            cur.get(part)?
+        };
+    }
+    cur.as_str()
+}
+
+fn html_escape(s: &str) -> String {
+    s.replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+        .replace('"', "&quot;")
+}
+
+/// Email rendering shared by every provider: subject = title, text + simple HTML body.
+struct Email {
+    to: String,
+    from: String,
+    reply_to: String,
+    subject: String,
+    text: String,
+    html: String,
+}
+
+impl IntegrationService {
+    fn compose(i: &Integration, out: &Outbound<'_>) -> Result<Email, String> {
+        let to_prop = i.config["to_prop"]
+            .as_str()
+            .filter(|p| !p.is_empty())
+            .unwrap_or("default.email");
+        let to = prop_str(out.props, to_prop)
+            .filter(|e| e.contains('@'))
+            .ok_or_else(|| format!("player has no email in {to_prop}"))?;
+        let from = i.config["from"].as_str().unwrap_or_default();
+        if from.is_empty() {
+            return Err("integration has no `from` address".into());
+        }
+        let mut html = format!("<p>{}</p>", html_escape(out.body).replace('\n', "<br>"));
+        if !out.image_url.is_empty() {
+            html.push_str(&format!(
+                "<p><img src=\"{}\" alt=\"\" style=\"max-width:100%\"></p>",
+                html_escape(out.image_url)
+            ));
+        }
+        if let Some(cta) = out.payload.get("cta_url").and_then(|v| v.as_str()) {
+            let label = out
+                .payload
+                .get("cta_label")
+                .and_then(|v| v.as_str())
+                .unwrap_or("Open");
+            html.push_str(&format!(
+                "<p><a href=\"{}\">{}</a></p>",
+                html_escape(cta),
+                html_escape(label)
+            ));
+        }
+        Ok(Email {
+            to: to.to_string(),
+            from: from.to_string(),
+            reply_to: i.config["reply_to"]
+                .as_str()
+                .unwrap_or_default()
+                .to_string(),
+            subject: out.title.to_string(),
+            text: out.body.to_string(),
+            html,
+        })
+    }
+
+    async fn email(&self, i: &Integration, out: &Outbound<'_>) -> Outcome {
+        let mail = match Self::compose(i, out) {
+            Ok(m) => m,
+            Err(e) => return Outcome::skipped(&i.key, e),
+        };
+        match i.kind {
+            IntegrationKind::Sendgrid => {
+                let mut body = json!({
+                    "personalizations": [{ "to": [{ "email": mail.to }] }],
+                    "from": { "email": mail.from },
+                    "subject": mail.subject,
+                    "content": [
+                        { "type": "text/plain", "value": mail.text },
+                        { "type": "text/html", "value": mail.html }
+                    ],
+                    "custom_args": { "zanshin_message_key": out.message_key, "zanshin_identity": out.external_id }
+                });
+                if !mail.reply_to.is_empty() {
+                    body["reply_to"] = json!({ "email": mail.reply_to });
+                }
+                let url = i.config["url"]
+                    .as_str()
+                    .filter(|u| !u.is_empty())
+                    .unwrap_or("https://api.sendgrid.com/v3/mail/send");
+                let req = self
+                    .http
+                    .post(url)
+                    .bearer_auth(i.config["api_key"].as_str().unwrap_or_default());
+                self.post_json(&i.key, req, serde_json::to_vec(&body).unwrap_or_default())
+                    .await
+            }
+            IntegrationKind::Resend => {
+                let mut body = json!({
+                    "from": mail.from, "to": [mail.to], "subject": mail.subject,
+                    "text": mail.text, "html": mail.html,
+                    "tags": [{ "name": "zanshin_message_key", "value": out.message_key.replace(|c: char| !c.is_ascii_alphanumeric() && c != '_' && c != '-', "_") }]
+                });
+                if !mail.reply_to.is_empty() {
+                    body["reply_to"] = Value::String(mail.reply_to.clone());
+                }
+                let url = i.config["url"]
+                    .as_str()
+                    .filter(|u| !u.is_empty())
+                    .unwrap_or("https://api.resend.com/emails");
+                let req = self
+                    .http
+                    .post(url)
+                    .bearer_auth(i.config["api_key"].as_str().unwrap_or_default());
+                self.post_json(&i.key, req, serde_json::to_vec(&body).unwrap_or_default())
+                    .await
+            }
+            IntegrationKind::Ses => {
+                let region = i.config["region"].as_str().unwrap_or("us-east-1");
+                let host = i.config["host"]
+                    .as_str()
+                    .filter(|h| !h.is_empty())
+                    .map(str::to_string)
+                    .unwrap_or_else(|| format!("email.{region}.amazonaws.com"));
+                let path = "/v2/email/outbound-emails";
+                let mut body = json!({
+                    "FromEmailAddress": mail.from,
+                    "Destination": { "ToAddresses": [mail.to] },
+                    "Content": { "Simple": {
+                        "Subject": { "Data": mail.subject, "Charset": "UTF-8" },
+                        "Body": {
+                            "Text": { "Data": mail.text, "Charset": "UTF-8" },
+                            "Html": { "Data": mail.html, "Charset": "UTF-8" }
+                        }
+                    }}
+                });
+                if !mail.reply_to.is_empty() {
+                    body["ReplyToAddresses"] = json!([mail.reply_to]);
+                }
+                let payload = serde_json::to_vec(&body).unwrap_or_default();
+                let (auth, amz_date, payload_hash) = super::export::ExportService::sigv4(
+                    "POST",
+                    &host,
+                    path,
+                    "ses",
+                    region,
+                    i.config["access_key"].as_str().unwrap_or_default(),
+                    i.config["secret_key"].as_str().unwrap_or_default(),
+                    &[],
+                    &payload,
+                );
+                let req = self
+                    .http
+                    .post(format!("https://{host}{path}"))
+                    .header("authorization", auth)
+                    .header("x-amz-date", amz_date)
+                    .header("x-amz-content-sha256", payload_hash);
+                self.post_json(&i.key, req, payload).await
+            }
+            _ => match smtp::send(&i.config, &mail).await {
+                Ok(id) => Outcome::sent(&i.key, id),
+                Err(e) => Outcome::failed(&i.key, e),
+            },
+        }
+    }
+}
+
+/// Minimal SMTP client (RFC 5321 + STARTTLS / implicit TLS + AUTH LOGIN); enough for SES SMTP,
+/// Mailgun, Postmark, a self-hosted Postfix… without pulling in a mail crate.
+mod smtp {
+    use std::sync::Arc;
+
+    use base64::Engine;
+    use tokio::io::{AsyncBufReadExt, AsyncRead, AsyncWrite, AsyncWriteExt, BufReader};
+    use tokio::net::TcpStream;
+    use tokio_rustls::TlsConnector;
+
+    use super::Email;
+
+    type Stream = BufReader<Box<dyn AsyncRead + Send + Unpin>>;
+    type Sink = Box<dyn AsyncWrite + Send + Unpin>;
+
+    struct Conn {
+        r: Stream,
+        w: Sink,
+    }
+
+    impl Conn {
+        fn new<S: AsyncRead + AsyncWrite + Send + Unpin + 'static>(s: S) -> Self {
+            let (r, w) = tokio::io::split(s);
+            Self {
+                r: BufReader::new(Box::new(r)),
+                w: Box::new(w),
+            }
+        }
+
+        /// Read one (possibly multi-line) reply; Ok(text) when the code is 2xx/3xx.
+        async fn reply(&mut self) -> Result<String, String> {
+            let mut all = String::new();
+            loop {
+                let mut line = String::new();
+                let n = self
+                    .r
+                    .read_line(&mut line)
+                    .await
+                    .map_err(|e| format!("read: {e}"))?;
+                if n == 0 {
+                    return Err("connection closed".into());
+                }
+                all.push_str(&line);
+                if line.len() < 4 || line.as_bytes()[3] != b'-' {
+                    break;
+                }
+            }
+            let code: u16 = all.get(0..3).and_then(|c| c.parse().ok()).unwrap_or(0);
+            if (200..400).contains(&code) {
+                Ok(all.trim().to_string())
+            } else {
+                Err(all.trim().chars().take(300).collect())
+            }
+        }
+
+        async fn cmd(&mut self, c: &str) -> Result<String, String> {
+            self.w
+                .write_all(c.as_bytes())
+                .await
+                .map_err(|e| format!("write: {e}"))?;
+            self.w
+                .write_all(b"\r\n")
+                .await
+                .map_err(|e| format!("write: {e}"))?;
+            self.w.flush().await.map_err(|e| format!("write: {e}"))?;
+            self.reply().await
+        }
+    }
+
+    fn tls_connector() -> TlsConnector {
+        let mut roots = tokio_rustls::rustls::RootCertStore::empty();
+        roots.extend(webpki_roots::TLS_SERVER_ROOTS.iter().cloned());
+        let cfg = tokio_rustls::rustls::ClientConfig::builder()
+            .with_root_certificates(roots)
+            .with_no_client_auth();
+        TlsConnector::from(Arc::new(cfg))
+    }
+
+    fn dot_stuff(body: &str) -> String {
+        body.lines()
+            .map(|l| {
+                if l.starts_with('.') {
+                    format!(".{l}")
+                } else {
+                    l.to_string()
+                }
+            })
+            .collect::<Vec<_>>()
+            .join("\r\n")
+    }
+
+    pub async fn send(cfg: &serde_json::Value, mail: &Email) -> Result<String, String> {
+        let host = cfg["host"].as_str().unwrap_or_default();
+        let port = cfg["port"].as_u64().unwrap_or(587) as u16;
+        let mode = cfg["tls"]
+            .as_str()
+            .unwrap_or(if port == 465 { "implicit" } else { "starttls" });
+        let user = cfg["username"].as_str().unwrap_or_default();
+        let pass = cfg["password"].as_str().unwrap_or_default();
+        let helo = cfg["helo"]
+            .as_str()
+            .filter(|h| !h.is_empty())
+            .unwrap_or("zanshin");
+        let fut = async {
+            let tcp = TcpStream::connect((host, port))
+                .await
+                .map_err(|e| format!("connect {host}:{port}: {e}"))?;
+            let server = tokio_rustls::rustls::pki_types::ServerName::try_from(host.to_string())
+                .map_err(|e| format!("bad host: {e}"))?;
+            let mut conn = if mode == "implicit" {
+                Conn::new(
+                    tls_connector()
+                        .connect(server, tcp)
+                        .await
+                        .map_err(|e| format!("tls: {e}"))?,
+                )
+            } else {
+                let mut c = Conn::new(tcp);
+                c.reply().await?;
+                let ehlo = c.cmd(&format!("EHLO {helo}")).await?;
+                if mode == "none" {
+                    c
+                } else {
+                    if !ehlo.to_ascii_uppercase().contains("STARTTLS") {
+                        return Err(
+                            "server does not offer STARTTLS (set tls = \"none\" to send in clear)"
+                                .into(),
+                        );
+                    }
+                    c.cmd("STARTTLS").await?;
+                    // Re-join the halves: the plain stream is consumed into the TLS session.
+                    let (r, w) = (c.r.into_inner(), c.w);
+                    let plain = Rejoin { r, w };
+                    Conn::new(
+                        tls_connector()
+                            .connect(server, plain)
+                            .await
+                            .map_err(|e| format!("tls: {e}"))?,
+                    )
+                }
+            };
+            if mode == "implicit" {
+                conn.reply().await?;
+            }
+            if mode != "none" {
+                conn.cmd(&format!("EHLO {helo}")).await?;
+            }
+            if !user.is_empty() {
+                let b64 = base64::engine::general_purpose::STANDARD;
+                conn.cmd("AUTH LOGIN").await?;
+                conn.cmd(&b64.encode(user)).await?;
+                conn.cmd(&b64.encode(pass))
+                    .await
+                    .map_err(|e| format!("auth: {e}"))?;
+            }
+            conn.cmd(&format!("MAIL FROM:<{}>", mail.from)).await?;
+            conn.cmd(&format!("RCPT TO:<{}>", mail.to)).await?;
+            conn.cmd("DATA").await?;
+            let boundary = format!("zanshin-{}", uuid::Uuid::now_v7().simple());
+            let mut msg = format!(
+                "From: {}\r\nTo: {}\r\nSubject: {}\r\nMIME-Version: 1.0\r\nDate: {}\r\nMessage-ID: <{}@zanshin>\r\n",
+                mail.from, mail.to, mail.subject.replace(['\r', '\n'], " "), chrono::Utc::now().to_rfc2822(), uuid::Uuid::now_v7().simple()
+            );
+            if !mail.reply_to.is_empty() {
+                msg.push_str(&format!("Reply-To: {}\r\n", mail.reply_to));
+            }
+            msg.push_str(&format!(
+                "Content-Type: multipart/alternative; boundary=\"{boundary}\"\r\n\r\n--{boundary}\r\nContent-Type: text/plain; charset=UTF-8\r\n\r\n{}\r\n--{boundary}\r\nContent-Type: text/html; charset=UTF-8\r\n\r\n{}\r\n--{boundary}--\r\n",
+                dot_stuff(&mail.text), dot_stuff(&mail.html)
+            ));
+            msg.push('.');
+            let accepted = conn.cmd(&msg).await?;
+            let _ = conn.cmd("QUIT").await;
+            Ok(accepted)
+        };
+        tokio::time::timeout(std::time::Duration::from_secs(20), fut)
+            .await
+            .map_err(|_| "smtp timed out".to_string())?
+    }
+
+    /// Glue a split read half + write half back into one duplex stream for the TLS handshake.
+    struct Rejoin {
+        r: Box<dyn AsyncRead + Send + Unpin>,
+        w: Box<dyn AsyncWrite + Send + Unpin>,
+    }
+
+    impl AsyncRead for Rejoin {
+        fn poll_read(
+            mut self: std::pin::Pin<&mut Self>,
+            cx: &mut std::task::Context<'_>,
+            buf: &mut tokio::io::ReadBuf<'_>,
+        ) -> std::task::Poll<std::io::Result<()>> {
+            std::pin::Pin::new(&mut self.r).poll_read(cx, buf)
+        }
+    }
+
+    impl AsyncWrite for Rejoin {
+        fn poll_write(
+            mut self: std::pin::Pin<&mut Self>,
+            cx: &mut std::task::Context<'_>,
+            buf: &[u8],
+        ) -> std::task::Poll<std::io::Result<usize>> {
+            std::pin::Pin::new(&mut self.w).poll_write(cx, buf)
+        }
+        fn poll_flush(
+            mut self: std::pin::Pin<&mut Self>,
+            cx: &mut std::task::Context<'_>,
+        ) -> std::task::Poll<std::io::Result<()>> {
+            std::pin::Pin::new(&mut self.w).poll_flush(cx)
+        }
+        fn poll_shutdown(
+            mut self: std::pin::Pin<&mut Self>,
+            cx: &mut std::task::Context<'_>,
+        ) -> std::task::Poll<std::io::Result<()>> {
+            std::pin::Pin::new(&mut self.w).poll_shutdown(cx)
+        }
+    }
 }

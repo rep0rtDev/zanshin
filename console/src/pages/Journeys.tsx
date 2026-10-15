@@ -11,21 +11,22 @@ type Step = { id: string; kind: string } & Record<string, unknown>;
 type Status = 'disabled' | 'scheduled' | 'running' | 'terminated';
 type Journey = {
   id: string; key: string; name: string; description: string; enabled: boolean; trigger: Trigger; condition: Cond | null; audiences: string[]; steps: Step[];
+  goal?: { event: string; within_secs: number | null } | null; exit_when?: { events: string[]; on_goal: boolean } | null;
   cooldown_secs: number; max_entries: number | null; starts_at: string | null; ends_at: string | null; tags: string[]; version: number; updated_at: string; status?: Status;
 };
 type Run = { id: string; external_id: string; identity_id: string; step: number; status: 'active' | 'done' | 'exited' | 'failed'; wake_at: string | null; error: string; entered_at: string; updated_at: string };
 type StepStat = { index: number; id: string; active: number; passed: number };
 type Timing = { completed: number; min_secs: number | null; avg_secs: number | null; max_secs: number | null };
-type RunsResp = { items: Run[]; stats: { status: string; count: number }[]; steps: StepStat[]; timing: Timing; status: Status };
+type RunsResp = { items: Run[]; stats: { status: string; count: number }[]; steps: StepStat[]; timing: Timing; conversions?: { runs: number; converted: number; by_branch: [string, number, number][] }; status: Status };
 
 const KINDS: Record<string, string> = {
   message: 'Send message', track: 'Track event', flag_override: 'Set flag override', experiment_assign: 'Assign experiment variant', live_event: 'Live event (player timeline)',
   integration: 'Send via integration', wait: 'Wait (duration)', wait_until: 'Wait until local time', time_window: 'Time window (date / schedule)', branch: 'Branch on condition',
-  goto: 'Go to step', revert: 'Revert earlier step', enter_journey: 'Enter another journey', exit: 'Exit',
+  goto: 'Go to step', split: 'Split (random A/B)', revert: 'Revert earlier step', enter_journey: 'Enter another journey', exit: 'Exit',
 };
 const GROUP: Record<string, 'action' | 'delay' | 'flow'> = {
   message: 'action', track: 'action', flag_override: 'action', experiment_assign: 'action', live_event: 'action', integration: 'action', revert: 'action', enter_journey: 'action',
-  wait: 'delay', wait_until: 'delay', time_window: 'delay', branch: 'flow', goto: 'flow', exit: 'flow',
+  wait: 'delay', wait_until: 'delay', time_window: 'delay', branch: 'flow', goto: 'flow', split: 'flow', exit: 'flow',
 };
 const TONE: Record<Run['status'], 'ok' | 'bad' | 'warn' | 'info'> = { done: 'ok', failed: 'bad', exited: 'warn', active: 'info' };
 const STATUS_TONE: Record<Status, 'ok' | 'bad' | 'warn' | 'info' | undefined> = { running: 'ok', scheduled: 'info', terminated: 'warn', disabled: undefined };
@@ -52,6 +53,7 @@ function blankStep(kind: string, i: number): Step {
     case 'time_window': return { id, kind, at: null, cron: '0 0 9 * * Sat', timezone: 'player', timezone_prop: 'default.timezone' };
     case 'branch': return { id, kind, condition: { all: [] }, then: '', else: null };
     case 'goto': return { id, kind, step: '' };
+    case 'split': return { id, kind, branches: [{ step: '', weight: 50 }, { step: '', weight: 50 }] };
     case 'revert': return { id, kind, step: '' };
     case 'enter_journey': return { id, kind, journey: '' };
     default: return { id, kind: 'exit' };
@@ -72,6 +74,7 @@ function summary(s: Step): string {
     case 'time_window': return s.at ? fmtDate(s.at as string) : `${v('cron')} (${v('timezone') || 'UTC'})`;
     case 'branch': return `then → ${v('then') || '?'}, else → ${v('else') || 'next'}`;
     case 'goto': return `→ ${v('step')}`;
+    case 'split': return ((s.branches as { step: string; weight: number }[]) ?? []).map((b) => `${b.step || '?'} ${b.weight}`).join(' / ');
     case 'revert': return `undo ${v('step')}`;
     case 'enter_journey': return v('journey');
     default: return 'player leaves';
@@ -135,6 +138,22 @@ function StepEditor({ step, steps, onChange }: { step: Step; steps: Step[]; onCh
       <div className="row">{target('Then go to', 'then')}{target('Else go to', 'else', true)}</div>
     </>;
     case 'goto': return target('Go to step', 'step');
+    case 'split': {
+      const branches = (s.branches as { step: string; weight: number }[]) ?? [];
+      const upd = (i: number, patch: Partial<{ step: string; weight: number }>) => set({ branches: branches.map((b, k) => (k === i ? { ...b, ...patch } : b)) });
+      const total = branches.reduce((a, b) => a + (b.weight || 0), 0) || 1;
+      return <>
+        {branches.map((b, i) => (
+          <div className="row" key={i} style={{ alignItems: 'end' }}>
+            <Field label={`Branch ${i + 1} → step`}><select value={b.step} onChange={(e) => upd(i, { step: e.target.value })}><option value="">— pick —</option>{steps.filter((x) => x.id !== step.id).map((x) => <option key={x.id} value={x.id}>{x.id}</option>)}</select></Field>
+            <Num label="Weight" value={b.weight} onChange={(weight) => upd(i, { weight: weight ?? 0 })} min={0} hint={`${Math.round((b.weight / total) * 100)}%`} />
+            {branches.length > 2 && <button className="btn ghost sm" onClick={() => set({ branches: branches.filter((_, k) => k !== i) })}>Remove</button>}
+          </div>
+        ))}
+        <div><button className="btn ghost sm" onClick={() => set({ branches: [...branches, { step: '', weight: 50 }] })}>+ branch</button></div>
+        <div className="hint">Sticky per run: the player always lands in the same branch. Conversion is reported per branch on the Runs tab.</div>
+      </>;
+    }
     case 'revert': return target('Undo step', 'step', false, (x) => ['flag_override', 'experiment_assign', 'live_event'].includes(x.kind));
     case 'enter_journey': return <Text label="Journey key" value={str('journey')} onChange={(journey) => set({ journey })} mono hint="the player is enrolled there as well (targeting and cooldown of that journey apply); journeys cannot form a cycle" />;
     default: return <div className="hint">The player leaves the journey here.</div>;
@@ -152,6 +171,7 @@ function Canvas({ steps, stats, selected, onSelect }: { steps: Step[]; stats?: S
       const next = i + 1 < steps.length ? i + 1 : -1;
       if (s.kind === 'exit') return;
       if (s.kind === 'goto') { const t = idx(s.step); if (t >= 0) out.push({ from: i, to: t }); return; }
+      if (s.kind === 'split') { ((s.branches as { step: string; weight: number }[]) ?? []).forEach((b) => { const t = idx(b.step); if (t >= 0) out.push({ from: i, to: t, label: String(b.weight) }); }); return; }
       if (s.kind === 'branch') {
         const t = idx(s.then); if (t >= 0) out.push({ from: i, to: t, label: 'yes' });
         const e = s.else ? idx(s.else) : next; if (e >= 0) out.push({ from: i, to: e, label: 'no' });
@@ -250,6 +270,13 @@ function Runs({ j }: { j: Journey }) {
         </div>
       </div>
       <ErrorBox error={err ?? q.error} />
+      {j.goal && q.data?.conversions && (
+        <div className="chips" style={{ marginTop: 8 }}>
+          <span className="chip">goal <code>{j.goal.event}</code></span>
+          <span className="chip">{q.data.conversions.converted} / {q.data.conversions.runs} converted{q.data.conversions.runs ? ` (${((q.data.conversions.converted / q.data.conversions.runs) * 100).toFixed(1)}%)` : ''}</span>
+          {q.data.conversions.by_branch.filter(([b]) => b).map(([b, n, cv]) => <span key={b} className="chip">branch <code>{b}</code> {cv}/{n}</span>)}
+        </div>
+      )}
       <div className="chips" style={{ marginTop: 8 }}>
         {(q.data?.stats ?? []).map((s) => <span key={s.status} className="chip">{s.status}: {fmtNum(s.count)}</span>)}
         {t && t.completed > 0 && <span className="chip">time to finish · fastest {fmtDur(t.min_secs)} · average {fmtDur(t.avg_secs)} · slowest {fmtDur(t.max_secs)}</span>}
@@ -303,6 +330,12 @@ export default function Journeys() {
           <div className="row">
             <Num label="Rejoin cooldown (s)" value={d.cooldown_secs} onChange={(cooldown_secs) => set({ cooldown_secs: cooldown_secs ?? 0 })} min={0} hint="0 = a player goes through once; otherwise they become eligible again this long after finishing" />
             <Num label="Max entries per player" value={d.max_entries ?? null} onChange={(max_entries) => set({ max_entries: max_entries ?? null })} min={1} hint="blank = unlimited" />
+          </div>
+          <div className="row">
+            <Text label="Goal event" value={d.goal?.event ?? ''} onChange={(event) => set({ goal: event ? { event, within_secs: d.goal?.within_secs ?? null } : null })} mono hint="tracked event that counts as conversion" />
+            <Num label="Goal deadline (s)" value={d.goal?.within_secs ?? null} onChange={(within_secs) => set({ goal: d.goal?.event ? { ...d.goal, within_secs: within_secs ?? null } : null })} min={1} hint="blank = any time after entry" />
+            <Text label="Exit on events" value={(d.exit_when?.events ?? []).join(', ')} onChange={(v) => { const events = v.split(',').map((x) => x.trim()).filter(Boolean); set({ exit_when: events.length || d.exit_when?.on_goal ? { events, on_goal: !!d.exit_when?.on_goal } : null }); }} mono hint="comma-separated; active runs end when the player tracks one" />
+            <div className="field fixed"><span className="label">Exit on goal</span><Toggle value={!!d.exit_when?.on_goal} onChange={(on_goal) => set({ exit_when: on_goal || (d.exit_when?.events?.length ?? 0) > 0 ? { events: d.exit_when?.events ?? [], on_goal } : null })} label={d.exit_when?.on_goal ? 'yes' : 'no'} /></div>
           </div>
           <Field label="Entry condition"><ConditionEditor optional value={d.condition} onChange={(condition) => set({ condition })} /></Field>
           <Field label="Audiences"><AudiencePicker value={d.audiences ?? []} onChange={(audiences) => set({ audiences })} /></Field>

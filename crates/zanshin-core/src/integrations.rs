@@ -15,6 +15,10 @@ pub enum IntegrationKind {
     Fcm,
     Apns,
     Facebook,
+    Smtp,
+    Ses,
+    Sendgrid,
+    Resend,
 }
 
 impl IntegrationKind {
@@ -25,6 +29,10 @@ impl IntegrationKind {
             IntegrationKind::Fcm => "fcm",
             IntegrationKind::Apns => "apns",
             IntegrationKind::Facebook => "facebook",
+            IntegrationKind::Smtp => "smtp",
+            IntegrationKind::Ses => "ses",
+            IntegrationKind::Sendgrid => "sendgrid",
+            IntegrationKind::Resend => "resend",
         }
     }
 }
@@ -38,6 +46,10 @@ impl std::str::FromStr for IntegrationKind {
             "fcm" => Ok(IntegrationKind::Fcm),
             "apns" => Ok(IntegrationKind::Apns),
             "facebook" => Ok(IntegrationKind::Facebook),
+            "smtp" => Ok(IntegrationKind::Smtp),
+            "ses" => Ok(IntegrationKind::Ses),
+            "sendgrid" => Ok(IntegrationKind::Sendgrid),
+            "resend" => Ok(IntegrationKind::Resend),
             other => Err(Error::invalid(format!(
                 "unknown integration kind {other:?}"
             ))),
@@ -84,6 +96,8 @@ pub const SECRET_KEYS: &[&str] = &[
     "private_key",
     "service_account",
     "token",
+    "password",
+    "secret_key",
 ];
 
 impl Integration {
@@ -117,6 +131,20 @@ impl Integration {
             // Delivered through the server's configured push providers (push.* config).
             IntegrationKind::Fcm | IntegrationKind::Apns => {}
             IntegrationKind::Facebook => need("access_token")?,
+            IntegrationKind::Smtp => {
+                need("host")?;
+                need("from")?;
+            }
+            IntegrationKind::Ses => {
+                need("region")?;
+                need("access_key")?;
+                need("secret_key")?;
+                need("from")?;
+            }
+            IntegrationKind::Sendgrid | IntegrationKind::Resend => {
+                need("api_key")?;
+                need("from")?;
+            }
         }
         Ok(())
     }

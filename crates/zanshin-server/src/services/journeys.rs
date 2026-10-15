@@ -59,6 +59,10 @@ pub struct JourneyPatch {
     pub ends_at: Option<Option<chrono::DateTime<chrono::Utc>>>,
     #[serde(default)]
     pub tags: Option<Vec<String>>,
+    #[serde(default, deserialize_with = "double_option")]
+    pub goal: Option<Option<zanshin_core::journeys::Goal>>,
+    #[serde(default, deserialize_with = "double_option")]
+    pub exit_when: Option<Option<zanshin_core::journeys::ExitWhen>>,
 }
 
 fn double_option<'de, T, D>(d: D) -> std::result::Result<Option<Option<T>>, D::Error>
@@ -91,6 +95,7 @@ pub struct RunsReport {
     pub by_step: Vec<(i32, i64)>,
     pub passed: Vec<(i32, i64)>,
     pub timing: Timing,
+    pub conversions: zanshin_store::journeys::Conversions,
 }
 
 #[derive(Clone)]
@@ -169,6 +174,7 @@ impl JourneyService {
             return;
         };
         let journeys = self.live().await;
+        self.goals_and_exits(&journeys, &ev, identity_id).await;
         let by_type: Vec<_> = journeys
             .iter()
             .filter(|j| j.trigger.event_type().as_deref() == Some(ev.event_type.as_str()))
@@ -259,6 +265,66 @@ impl JourneyService {
 
     /// Enter a player if the journey is live, targets them and cooldown / cap allow it.
     /// `force` skips the live-window check (admin / server entry still honours targeting and caps).
+    /// Goal conversions and exit criteria: a tracked event converts the player's runs of journeys
+    /// whose `goal.event` matches (within the deadline), and ends active runs whose `exit_when`
+    /// lists the event (or `on_goal`).
+    async fn goals_and_exits(
+        &self,
+        journeys: &[Arc<Journey>],
+        ev: &WebhookEvent,
+        identity_id: Uuid,
+    ) {
+        let name = ev
+            .data
+            .get("name")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default();
+        if name.is_empty() {
+            return;
+        }
+        for j in journeys {
+            let goal_hit = j.goal.as_ref().is_some_and(|g| g.event == name);
+            let exit_hit = j
+                .exit_when
+                .as_ref()
+                .is_some_and(|x| x.events.iter().any(|e| e == name) || (x.on_goal && goal_hit));
+            if !goal_hit && !exit_hit {
+                continue;
+            }
+            if goal_hit {
+                let since = j
+                    .goal
+                    .as_ref()
+                    .and_then(|g| g.within_secs)
+                    .map(|w| chrono::Utc::now() - chrono::Duration::seconds(w));
+                match self.repo.mark_converted(j.id, identity_id, since).await {
+                    Ok(ids) => {
+                        for id in ids {
+                            let _ = self
+                                .repo
+                                .log(id, -1, "goal", &format!("converted by {name}"))
+                                .await;
+                        }
+                    }
+                    Err(e) => {
+                        tracing::warn!(journey = %j.key, error = %e, "goal conversion failed")
+                    }
+                }
+            }
+            if exit_hit {
+                if let Ok(runs) = self.repo.active_runs_for(j.id, identity_id).await {
+                    for r in runs {
+                        let _ = self
+                            .repo
+                            .log(r.id, r.step, "exit", &format!("exit criteria: {name}"))
+                            .await;
+                        let _ = self.repo.advance(r.id, r.step, "exited", None, "").await;
+                    }
+                }
+            }
+        }
+    }
+
     pub async fn try_enter(
         &self,
         j: &Journey,
@@ -459,6 +525,7 @@ impl JourneyService {
                             .send_direct(
                                 identity,
                                 DirectMessage {
+                                    push_options: None,
                                     inbox: true,
                                     template_key: None,
                                     template_name: None,
@@ -595,6 +662,27 @@ impl JourneyService {
                     None => Ok(Flow::Next("branch not matched → next".into())),
                 }
             }
+            Action::Split { branches } => {
+                let total: f64 = branches.iter().map(|b| b.weight).sum();
+                let mut point =
+                    zanshin_core::hash::bucket("journey-split", &step.id, &run.id.to_string())
+                        as f64
+                        / zanshin_core::hash::BUCKETS as f64
+                        * total;
+                let mut chosen = &branches[branches.len() - 1];
+                for b in branches {
+                    if point < b.weight {
+                        chosen = b;
+                        break;
+                    }
+                    point -= b.weight;
+                }
+                let _ = self.repo.set_branch(run.id, &chosen.step).await;
+                let i = j
+                    .step_index(&chosen.step)
+                    .ok_or_else(|| Error::invalid(format!("unknown step {:?}", chosen.step)))?;
+                Ok(Flow::Jump(i, format!("split → {}", chosen.step)))
+            }
             Action::Goto { step: target } => {
                 let i = j
                     .step_index(target)
@@ -725,6 +813,8 @@ impl JourneyService {
             steps: p.steps.unwrap_or_default(),
             cooldown_secs: p.cooldown_secs.unwrap_or(0),
             max_entries: p.max_entries.flatten(),
+            goal: p.goal.flatten(),
+            exit_when: p.exit_when.flatten(),
             starts_at: p.starts_at.flatten(),
             ends_at: p.ends_at.flatten(),
             tags: normalize_tags(p.tags.unwrap_or_default())?,
@@ -767,6 +857,12 @@ impl JourneyService {
         }
         if let Some(v) = p.max_entries {
             j.max_entries = v;
+        }
+        if let Some(v) = p.goal {
+            j.goal = v;
+        }
+        if let Some(v) = p.exit_when {
+            j.exit_when = v;
         }
         if let Some(v) = p.starts_at {
             j.starts_at = v;
@@ -834,6 +930,7 @@ impl JourneyService {
         let (by_status, by_step) = self.repo.stats(journey.id).await?;
         let passed = self.repo.passed(journey.id).await?;
         let timing = self.repo.timing(journey.id).await?;
+        let conversions = self.repo.conversions(journey.id).await?;
         Ok(RunsReport {
             journey,
             items,
@@ -841,6 +938,7 @@ impl JourneyService {
             by_step,
             passed,
             timing,
+            conversions,
         })
     }
 

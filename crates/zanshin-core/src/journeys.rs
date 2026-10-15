@@ -141,7 +141,40 @@ pub enum Action {
     EnterJourney {
         journey: String,
     },
+    /// Random weighted branching (sticky per run) for A/B tests inside the flow.
+    Split {
+        branches: Vec<SplitBranch>,
+    },
     Exit,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct SplitBranch {
+    pub step: String,
+    #[serde(default = "default_weight")]
+    pub weight: f64,
+}
+
+fn default_weight() -> f64 {
+    1.0
+}
+
+/// Conversion goal of a journey: a tracked event after entry (optionally within a deadline).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Goal {
+    pub event: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub within_secs: Option<i64>,
+}
+
+/// Exit criteria: events that end an active run early (e.g. the purchase a nudge is about).
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct ExitWhen {
+    #[serde(default)]
+    pub events: Vec<String>,
+    /// Also exit when the goal is reached.
+    #[serde(default)]
+    pub on_goal: bool,
 }
 
 pub const PLAYER_TZ: &str = "player";
@@ -172,6 +205,10 @@ pub struct Journey {
     pub audiences: Vec<String>,
     #[serde(default)]
     pub steps: Vec<Step>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub goal: Option<Goal>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub exit_when: Option<ExitWhen>,
     /// Minimum seconds between two entries of the same player (0 = none).
     #[serde(default)]
     pub cooldown_secs: i64,
@@ -209,6 +246,24 @@ impl Journey {
                 return Err(Error::invalid(format!("duplicate step id {:?}", s.id)));
             }
         }
+        if let Some(g) = &self.goal {
+            if g.event.is_empty() || g.event.len() > 128 {
+                return Err(Error::invalid("goal.event must be 1..128 chars"));
+            }
+            if g.within_secs.is_some_and(|w| w <= 0) {
+                return Err(Error::invalid("goal.within_secs must be > 0"));
+            }
+        }
+        if let Some(x) = &self.exit_when {
+            if x.events.iter().any(|e| e.is_empty() || e.len() > 128) {
+                return Err(Error::invalid(
+                    "exit_when.events: names must be 1..128 chars",
+                ));
+            }
+            if x.on_goal && self.goal.is_none() {
+                return Err(Error::invalid("exit_when.on_goal needs a goal"));
+            }
+        }
         for s in &self.steps {
             match &s.action {
                 Action::Message {
@@ -224,6 +279,25 @@ impl Journey {
                     }
                     if let Some(t) = template_key {
                         validate_key(t)?;
+                    }
+                }
+                Action::Split { branches } => {
+                    if branches.is_empty() || branches.len() > 10 {
+                        return Err(Error::invalid(format!("step {:?}: 1..10 branches", s.id)));
+                    }
+                    for b in branches {
+                        if !ids.contains(b.step.as_str()) {
+                            return Err(Error::invalid(format!(
+                                "step {:?}: unknown branch step {:?}",
+                                s.id, b.step
+                            )));
+                        }
+                        if b.weight <= 0.0 || !b.weight.is_finite() {
+                            return Err(Error::invalid(format!(
+                                "step {:?}: weight must be > 0",
+                                s.id
+                            )));
+                        }
                     }
                 }
                 Action::Track { name, .. } => {
