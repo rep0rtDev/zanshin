@@ -1,5 +1,6 @@
 pub mod build_info;
 pub mod config;
+pub mod doctor;
 pub mod grpc;
 pub mod housekeeping;
 pub mod http;

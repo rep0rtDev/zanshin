@@ -256,3 +256,105 @@ jobs:
           curl -sL https://github.com/grafana/k6/releases/download/v0.55.0/k6-v0.55.0-linux-amd64.tar.gz | tar xz
           for f in smoke baseline stream; do ./k6-v0.55.0-linux-amd64/k6 inspect deploy/k6/$f.js >/dev/null; done
 
+  live:
+    name: live services (Keycloak SSO, ClickHouse, Mailpit, RustFS, Nakama)
+    runs-on: ubuntu-latest
+    needs: rust
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: zanshin
+          POSTGRES_PASSWORD: zanshin
+          POSTGRES_DB: zanshin
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U zanshin -d zanshin"
+          --health-interval 5s --health-timeout 3s --health-retries 20
+      redis:
+        image: redis:7-alpine
+        ports: ["6379:6379"]
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s --health-timeout 3s --health-retries 20
+      clickhouse:
+        image: clickhouse/clickhouse-server:24.8-alpine
+        env:
+          CLICKHOUSE_USER: zanshin
+          CLICKHOUSE_PASSWORD: zanshin
+          CLICKHOUSE_DB: zanshin
+          CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: "1"
+        ports: ["8123:8123"]
+        options: >-
+          --ulimit nofile=262144:262144
+          --health-cmd "wget -qO- http://localhost:8123/ping"
+          --health-interval 5s --health-timeout 3s --health-retries 30
+      mailpit:
+        image: axllent/mailpit:v1.21
+        ports: ["1025:1025", "8025:8025"]
+      rustfs:
+        image: rustfs/rustfs:latest
+        env:
+          RUSTFS_ACCESS_KEY: rustfsadmin
+          RUSTFS_SECRET_KEY: rustfsadmin
+          RUSTFS_VOLUMES: /data
+          RUSTFS_ADDRESS: 0.0.0.0:9000
+        ports: ["9000:9000"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Keycloak (realm import)
+        run: |
+          docker run -d --name keycloak -p 8080:8080 \
+            -e KC_BOOTSTRAP_ADMIN_USERNAME=admin -e KC_BOOTSTRAP_ADMIN_PASSWORD=admin \
+            -e KC_HOSTNAME_STRICT=false -e KC_HTTP_ENABLED=true -e KC_FEATURES=scripts \
+            -v "$PWD/crates/zanshin-server/tests/fixtures/keycloak-realm.json:/opt/keycloak/data/import/realm.json:ro" \
+            quay.io/keycloak/keycloak:26.0 start-dev --import-realm
+      - name: Nakama image with the Zanshin module
+        run: docker build -f nakama/Dockerfile -t zanshin-nakama:ci .
+      - name: Nakama database + migrate
+        run: |
+          PGPASSWORD=zanshin psql -h localhost -U zanshin -d zanshin -c "CREATE DATABASE nakama"
+          docker run --rm --network host zanshin-nakama:ci /nakama/nakama migrate up --database.address zanshin:zanshin@localhost:5432/nakama
+      - name: RustFS bucket
+        run: |
+          for i in $(seq 1 30); do curl -sf http://localhost:9000/ >/dev/null 2>&1 && break || sleep 2; done || true
+          AWS_ACCESS_KEY_ID=rustfsadmin AWS_SECRET_ACCESS_KEY=rustfsadmin AWS_EC2_METADATA_DISABLED=true \
+            aws --endpoint-url http://localhost:9000 --region us-east-1 s3 mb s3://zanshin-live
+      - name: Wait for Keycloak
+        run: for i in $(seq 1 90); do curl -sf http://localhost:8080/realms/zanshin >/dev/null && exit 0; sleep 2; done; docker logs keycloak | tail -50; exit 1
+      - name: Build test binary and server
+        run: cargo build -p zanshin-server --bin zanshin && cargo test -p zanshin-server --test live_services --no-run
+      - name: zanshin --doctor
+        env:
+          ZANSHIN__DATABASE__URL: postgres://zanshin:zanshin@localhost:5432/zanshin
+          ZANSHIN__REDIS__URL: redis://localhost:6379/0
+          ZANSHIN__CLICKHOUSE__ENABLED: "true"
+          ZANSHIN__CLICKHOUSE__URL: http://localhost:8123
+          ZANSHIN__CLICKHOUSE__USER: zanshin
+          ZANSHIN__CLICKHOUSE__PASSWORD: zanshin
+          ZANSHIN__AUTH__JWT_SECRET: ci-live-jwt-0123456789abcdef0123456789abcdef
+          ZANSHIN__ADMIN__BOOTSTRAP_KEY: live-bootstrap-admin-key-49
+        run: ./target/debug/zanshin --migrate && ./target/debug/zanshin --doctor && ./target/debug/zanshin --doctor --json | head -5
+      - name: Nakama (module → Zanshin on 127.0.0.1:7560)
+        run: |
+          docker run -d --name nakama --network host zanshin-nakama:ci /nakama/nakama \
+            --database.address zanshin:zanshin@localhost:5432/nakama --logger.level INFO \
+            --socket.server_key defaultkey --console.port 7351 \
+            --runtime.env ZANSHIN_URL=http://127.0.0.1:7560 --runtime.env ZANSHIN_SERVER_KEY=live-bootstrap-admin-key-49
+          sleep 5; docker logs nakama | tail -20
+      - name: live suite
+        env:
+          ZANSHIN_TEST_DATABASE_URL: postgres://zanshin:zanshin@localhost:5432/zanshin
+          ZANSHIN_TEST_REDIS_URL: redis://localhost:6379/0
+          ZANSHIN_TEST_KEYCLOAK: http://localhost:8080
+          ZANSHIN_TEST_CLICKHOUSE_URL: http://localhost:8123
+          ZANSHIN_TEST_SMTP: localhost:1025
+          ZANSHIN_TEST_MAILPIT: http://localhost:8025
+          ZANSHIN_TEST_S3_ENDPOINT: http://localhost:9000
+          ZANSHIN_TEST_NAKAMA: http://localhost:7350
+        run: cargo test -p zanshin-server --test live_services -- --nocapture
+      - name: logs on failure
+        if: failure()
+        run: docker logs keycloak | tail -80; docker logs nakama | tail -80

@@ -7,6 +7,12 @@ Release automation reads the section whose heading contains the tagged version.
 ## [Unreleased]
 
 ### Added
+- Hardening: `zanshin --doctor [--json]` checks a deployment end to end (config sanity, PostgreSQL +
+  pending migrations, Redis, ClickHouse, clock skew, integrations, console users, SSO) and exits 1
+  on failures; CI job `live` runs the suite against real services — Keycloak (OIDC **and** SAML
+  logins with group → role mapping), ClickHouse (SQL explorer, paths, alerts), Mailpit (SMTP),
+  RustFS (S3 jsonl + Parquet export) and Nakama with the Zanshin module (RPCs, identity sync);
+  SCIM request shapes of Okta and Microsoft Entra ID are replayed in e2e.
 - Platform — SDKs: **local evaluation** of flags in the Go and TypeScript server SDKs from a new
   rules bundle (`GET /server/v1/rules`: flag definitions + dynamic audiences; same xxh3 bucketing,
   operators and reasons as the server; refreshed on TTL and change-stream events — zero-latency

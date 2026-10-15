@@ -247,3 +247,18 @@ k6 run -e STREAMS=2000 deploy/k6/stream.js       # WebSocket fan-out
 
 Thresholds in the scripts mirror the service level this document assumes: reads and ingest
 p95 < 50 ms / p99 < 150 ms, authenticate p95 < 150 ms, error rate < 0.1 %.
+
+## `zanshin --doctor`
+
+Run it on the host (same env / config file as the server) before serving traffic and after every upgrade:
+
+```
+zanshin --doctor          # human-readable, exit 1 when anything FAILs
+zanshin --doctor --json   # for scripts / monitoring
+```
+
+Checks: `auth.jwt_secret` strength, bootstrap key hygiene, production/proxy flags, console SSO (OIDC / SAML / SCIM, SAML certificates parse), push provider, PostgreSQL + pool, Redis, ClickHouse (when enabled), pending migrations, clock skew between host and database, configured integrations, active console users.
+
+## What CI verifies against real services
+
+The `live` job runs on every push: Keycloak (OIDC + SAML logins incl. role mapping and rejection without a mapped group), ClickHouse (SQL explorer, path analysis, metric alerts), Mailpit (SMTP delivery), RustFS (S3-compatible export, JSONL and Parquet), Nakama 3.x with the Zanshin module (RPCs, zero-code identity sync), plus Okta / Entra SCIM request shapes. For S3-compatible self-hosted storage we use and test **RustFS**.

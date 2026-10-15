@@ -200,6 +200,51 @@ impl Stores {
         Ok(())
     }
 
+    /// Migrations bundled in this binary that the database has not applied yet (empty = up to date).
+    pub async fn pending_migrations(db: &DatabaseConfig) -> Result<Vec<String>> {
+        let pg = PgPoolOptions::new()
+            .max_connections(1)
+            .acquire_timeout(Duration::from_secs(10))
+            .connect(&db.url)
+            .await
+            .context("connecting to postgres")?;
+        let applied: Vec<i64> = sqlx::query_scalar("SELECT version FROM _sqlx_migrations")
+            .fetch_all(&pg)
+            .await
+            .unwrap_or_default();
+        Ok(sqlx::migrate!("../../migrations")
+            .iter()
+            .filter(|m| !applied.contains(&m.version))
+            .map(|m| format!("{} {}", m.version, m.description))
+            .collect())
+    }
+
+    /// Raw facts for `zanshin doctor`: database clock, configured integrations
+    /// `(key, kind, enabled)` and the number of active console users.
+    pub async fn doctor_facts(
+        &self,
+    ) -> Result<(
+        chrono::DateTime<chrono::Utc>,
+        Vec<(String, String, bool)>,
+        i64,
+    )> {
+        let now: chrono::DateTime<chrono::Utc> = sqlx::query_scalar("SELECT now()")
+            .fetch_one(&self.pg)
+            .await
+            .map_err(map_sqlx)?;
+        let integrations: Vec<(String, String, bool)> =
+            sqlx::query_as("SELECT key, kind, enabled FROM integrations ORDER BY key")
+                .fetch_all(&self.pg)
+                .await
+                .map_err(map_sqlx)?;
+        let users: i64 =
+            sqlx::query_scalar("SELECT count(*) FROM console_users WHERE NOT disabled")
+                .fetch_one(&self.pg)
+                .await
+                .map_err(map_sqlx)?;
+        Ok((now, integrations, users))
+    }
+
     /// Per-backend readiness report; `ok` is false when any configured backend fails.
     pub async fn health(&self) -> Health {
         let started = std::time::Instant::now();
