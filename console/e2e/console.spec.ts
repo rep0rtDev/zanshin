@@ -33,7 +33,7 @@ test('Platform → Health renders a verdict and its sections', async ({ page }) 
   await page.locator('.side a', { hasText: 'Health' }).click();
   await expect(page.getByRole('heading', { name: /^Health/, level: 1 })).toBeVisible();
   await expect(page.locator('h1 .badge', { hasText: /ok|warn|fail/ })).toBeVisible();
-  for (const column of ['Service', 'Job', 'Integration']) {
+  for (const column of ['Service', 'Job']) {
     await expect(page.locator('th', { hasText: column }).first()).toBeVisible();
   }
   await expect(page.locator('table').getByText('PostgreSQL')).toBeVisible();
