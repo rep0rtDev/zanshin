@@ -287,8 +287,8 @@ jobs:
         ports: ["8123:8123"]
         options: >-
           --ulimit nofile=262144:262144
-          --health-cmd "wget -qO- http://localhost:8123/ping"
-          --health-interval 5s --health-timeout 3s --health-retries 30
+          --health-cmd "clickhouse-client --user zanshin --password zanshin --query 'SELECT 1'"
+          --health-interval 5s --health-timeout 5s --health-retries 60
       mailpit:
         image: axllent/mailpit:v1.21
         ports: ["1025:1025", "8025:8025"]
@@ -322,8 +322,11 @@ jobs:
           for i in $(seq 1 30); do curl -sf http://localhost:9000/ >/dev/null 2>&1 && break || sleep 2; done || true
           AWS_ACCESS_KEY_ID=rustfsadmin AWS_SECRET_ACCESS_KEY=rustfsadmin AWS_EC2_METADATA_DISABLED=true \
             aws --endpoint-url http://localhost:9000 --region us-east-1 s3 mb s3://zanshin-live
-      - name: Wait for Keycloak
-        run: for i in $(seq 1 90); do curl -sf http://localhost:8080/realms/zanshin >/dev/null && exit 0; sleep 2; done; docker logs keycloak | tail -50; exit 1
+      - name: Wait for ClickHouse and Keycloak
+        run: |
+          for i in $(seq 1 60); do curl -sf -u zanshin:zanshin "http://localhost:8123/?query=SELECT%201" >/dev/null && break; sleep 2; done
+          curl -sf -u zanshin:zanshin "http://localhost:8123/?query=SELECT%201" || { echo "clickhouse not ready"; exit 1; }
+          for i in $(seq 1 90); do curl -sf http://localhost:8080/realms/zanshin >/dev/null && exit 0; sleep 2; done; docker logs keycloak | tail -50; exit 1
       - name: Build test binary and server
         run: cargo build -p zanshin-server --bin zanshin && cargo test -p zanshin-server --test live_services --no-run
       - name: zanshin --doctor
