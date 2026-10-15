@@ -314,6 +314,33 @@ impl EventService {
             .await
     }
 
+    pub async fn experiment_metric_by_identity(
+        &self,
+        experiment: &str,
+        metric: &str,
+        field: Option<&str>,
+        from: chrono::DateTime<chrono::Utc>,
+        to: chrono::DateTime<chrono::Utc>,
+        limit: i64,
+    ) -> Result<Vec<zanshin_store::events::IdentityMetric>> {
+        self.store
+            .experiment_metric_by_identity(experiment, metric, field, from, to, limit)
+            .await
+    }
+
+    pub async fn metric_by_identity(
+        &self,
+        metric: &str,
+        field: Option<&str>,
+        identities: &[uuid::Uuid],
+        from: chrono::DateTime<chrono::Utc>,
+        to: chrono::DateTime<chrono::Utc>,
+    ) -> Result<Vec<zanshin_store::events::IdentityMetric>> {
+        self.store
+            .metric_by_identity(metric, field, identities, from, to)
+            .await
+    }
+
     pub async fn experiment_metric_series(
         &self,
         experiment: &str,

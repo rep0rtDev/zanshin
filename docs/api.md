@@ -480,6 +480,21 @@ Experiment fields added: `split_key` (`identity` or `property:<flat path>` — b
 | `GET /admin/v1/experiments/{key}/results.csv` | Results as CSV, one row per metric × variant (value, lift, credible interval, probability to beat control) plus assignment rows. |
 | `srm` and `stats` on `GET /admin/v1/experiments/{key}/results` | `srm { chi2, p_value, suspicious }` compares assignment counts with the variant weights (chi-square; `suspicious` below p = 0.001). Conversion metrics carry `stats { rate, ci_low, ci_high, prob_beats_control, expected_uplift }` from Beta(1,1) posteriors (deterministic Monte Carlo); the control has no comparison fields. |
 
+### Experiments v4: layers, holdouts, guardrails, bandits, sequential testing, CUPED
+
+Experiment fields: `layer` (experiments sharing a layer are mutually exclusive — one bucket space split by
+their `percentage`, which must sum to ≤ 100 across non-stopped experiments; 400 otherwise), `holdout` (key of a
+holdout group whose players are never enrolled), `guardrails` (`[{ metric, max_drop (0..1), min_identities }]` — a
+housekeeping job pauses the experiment with an `interrupt_reason` when a variant falls below
+`control × (1 − max_drop)`; emits webhook `experiment.guardrail_tripped` and an `alert` notification), `bandit`
+(`{ metric, min_weight, every_secs, min_assigned }` — Thompson sampling re-derives variant weights periodically;
+`last_run_at` / `last_probabilities` are filled by the job; existing assignments stay sticky).
+
+| Route | Purpose |
+|-------|---------|
+| `GET/POST /admin/v1/holdouts`, `GET/PUT/DELETE /admin/v1/holdouts/{key}` | Holdout groups: `percentage` (0..100), `salt`, `enabled`. Membership is a deterministic hash, so a player is held out consistently across every experiment referencing the group. Delete returns 409 while experiments reference it. |
+| `GET /admin/v1/experiments/{key}/results?cuped=true&pre_days=14` | Adds `cuped`: per count / sum / avg metric, θ, variance reduction and raw vs adjusted means per variant using each player's pre-experiment value of the metric as covariate. Conversion metrics also carry `sequential` (mSPRT always-valid p-value, `significant`, `lift`) next to the Bayesian `stats`. |
+
 ### Core events / Analytics v4
 
 - Core catalog: `GET /admin/v1/taxonomy/events?core=true|false&synthetic=true|false&discovered=true&q=`.

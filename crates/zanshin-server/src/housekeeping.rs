@@ -71,6 +71,8 @@ async fn sweeps(state: &AppState) {
         }
     })
     .await;
+    locked(state, "experiment_guardrails", || guardrails(state)).await;
+    locked(state, "experiment_bandit", || bandit(state)).await;
     locked(state, "label_sync", || async {
         if let Err(e) = state.taxonomy.repo.sync_labels().await {
             tracing::debug!(error = %e, "label sync failed");
@@ -211,5 +213,163 @@ async fn close_idle_sessions(state: &AppState) {
             }
         }
         Err(e) => tracing::warn!(error = %e, "idle session sweep failed"),
+    }
+}
+
+/// Guardrail metrics: pause a running experiment whose variant regresses a protected metric by
+/// more than the tolerated relative drop against control.
+async fn guardrails(state: &AppState) {
+    let now = chrono::Utc::now();
+    for exp in state.experiments.list().await {
+        if exp.status != zanshin_core::experiments::Status::Running || exp.guardrails.is_empty() {
+            continue;
+        }
+        let Some(control) = exp.control.as_deref() else {
+            continue;
+        };
+        let Ok((_, stats)) = state.experiments.results(&exp.key).await else {
+            continue;
+        };
+        let mut scoped = (*exp).clone();
+        scoped.metrics = exp.guardrails.iter().map(|g| g.metric.clone()).collect();
+        let rows = state
+            .metrics
+            .for_experiment(&scoped, &stats, exp.created_at, now)
+            .await;
+        for g in &exp.guardrails {
+            let Some(row) = rows.iter().find(|r| r["metric"] == g.metric) else {
+                continue;
+            };
+            let Some(variants) = row["variants"].as_array() else {
+                continue;
+            };
+            let value = |k: &str| {
+                variants
+                    .iter()
+                    .find(|v| v["variant"] == k)
+                    .and_then(|v| v["value"].as_f64())
+            };
+            let identities = |k: &str| {
+                variants
+                    .iter()
+                    .find(|v| v["variant"] == k)
+                    .and_then(|v| {
+                        v["stats"]["trials"]
+                            .as_i64()
+                            .or_else(|| stats.iter().find(|s| s.variant == k).map(|s| s.assigned))
+                    })
+                    .unwrap_or(0)
+            };
+            let Some(c) = value(control) else { continue };
+            if c <= 0.0 || identities(control) < g.min_identities {
+                continue;
+            }
+            for v in &exp.variants {
+                if v.key == control || identities(&v.key) < g.min_identities {
+                    continue;
+                }
+                let Some(x) = value(&v.key) else { continue };
+                let drop = (c - x) / c;
+                if drop > g.max_drop {
+                    let reason = format!(
+                        "guardrail {} tripped: variant {} is {:.1}% below control ({} vs {}), limit {:.1}%",
+                        g.metric, v.key, drop * 100.0, x, c, g.max_drop * 100.0
+                    );
+                    match state.experiments.interrupt(&exp.key, &reason, None).await {
+                        Ok(_) => {
+                            tracing::warn!(experiment = %exp.key, %reason, "experiment paused by guardrail");
+                            state
+                                .notifications
+                                .notify(zanshin_core::notifications::Notice::new(
+                                    "alert",
+                                    format!("Experiment `{}` paused by guardrail", exp.key),
+                                    reason.clone(),
+                                ));
+                            state.webhooks.emit(
+                                "experiment.guardrail_tripped",
+                                serde_json::json!({ "experiment": exp.key, "metric": g.metric, "variant": v.key, "drop": drop, "reason": reason }),
+                            );
+                        }
+                        Err(e) => {
+                            tracing::warn!(experiment = %exp.key, error = %e, "guardrail interrupt failed")
+                        }
+                    }
+                    break;
+                }
+            }
+        }
+    }
+}
+
+/// Bandit allocation: re-derive variant weights from Thompson sampling on the configured
+/// conversion metric. New players follow the new weights; assigned players stay where they are.
+async fn bandit(state: &AppState) {
+    let now = chrono::Utc::now();
+    for exp in state.experiments.list().await {
+        let Some(b) = exp.bandit.clone() else {
+            continue;
+        };
+        if exp.status != zanshin_core::experiments::Status::Running {
+            continue;
+        }
+        if b.last_run_at
+            .is_some_and(|t| (now - t).num_seconds() < b.every_secs as i64)
+        {
+            continue;
+        }
+        let Ok((_, stats)) = state.experiments.results(&exp.key).await else {
+            continue;
+        };
+        let total: i64 = stats.iter().map(|s| s.assigned).sum();
+        if total < b.min_assigned {
+            continue;
+        }
+        let (event_name, field) = match state.metrics.get(&b.metric).await {
+            Ok(m) => (m.event_name.clone(), m.metadata_field().map(str::to_string)),
+            Err(_) => (b.metric.clone(), None),
+        };
+        let Ok(totals) = state
+            .events
+            .experiment_metric_field(&exp.key, &event_name, field.as_deref(), exp.created_at, now)
+            .await
+        else {
+            continue;
+        };
+        let arms: Vec<(i64, i64)> = exp
+            .variants
+            .iter()
+            .map(|v| {
+                let succ = totals
+                    .iter()
+                    .find(|t| t.variant == v.key)
+                    .map(|t| t.identities)
+                    .unwrap_or(0);
+                let trials = stats
+                    .iter()
+                    .find(|s| s.variant == v.key)
+                    .map(|s| s.assigned)
+                    .unwrap_or(0);
+                (succ.min(trials.max(succ)), trials.max(succ))
+            })
+            .collect();
+        let weights = zanshin_core::stats::thompson_weights(&arms, b.min_weight);
+        let probs = zanshin_core::stats::best_arm_probabilities(&arms);
+        let mut variants = exp.variants.clone();
+        for (v, w) in variants.iter_mut().zip(&weights) {
+            v.weight = (w * 10.0).round() / 10.0;
+        }
+        let patch = crate::services::experiments::ExperimentPatch {
+            variants: Some(variants),
+            bandit: Some(Some(zanshin_core::experiments::BanditConfig {
+                last_run_at: Some(now),
+                last_probabilities: probs,
+                ..b
+            })),
+            ..Default::default()
+        };
+        match state.experiments.update(&exp.key, patch).await {
+            Ok(_) => tracing::info!(experiment = %exp.key, ?weights, "bandit weights updated"),
+            Err(e) => tracing::warn!(experiment = %exp.key, error = %e, "bandit update failed"),
+        }
     }
 }

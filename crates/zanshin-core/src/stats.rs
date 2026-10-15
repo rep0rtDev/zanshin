@@ -211,6 +211,139 @@ fn gamma_q(s: f64, x: f64) -> f64 {
     }
 }
 
+/// Always-valid (anytime) test of a conversion difference against control, via the mixture
+/// sequential probability ratio test (mSPRT) with a normal mixing prior. Unlike a fixed-horizon
+/// z-test, `p_value` can be inspected at any moment without inflating the false-positive rate.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct SequentialStats {
+    /// Observed difference variant − control.
+    pub delta: f64,
+    pub z: f64,
+    /// Always-valid p-value (1 / likelihood ratio, capped at 1).
+    pub p_value: f64,
+    /// `p_value < 0.05`.
+    pub significant: bool,
+    /// Relative lift over control, when control converts at all.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub lift: Option<f64>,
+}
+
+/// mSPRT for two Bernoulli rates. `tau` is the prior standard deviation of the effect; `None`
+/// uses `max(0.005, 0.1 × pooled rate)`.
+pub fn sequential(
+    successes: i64,
+    trials: i64,
+    control: (i64, i64),
+    tau: Option<f64>,
+) -> Option<SequentialStats> {
+    let (cs, ct) = control;
+    if trials <= 0 || ct <= 0 {
+        return None;
+    }
+    let (n_v, n_c) = (trials as f64, ct as f64);
+    let (p_v, p_c) = (successes as f64 / n_v, cs as f64 / n_c);
+    let pooled = (successes + cs) as f64 / (n_v + n_c);
+    let var = (pooled * (1.0 - pooled)).max(1e-12) * (1.0 / n_v + 1.0 / n_c);
+    let tau = tau.unwrap_or_else(|| (0.1 * pooled).max(0.005));
+    let tau2 = tau * tau;
+    let delta = p_v - p_c;
+    let z = delta / var.sqrt();
+    // Λ = sqrt(var / (var + tau²)) · exp(tau² · delta² / (2 · var · (var + tau²)))
+    let ln_lambda =
+        0.5 * (var / (var + tau2)).ln() + tau2 * delta * delta / (2.0 * var * (var + tau2));
+    let p_value = (-ln_lambda).exp().min(1.0);
+    Some(SequentialStats {
+        delta,
+        z,
+        p_value,
+        significant: p_value < 0.05,
+        lift: (p_c > 0.0).then_some(delta / p_c),
+    })
+}
+
+/// Thompson-sampling weights: the share of posterior draws in which each arm has the highest
+/// conversion rate, floored at `min_weight` percent and rescaled to sum to 100. Deterministic.
+#[allow(clippy::needless_range_loop)]
+pub fn thompson_weights(arms: &[(i64, i64)], min_weight: f64) -> Vec<f64> {
+    let k = arms.len();
+    if k == 0 {
+        return vec![];
+    }
+    let draws: Vec<Vec<f64>> = arms
+        .iter()
+        .enumerate()
+        .map(|(i, (s, t))| {
+            let mut v = beta_samples(
+                *s,
+                *t,
+                0x7a0b ^ (i as u64) << 40 ^ (*s as u64) << 20 ^ *t as u64,
+            );
+            // Shuffle the sorted samples so arms are compared on independent draws.
+            let mut rng = Rng::new(0x51 ^ (i as u64 + 1) << 8 ^ *t as u64);
+            for j in (1..v.len()).rev() {
+                let r = (rng.next_u64() % (j as u64 + 1)) as usize;
+                v.swap(j, r);
+            }
+            v
+        })
+        .collect();
+    let mut wins = vec![0usize; k];
+    for d in 0..SAMPLES {
+        let mut best = 0;
+        for i in 1..k {
+            if draws[i][d] > draws[best][d] {
+                best = i;
+            }
+        }
+        wins[best] += 1;
+    }
+    let floor = min_weight.clamp(0.0, 100.0 / k as f64);
+    let free = 100.0 - floor * k as f64;
+    wins.iter()
+        .map(|w| floor + free * (*w as f64 / SAMPLES as f64))
+        .collect()
+}
+
+/// Posterior probability of each arm being the best, in arm order.
+pub fn best_arm_probabilities(arms: &[(i64, i64)]) -> Vec<f64> {
+    let k = arms.len() as f64;
+    thompson_weights(arms, 0.0)
+        .into_iter()
+        .map(|w| if k > 0.0 { w / 100.0 } else { 0.0 })
+        .collect()
+}
+
+/// CUPED (controlled-experiment using pre-experiment data): shrink each unit's outcome by
+/// `theta × (covariate − mean covariate)`. Returns `(theta, adjusted values, variance reduction)`.
+pub fn cuped(outcomes: &[f64], covariates: &[f64]) -> (f64, Vec<f64>, f64) {
+    let n = outcomes.len().min(covariates.len());
+    if n < 2 {
+        return (0.0, outcomes.to_vec(), 0.0);
+    }
+    let mean = |v: &[f64]| v.iter().take(n).sum::<f64>() / n as f64;
+    let (my, mx) = (mean(outcomes), mean(covariates));
+    let mut cov = 0.0;
+    let mut var_x = 0.0;
+    let mut var_y = 0.0;
+    for i in 0..n {
+        let (dy, dx) = (outcomes[i] - my, covariates[i] - mx);
+        cov += dy * dx;
+        var_x += dx * dx;
+        var_y += dy * dy;
+    }
+    if var_x <= 0.0 || var_y <= 0.0 {
+        return (0.0, outcomes.to_vec(), 0.0);
+    }
+    let theta = cov / var_x;
+    let adjusted: Vec<f64> = (0..n)
+        .map(|i| outcomes[i] - theta * (covariates[i] - mx))
+        .collect();
+    let ma = mean(&adjusted);
+    let var_a: f64 = adjusted.iter().map(|a| (a - ma) * (a - ma)).sum();
+    let reduction = (1.0 - var_a / var_y).clamp(0.0, 1.0);
+    (theta, adjusted, reduction)
+}
+
 /// Chi-square goodness of fit of observed assignment counts against weights.
 pub fn srm(groups: &[(f64, i64)]) -> Option<Srm> {
     let total: i64 = groups.iter().map(|(_, n)| n).sum();
@@ -240,6 +373,27 @@ pub fn srm(groups: &[(f64, i64)]) -> Option<Srm> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn sequential_and_bandit_and_cuped() {
+        let none = super::sequential(50, 1000, (50, 1000), None).unwrap();
+        assert!(!none.significant && none.p_value > 0.5, "{none:?}");
+        let big = super::sequential(300, 1000, (100, 1000), None).unwrap();
+        assert!(big.significant && big.lift.unwrap() > 1.9, "{big:?}");
+        let w = super::thompson_weights(&[(10, 1000), (100, 1000), (12, 1000)], 5.0);
+        assert_eq!(w.len(), 3);
+        assert!((w.iter().sum::<f64>() - 100.0).abs() < 1e-6);
+        assert!(w[1] > 80.0 && w[0] >= 5.0 && w[2] >= 5.0, "{w:?}");
+        let y: Vec<f64> = (0..200)
+            .map(|i| (i % 7) as f64 + (i as f64) * 0.1)
+            .collect();
+        let x: Vec<f64> = (0..200).map(|i| (i as f64) * 0.1).collect();
+        let (theta, adj, red) = super::cuped(&y, &x);
+        assert!(
+            theta > 0.9 && theta < 1.1 && red > 0.5 && adj.len() == 200,
+            "{theta} {red}"
+        );
+    }
+
     use super::*;
 
     #[test]

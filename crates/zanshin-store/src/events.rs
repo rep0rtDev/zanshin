@@ -138,6 +138,24 @@ struct ChVariant {
 }
 
 #[derive(Row, Deserialize)]
+struct ChIdentityValue {
+    #[serde(with = "clickhouse::serde::uuid")]
+    identity_id: Uuid,
+    variant: String,
+    count: u64,
+    sum: f64,
+}
+
+/// One player's contribution to a metric: event count and summed value (or metadata field).
+#[derive(Debug, Clone)]
+pub struct IdentityMetric {
+    pub identity_id: Uuid,
+    pub variant: String,
+    pub count: i64,
+    pub sum: f64,
+}
+
+#[derive(Row, Deserialize)]
 struct ChVariantDay {
     variant: String,
     day: String,
@@ -422,6 +440,153 @@ impl EventStore {
     }
 
     /// Per-variant totals of `metric` events tagged with `experiment`.
+    /// Per-player metric totals for everyone tagged with `experiment` in the window (CUPED,
+    /// per-unit statistics). `variant` is the tag value.
+    pub async fn experiment_metric_by_identity(
+        &self,
+        experiment: &str,
+        metric: &str,
+        field: Option<&str>,
+        from: DateTime<Utc>,
+        to: DateTime<Utc>,
+        limit: i64,
+    ) -> Result<Vec<IdentityMetric>> {
+        validate_name(metric)?;
+        let field = field.unwrap_or("");
+        match self {
+            EventStore::ClickHouse(ch) => {
+                let rows: Vec<ChIdentityValue> = ch
+                    .client
+                    .query(
+                        "SELECT identity_id, experiments[?] AS variant, count() AS count,
+                                sum(if(? = '', toFloat64OrZero(value), toFloat64OrZero(JSONExtractRaw(metadata, ?)))) AS sum
+                         FROM events WHERE name = ? AND mapContains(experiments, ?) AND event_time >= ? AND event_time < ?
+                         GROUP BY identity_id, variant ORDER BY identity_id LIMIT ?",
+                    )
+                    .bind(experiment)
+                    .bind(field)
+                    .bind(field)
+                    .bind(metric)
+                    .bind(experiment)
+                    .bind(from.timestamp_millis() as f64 / 1000.0)
+                    .bind(to.timestamp_millis() as f64 / 1000.0)
+                    .bind(limit as u64)
+                    .fetch_all()
+                    .await
+                    .map_err(ch_err)?;
+                Ok(rows
+                    .into_iter()
+                    .map(|r| IdentityMetric {
+                        identity_id: r.identity_id,
+                        variant: r.variant,
+                        count: r.count as i64,
+                        sum: r.sum,
+                    })
+                    .collect())
+            }
+            EventStore::Postgres(pg) => {
+                let rows: Vec<(Uuid, String, i64, f64)> = sqlx::query_as(
+                    "SELECT identity_id, experiments->>$1 AS variant, count(*)::bigint,
+                            COALESCE(sum(CASE WHEN (CASE WHEN $5 = '' THEN value ELSE metadata->>$5 END) ~ '^-?[0-9]+(\\.[0-9]+)?$'
+                                              THEN (CASE WHEN $5 = '' THEN value ELSE metadata->>$5 END)::float8 ELSE 0 END), 0)::float8
+                     FROM events WHERE name = $2 AND experiments ? $1 AND event_time >= $3 AND event_time < $4
+                     GROUP BY 1, 2 ORDER BY 1 LIMIT $6",
+                )
+                .bind(experiment)
+                .bind(metric)
+                .bind(from)
+                .bind(to)
+                .bind(field)
+                .bind(limit)
+                .fetch_all(pg)
+                .await
+                .map_err(map_sqlx)?;
+                Ok(rows
+                    .into_iter()
+                    .map(|(identity_id, variant, count, sum)| IdentityMetric {
+                        identity_id,
+                        variant,
+                        count,
+                        sum,
+                    })
+                    .collect())
+            }
+        }
+    }
+
+    /// Per-player totals of `metric` for the given players in a window, regardless of experiment
+    /// tags — the pre-experiment covariate for CUPED. `variant` is empty.
+    pub async fn metric_by_identity(
+        &self,
+        metric: &str,
+        field: Option<&str>,
+        identities: &[Uuid],
+        from: DateTime<Utc>,
+        to: DateTime<Utc>,
+    ) -> Result<Vec<IdentityMetric>> {
+        validate_name(metric)?;
+        if identities.is_empty() {
+            return Ok(vec![]);
+        }
+        let field = field.unwrap_or("");
+        match self {
+            EventStore::ClickHouse(ch) => {
+                let rows: Vec<ChIdentityValue> = ch
+                    .client
+                    .query(
+                        "SELECT identity_id, '' AS variant, count() AS count,
+                                sum(if(? = '', toFloat64OrZero(value), toFloat64OrZero(JSONExtractRaw(metadata, ?)))) AS sum
+                         FROM events WHERE name = ? AND identity_id IN ? AND event_time >= ? AND event_time < ?
+                         GROUP BY identity_id",
+                    )
+                    .bind(field)
+                    .bind(field)
+                    .bind(metric)
+                    .bind(identities)
+                    .bind(from.timestamp_millis() as f64 / 1000.0)
+                    .bind(to.timestamp_millis() as f64 / 1000.0)
+                    .fetch_all()
+                    .await
+                    .map_err(ch_err)?;
+                Ok(rows
+                    .into_iter()
+                    .map(|r| IdentityMetric {
+                        identity_id: r.identity_id,
+                        variant: String::new(),
+                        count: r.count as i64,
+                        sum: r.sum,
+                    })
+                    .collect())
+            }
+            EventStore::Postgres(pg) => {
+                let rows: Vec<(Uuid, i64, f64)> = sqlx::query_as(
+                    "SELECT identity_id, count(*)::bigint,
+                            COALESCE(sum(CASE WHEN (CASE WHEN $5 = '' THEN value ELSE metadata->>$5 END) ~ '^-?[0-9]+(\\.[0-9]+)?$'
+                                              THEN (CASE WHEN $5 = '' THEN value ELSE metadata->>$5 END)::float8 ELSE 0 END), 0)::float8
+                     FROM events WHERE name = $1 AND identity_id = ANY($2) AND event_time >= $3 AND event_time < $4
+                     GROUP BY 1",
+                )
+                .bind(metric)
+                .bind(identities)
+                .bind(from)
+                .bind(to)
+                .bind(field)
+                .fetch_all(pg)
+                .await
+                .map_err(map_sqlx)?;
+                Ok(rows
+                    .into_iter()
+                    .map(|(identity_id, count, sum)| IdentityMetric {
+                        identity_id,
+                        variant: String::new(),
+                        count,
+                        sum,
+                    })
+                    .collect())
+            }
+        }
+    }
+
     pub async fn experiment_metric(
         &self,
         experiment: &str,

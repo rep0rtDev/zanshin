@@ -50,6 +50,97 @@ impl Status {
     }
 }
 
+/// A metric that must not regress: when a variant's value drops below
+/// `control * (1 - max_drop)` with at least `min_identities` converting players observed, the
+/// experiment is paused automatically.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Guardrail {
+    pub metric: String,
+    /// Relative drop tolerated, 0..1 (0.05 = 5 %).
+    #[serde(default = "default_max_drop")]
+    pub max_drop: f64,
+    /// Minimum players counted on the metric per variant before the rule is evaluated.
+    #[serde(default = "default_min_identities")]
+    pub min_identities: i64,
+}
+
+fn default_max_drop() -> f64 {
+    0.05
+}
+fn default_min_identities() -> i64 {
+    100
+}
+
+/// Thompson-sampling allocation: variant weights are re-derived periodically from the posterior
+/// probability of each variant being best on `metric`. Existing assignments stay sticky.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct BanditConfig {
+    /// Conversion metric key from the catalog (or an event name).
+    pub metric: String,
+    /// Floor for any variant's weight in percent, so no arm is starved.
+    #[serde(default = "default_min_weight")]
+    pub min_weight: f64,
+    /// How often weights are recomputed.
+    #[serde(default = "default_every_secs")]
+    pub every_secs: u64,
+    /// Keep equal weights until this many players are assigned in total.
+    #[serde(default = "default_min_assigned")]
+    pub min_assigned: i64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub last_run_at: Option<chrono::DateTime<chrono::Utc>>,
+    /// Latest P(best) per variant, in variant order.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub last_probabilities: Vec<f64>,
+}
+
+fn default_min_weight() -> f64 {
+    5.0
+}
+fn default_every_secs() -> u64 {
+    3600
+}
+fn default_min_assigned() -> i64 {
+    100
+}
+
+/// A deterministic slice of players kept out of every experiment that references it.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Holdout {
+    pub key: String,
+    #[serde(default)]
+    pub name: String,
+    #[serde(default)]
+    pub description: String,
+    /// Share of players held out, 0..=100.
+    pub percentage: f64,
+    pub salt: String,
+    pub enabled: bool,
+    pub version: i64,
+    pub created_at: chrono::DateTime<chrono::Utc>,
+    pub updated_at: chrono::DateTime<chrono::Utc>,
+}
+
+impl Holdout {
+    pub fn validate(&self) -> Result<()> {
+        validate_key(&self.key)?;
+        if !(0.0..=100.0).contains(&self.percentage) || self.percentage.is_nan() {
+            return Err(Error::invalid("holdout percentage must be within 0..=100"));
+        }
+        Ok(())
+    }
+
+    /// Is this subject held out (never enrolled) by this group?
+    pub fn holds(&self, subject: &str) -> bool {
+        self.enabled
+            && hash::in_rollout(
+                &format!("holdout:{}", self.key),
+                &self.salt,
+                subject,
+                self.percentage,
+            )
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ExperimentVariant {
     pub key: String,
@@ -125,6 +216,17 @@ pub struct Experiment {
     /// Variant declared the winner when the experiment was concluded.
     #[serde(default)]
     pub winner: Option<String>,
+    /// Mutually exclusive layer: experiments sharing a layer split one bucket space, so a player
+    /// is in at most one of them. Their percentages must add up to 100 or less.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub layer: Option<String>,
+    /// Holdout group whose players are never enrolled here.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub holdout: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub guardrails: Vec<Guardrail>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub bandit: Option<BanditConfig>,
     pub version: i64,
     pub created_at: chrono::DateTime<chrono::Utc>,
     pub updated_at: chrono::DateTime<chrono::Utc>,
@@ -206,7 +308,45 @@ impl Experiment {
         for m in &self.metrics {
             validate_key(m)?;
         }
+        if let Some(l) = &self.layer {
+            validate_key(l)?;
+        }
+        if let Some(h) = &self.holdout {
+            validate_key(h)?;
+        }
+        for g in &self.guardrails {
+            validate_key(&g.metric)?;
+            if !(0.0..=1.0).contains(&g.max_drop) || g.max_drop.is_nan() {
+                return Err(Error::invalid(format!(
+                    "guardrail {}: max_drop must be within 0..=1",
+                    g.metric
+                )));
+            }
+            if g.min_identities < 0 {
+                return Err(Error::invalid("guardrail min_identities must be >= 0"));
+            }
+        }
+        if let Some(b) = &self.bandit {
+            validate_key(&b.metric)?;
+            if !(0.0..=100.0 / self.variants.len() as f64).contains(&b.min_weight)
+                || b.min_weight.is_nan()
+            {
+                return Err(Error::invalid(
+                    "bandit min_weight must be within 0..=100/variants",
+                ));
+            }
+            if b.every_secs < 60 {
+                return Err(Error::invalid("bandit every_secs must be at least 60"));
+            }
+        }
         Ok(())
+    }
+
+    /// Bucket of this subject inside the experiment's layer, 0..100. `None` without a layer.
+    pub fn layer_bucket(&self, subject: &str, props: &PropertyMap) -> Option<f64> {
+        let layer = self.layer.as_deref()?;
+        let subject = self.split_subject(subject, props);
+        Some(hash::bucket(&format!("layer:{layer}"), layer, subject.as_ref()) as f64 / 100.0)
     }
 
     /// The string the bucket hash is keyed on for this player.
@@ -252,16 +392,34 @@ impl Experiment {
         props: &PropertyMap,
         audiences: &dyn Fn(&str) -> bool,
     ) -> Option<&ExperimentVariant> {
+        self.allocate_in_layer(subject, props, audiences, 0.0)
+    }
+
+    /// Like [`allocate`](Self::allocate); `layer_offset` is the start (0..100) of this experiment's
+    /// range in its layer, computed by the caller from the other experiments sharing the layer.
+    /// Without a layer the experiment's own rollout hash decides.
+    pub fn allocate_in_layer(
+        &self,
+        subject: &str,
+        props: &PropertyMap,
+        audiences: &dyn Fn(&str) -> bool,
+        layer_offset: f64,
+    ) -> Option<&ExperimentVariant> {
         if !self.condition.matches(&Context { props }) {
             return None;
         }
         if !self.audiences.iter().all(|a| audiences(a)) {
             return None;
         }
+        if let Some(b) = self.layer_bucket(subject, props) {
+            if b < layer_offset || b >= layer_offset + self.percentage {
+                return None;
+            }
+        }
         let subject = self.split_subject(subject, props);
         let subject = subject.as_ref();
         let ns = format!("experiment:{}", self.key);
-        if !hash::in_rollout(&ns, &self.salt, subject, self.percentage) {
+        if self.layer.is_none() && !hash::in_rollout(&ns, &self.salt, subject, self.percentage) {
             return None;
         }
         let weights: Vec<f64> = self.variants.iter().map(|v| v.weight).collect();
@@ -327,6 +485,10 @@ mod tests {
             interrupted_at: None,
             interrupt_reason: String::new(),
             winner: None,
+            layer: None,
+            holdout: None,
+            guardrails: vec![],
+            bandit: None,
             starts_at: None,
             ends_at: None,
             tags: vec![],
