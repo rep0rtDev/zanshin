@@ -7,6 +7,15 @@ use zanshin_core::{webhooks::Webhook, Error, Result};
 
 use crate::map_sqlx;
 
+#[derive(Debug, Clone, Serialize)]
+pub struct DeliveryOverview {
+    pub pending: i64,
+    pub retrying: i64,
+    pub dead_24h: i64,
+    pub sent_24h: i64,
+    pub oldest_pending_secs: i64,
+}
+
 #[derive(FromRow)]
 struct Row {
     id: Uuid,
@@ -247,6 +256,29 @@ impl WebhookRepo {
         .fetch_all(&self.pg)
         .await
         .map_err(map_sqlx)
+    }
+
+    /// Queue-wide delivery counters for the health page: backlog (pending + retrying), dead and
+    /// sent in the last 24 h, and the age of the oldest undelivered item in seconds.
+    pub async fn delivery_overview(&self) -> Result<DeliveryOverview> {
+        let r: (i64, i64, i64, i64, i64) = sqlx::query_as(
+            "SELECT count(*) FILTER (WHERE status = 'pending'),
+                    count(*) FILTER (WHERE status = 'failed'),
+                    count(*) FILTER (WHERE status = 'dead' AND created_at > now() - interval '24 hours'),
+                    count(*) FILTER (WHERE status = 'sent' AND created_at > now() - interval '24 hours'),
+                    coalesce(extract(epoch FROM now() - min(created_at) FILTER (WHERE status IN ('pending', 'failed')))::bigint, 0)
+             FROM webhook_deliveries",
+        )
+        .fetch_one(&self.pg)
+        .await
+        .map_err(map_sqlx)?;
+        Ok(DeliveryOverview {
+            pending: r.0,
+            retrying: r.1,
+            dead_24h: r.2,
+            sent_24h: r.3,
+            oldest_pending_secs: r.4,
+        })
     }
 
     pub async fn delivery_stats(&self, webhook_id: Uuid) -> Result<Vec<(String, i64)>> {

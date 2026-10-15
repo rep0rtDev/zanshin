@@ -6,6 +6,18 @@ Release automation reads the section whose heading contains the tagged version.
 
 ## [Unreleased]
 
+### Added
+- Platform → Health: `GET /admin/v1/health` and a console page with dependency checks, ingest queue
+  depth and throughput, stream connections, per-job housekeeping history (stale / failed detection),
+  integration, webhook, export, report and alert delivery health, plus a single `status` /
+  `issues[]` verdict for on-call. Auto-refreshes every 15 s.
+- Console on phones: below 760 px the sidebar becomes a drawer behind a top bar (project switcher
+  included), grids collapse to one column, tables scroll horizontally and controls get touch-sized —
+  Status, kill switch, change-request approval and Health are usable on a phone.
+
+### Fixed
+- `GET /admin/v1/onboarding` now requires an admin credential; it was reachable without one.
+
 ## [0.1.0] — 2026-10-15
 
 First release: the complete LiveOps platform — flags, audiences, experiments, live events,

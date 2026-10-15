@@ -95,6 +95,8 @@ pub struct AppState {
     pub started_at: chrono::DateTime<chrono::Utc>,
     /// Cluster-wide job locks (Postgres advisory locks).
     pub locks: zanshin_store::locks::JobLock,
+    /// Per-replica housekeeping job history (see `services::health`).
+    pub jobs: crate::services::health::JobRegistry,
     /// Flipped to `true` once the process starts shutting down; long-lived streams subscribe to it.
     pub shutdown: Arc<tokio::sync::watch::Sender<bool>>,
     draining: Arc<std::sync::atomic::AtomicBool>,
@@ -384,6 +386,7 @@ impl AppState {
             metrics,
             started_at: chrono::Utc::now(),
             locks,
+            jobs: Default::default(),
             shutdown: Arc::new(tokio::sync::watch::channel(false).0),
             draining: Arc::new(std::sync::atomic::AtomicBool::new(false)),
         })

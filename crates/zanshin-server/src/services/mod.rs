@@ -14,6 +14,7 @@ pub mod events;
 pub mod experiments;
 pub mod export;
 pub mod flags;
+pub mod health;
 pub mod identity;
 pub mod integrations;
 pub mod journeys;
