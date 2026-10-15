@@ -4,7 +4,7 @@ set -eu
 dir="${1:?backup directory}"
 chpass="$(cat "${CH_PASSWORD_FILE:-/run/secrets/clickhouse_password}")"
 q() { curl -fsS --user "$CH_USER:$chpass" "$CH_URL/?database=zanshin" --data-binary "$1"; }
-( cd "$dir" && sha256sum -c --quiet SHA256SUMS )
+( cd "$dir" && sha256sum -c -s SHA256SUMS )
 curl -fsS --user "$CH_USER:$chpass" "$CH_URL/" --data-binary "CREATE DATABASE IF NOT EXISTS zanshin" >/dev/null
 for f in "$dir"/ch.*.sql; do
   t="$(basename "$f" .sql)"; t="${t#ch.}"
