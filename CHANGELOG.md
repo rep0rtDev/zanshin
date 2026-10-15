@@ -6,7 +6,10 @@ Release automation reads the section whose heading contains the tagged version.
 
 ## [Unreleased]
 
+## [0.2.0] — 2026-10-15
+
 ### Added
+- Example repository [zanshin-unity-example](https://github.com/rep0rtDev/zanshin-unity-example): Nakama + Zanshin + Unity end-to-end (compose stack with key provisioning and config-as-code, Unity sample over the `zanshin.*` RPCs, shell smoke test in CI).
 - Console localization: every UI string goes through `t()`; Russian dictionary (`console/src/locales/ru.ts`), language picked from the browser (`ru` → Russian, otherwise English), switchable on the login screen and under Your account. Dates follow the chosen locale.
 - Platform → Health: `GET /admin/v1/health` and a console page with dependency checks, ingest queue
   depth and throughput, stream connections, per-job housekeeping history (stale / failed detection),
@@ -18,6 +21,8 @@ Release automation reads the section whose heading contains the tagged version.
 
 ### Fixed
 - `GET /admin/v1/onboarding` now requires an admin credential; it was reachable without one.
+- Getting-started guide and the `demo` compose service pointed at port 7350 (Nakama's) instead of Zanshin's 7550; `zanshinctl keys create` takes the name positionally, as the guide now shows.
+- Version strings (Helm chart, compose image tags, SDK manifests, OpenAPI) bumped to 0.2.0.
 
 ## [0.1.0] — 2026-10-15
 

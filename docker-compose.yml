@@ -33,7 +33,7 @@ services:
     entrypoint: ["zanshinctl"]
     command: ["demo", "seed"]
     environment:
-      ZANSHIN_URL: http://zanshin:7350
+      ZANSHIN_URL: http://zanshin:7550
       ZANSHIN_ADMIN_KEY: ${ZANSHIN_ADMIN_KEY:-change-me-admin-key}
     depends_on: [zanshin]
     restart: "no"
