@@ -42,7 +42,7 @@ Release automation reads the section whose heading contains the tagged version.
   (`POST /admin/v1/config/promote` pushes this project's configuration into another server with a
   dry-run plan).
 - Analytics v5: read-only **SQL explorer** over ClickHouse (`POST /admin/v1/sql`, permission `sql`,
-  single-statement guard, `readonly=1`, row / time caps), **saved queries**, **scheduled reports**
+  single-statement guard, `readonly=2`, row / time caps), **saved queries**, **scheduled reports**
   (cron + timezone, saved query → Slack / Discord / webhook channels and/or email through an email
   integration), **metric alerts** (count / unique / sum of an event over a window; above / below
   threshold or z-score anomaly vs previous windows; cooldown, fire history, `alert` notifications),

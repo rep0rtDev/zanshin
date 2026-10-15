@@ -263,6 +263,14 @@ async fn live_services() {
         let ext = format!("live_ch_{sfx}");
         let ev = format!("liveEvt_{sfx}");
         for i in 0..5 {
+            let r = c
+                .post(format!("{base}/server/v1/identities"))
+                .header("x-api-key", &skey)
+                .json(&json!({"external_id": ext}))
+                .send()
+                .await
+                .unwrap();
+            assert!(r.status().is_success(), "{}", r.text().await.unwrap());
             let r = c.post(format!("{base}/server/v1/events")).header("x-api-key", &skey)
                 .json(&json!({"external_id": ext, "events": [{"name": ev, "value": i.to_string(), "metadata": {"i": i}}, {"name": format!("{ev}_next"), "value": "x"}]}))
                 .send().await.unwrap();
@@ -306,7 +314,7 @@ async fn live_services() {
             &c,
             &post,
             format!("{base}/admin/v1/analytics/paths"),
-            Some(json!({"event": ev, "direction": "after", "depth": 2})),
+            Some(json!({"event": ev, "direction": "after", "depth": 2, "from": (chrono::Utc::now() - chrono::Duration::minutes(5)).to_rfc3339()})),
         )
         .await;
         assert_eq!(st, 200, "{p}");
@@ -314,7 +322,7 @@ async fn live_services() {
             p.to_string().contains(&format!("{ev}_next")),
             "paths on ClickHouse: {p}"
         );
-        let (st, a) = adm(&c, &post, format!("{base}/admin/v1/analytics/alerts"), Some(json!({"key": format!("al_{sfx}"), "name": "live", "event": ev, "aggregation": "count", "window_secs": 3600, "condition": {"type": "above", "threshold": 1}}))).await;
+        let (st, a) = adm(&c, &post, format!("{base}/admin/v1/analytics/alerts"), Some(json!({"key": format!("al_{sfx}"), "name": "live", "event": ev, "aggregation": "count", "window_secs": 3600, "condition": {"kind": "above", "threshold": 1}, "cooldown_secs": 3600}))).await;
         assert_eq!(st, 201, "{a}");
         let (st, chk) = adm(
             &c,
@@ -350,7 +358,7 @@ async fn live_services() {
         assert!(r.status().is_success());
         let ikey = format!("smtp_{sfx}");
         let (st, i) = adm(&c, &post, format!("{base}/admin/v1/integrations"), Some(json!({"key": ikey, "name": "mailpit", "kind": "smtp",
-            "config": {"host": host, "port": port.parse::<u16>().unwrap(), "tls": false, "starttls": false, "from": "zanshin@example.com"}}))).await;
+            "config": {"host": host, "port": port.parse::<u16>().unwrap(), "tls": "none", "from": "zanshin@example.com"}}))).await;
         assert_eq!(st, 201, "{i}");
         let (st, o) = adm(
             &c,
@@ -360,7 +368,7 @@ async fn live_services() {
         )
         .await;
         assert_eq!(st, 200, "{o}");
-        assert_eq!(o["ok"], true, "smtp delivery to mailpit: {o}");
+        assert_eq!(o["status"], "sent", "smtp delivery to mailpit: {o}");
         let mut found = false;
         for _ in 0..20 {
             let msgs: Value = reqwest::get(format!("{mailpit}/api/v1/messages?limit=50"))
@@ -396,6 +404,14 @@ async fn live_services() {
         .await
         .1;
         let skey = server["secret"].as_str().unwrap().to_string();
+        let r = c
+            .post(format!("{base}/server/v1/identities"))
+            .header("x-api-key", &skey)
+            .json(&json!({"external_id": format!("live_s3_{sfx}")}))
+            .send()
+            .await
+            .unwrap();
+        assert!(r.status().is_success(), "{}", r.text().await.unwrap());
         let r = c.post(format!("{base}/server/v1/events")).header("x-api-key", &skey)
             .json(&json!({"external_id": format!("live_s3_{sfx}"), "events": [{"name": format!("s3Evt_{sfx}"), "value": "1"}]})).send().await.unwrap();
         assert!(r.status().is_success());
