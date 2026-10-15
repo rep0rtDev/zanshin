@@ -32,6 +32,7 @@ import Data from './pages/Data';
 import Recipes from './pages/Recipes';
 import ApiKeys from './pages/ApiKeys';
 import Audit from './pages/Audit';
+import Health from './pages/Health';
 
 function Login({ onDone, cfg }: { onDone: () => void; cfg: AuthConfig }) {
   const params = new URLSearchParams(window.location.search);
@@ -135,7 +136,7 @@ const GROUPS: NavGroup[] = [
   { name: 'Engage', items: [['/messages', 'Messages', I.mail], ['/templates', 'Templates', I.doc], ['/journeys', 'Journeys', I.route], ['/integrations', 'Integrations', I.plug], ['/recipes', 'Recipes', I.lab]] },
   { name: 'Players', items: [['/identities', 'Identities', I.users], ['/taxonomy', 'Taxonomy', I.tag]] },
   { name: 'Analytics', items: [['/insights', 'Insights', I.chart], ['/explorer', 'Explorer', I.chart], ['/analytics', 'Events', I.pulse], ['/metrics', 'Metrics', I.gauge]] },
-  { name: 'Platform', items: [['/change-requests', 'Change requests', I.list], ['/webhooks', 'Webhooks', I.hook], ['/notifications', 'Notifications', I.mail], ['/data', 'Data', I.db], ['/api-keys', 'API keys', I.key], ['/users', 'Users', I.users], ['/audit', 'Audit log', I.list], ['/settings', 'Settings', I.gear]] },
+  { name: 'Platform', items: [['/change-requests', 'Change requests', I.list], ['/webhooks', 'Webhooks', I.hook], ['/notifications', 'Notifications', I.mail], ['/data', 'Data', I.db], ['/api-keys', 'API keys', I.key], ['/users', 'Users', I.users], ['/audit', 'Audit log', I.list], ['/health', 'Health', I.pulse], ['/settings', 'Settings', I.gear]] },
 ];
 
 const THEME_KEY = 'zanshin.theme';
@@ -189,6 +190,7 @@ export default function App() {
   const [me, setMe] = useState<Me | null | undefined>(undefined);
   const [cfg, setCfg] = useState<AuthConfig>({ oidc: false, saml: false, password: false, needs_bootstrap: false });
   const [palette, setPalette] = useState(false);
+  const [navOpen, setNavOpen] = useState(false);
   const [collapsed, setCollapsed] = useState(() => localStorage.getItem('zanshin.nav') === 'collapsed');
   const loadMe = useCallback(async () => {
     try {
@@ -220,7 +222,7 @@ export default function App() {
   }, []);
   if (me === undefined) return <div className="login"><div className="card">Loading…</div></div>;
   if (!me) return <Login cfg={cfg} onDone={() => { authConfig().then(setCfg); void loadMe(); }} />;
-  const RES: Record<string, string> = { '/flags': 'flags', '/audiences': 'audiences', '/experiments': 'experiments', '/change-requests': 'approvals', '/live-events': 'live_events', '/messages': 'messages', '/templates': 'templates', '/journeys': 'journeys', '/integrations': 'integrations', '/identities': 'identities', '/taxonomy': 'taxonomy', '/insights': 'analytics', '/explorer': 'sql', '/analytics': 'analytics', '/metrics': 'metrics', '/webhooks': 'webhooks', '/data': 'data', '/api-keys': 'api_keys', '/users': 'users', '/audit': 'audit', '/settings': 'settings' };
+  const RES: Record<string, string> = { '/health': 'settings', '/flags': 'flags', '/audiences': 'audiences', '/experiments': 'experiments', '/change-requests': 'approvals', '/live-events': 'live_events', '/messages': 'messages', '/templates': 'templates', '/journeys': 'journeys', '/integrations': 'integrations', '/identities': 'identities', '/taxonomy': 'taxonomy', '/insights': 'analytics', '/explorer': 'sql', '/analytics': 'analytics', '/metrics': 'metrics', '/webhooks': 'webhooks', '/data': 'data', '/api-keys': 'api_keys', '/users': 'users', '/audit': 'audit', '/settings': 'settings' };
   const groups = GROUPS.map((g) => ({ ...g, items: g.items.filter(([to]) => !RES[to] || allows(me.permissions, RES[to], 'read')) }));
   const pages: PaletteItem[] = groups.flatMap((g) => g.items.map(([to, label]) => ({ label, to, group: g.name || 'Pages' })));
   const signOut = async (e: React.MouseEvent) => {
@@ -231,8 +233,15 @@ export default function App() {
   };
   return (
     <MeContext.Provider value={me}>
-      <div className={'shell' + (collapsed ? ' collapsed' : '')}>
-        <nav className="side">
+      <div className={'shell' + (collapsed ? ' collapsed' : '') + (navOpen ? ' nav-open' : '')}>
+        <div className="mob-bar">
+          <button className="mob-menu" onClick={() => setNavOpen((o) => !o)} aria-label="Menu"><Icon d={navOpen ? 'M6 6l12 12M18 6L6 18' : 'M3 6h18M3 12h18M3 18h18'} /></button>
+          <span className="logo">残</span><strong>Zanshin</strong>
+          <div className="spacer" />
+          <ProjectSwitcher />
+        </div>
+        {navOpen && <div className="mob-scrim" onClick={() => setNavOpen(false)} />}
+        <nav className="side" onClick={(e) => { if ((e.target as HTMLElement).closest('a')) setNavOpen(false); }}>
           <div className="brand" onClick={() => setCollapsed((c) => !c)} title="Toggle sidebar">
             <span className="logo">残</span><span className="brand-text">Zanshin<small>LiveOps console</small></span>
           </div>
@@ -282,6 +291,7 @@ export default function App() {
               {allows(me.permissions, 'users', 'read') && <Route path="/users" element={<Users />} />}
               <Route path="/account" element={<Account onChanged={() => void loadMe()} />} />
               <Route path="/audit" element={<Audit />} />
+            <Route path="/health" element={<Health />} />
               <Route path="/settings/*" element={<Settings />} />
               <Route path="/change-requests" element={<ChangeRequests />} />
               <Route path="*" element={<Navigate to="/" replace />} />

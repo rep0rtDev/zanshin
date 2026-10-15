@@ -183,6 +183,7 @@ pub fn router() -> Router<AppState> {
         .route("/me", get(me))
         .route("/system", get(system))
         .route("/onboarding", get(onboarding))
+        .route("/health", get(health))
         .route("/system/config", get(system_config))
         .route(
             "/console/settings",
@@ -1885,7 +1886,17 @@ async fn me(State(state): State<AppState>, AdminAuth(p): AdminAuth) -> ApiResult
 }
 
 /// Day-1 checklist computed from real data: which first steps a fresh deployment still has ahead.
-async fn onboarding(State(state): State<AppState>) -> ApiResult<Json<serde_json::Value>> {
+async fn health(
+    State(state): State<AppState>,
+    AdminAuth(_): AdminAuth,
+) -> ApiResult<Json<serde_json::Value>> {
+    Ok(Json(crate::services::health::overview(&state).await?))
+}
+
+async fn onboarding(
+    State(state): State<AppState>,
+    AdminAuth(_): AdminAuth,
+) -> ApiResult<Json<serde_json::Value>> {
     let identities = zanshin_store::identities::IdentityRepo::new(state.stores.pg.clone())
         .count()
         .await?;

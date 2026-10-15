@@ -93,6 +93,10 @@ impl EventService {
         self.store.backend()
     }
 
+    pub fn queue_capacity(&self) -> usize {
+        QUEUE_CAPACITY
+    }
+
     /// Events accepted but not yet flushed to the store.
     pub fn queue_depth(&self) -> usize {
         QUEUE_CAPACITY - self.tx.capacity()

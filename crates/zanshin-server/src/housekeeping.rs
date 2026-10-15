@@ -97,12 +97,20 @@ where
 {
     let started = std::time::Instant::now();
     tracing::debug!(job = name, "job started");
+    state.jobs.started(name);
     match state.locks.try_run(name, job).await {
         Ok(Lock::Ran(())) => {
-            tracing::debug!(job = name, elapsed = ?started.elapsed(), "job finished")
+            tracing::debug!(job = name, elapsed = ?started.elapsed(), "job finished");
+            state.jobs.finished(name, started.elapsed());
         }
-        Ok(Lock::Skipped) => tracing::trace!(job = name, "held by another replica"),
-        Err(e) => tracing::warn!(job = name, error = %e, "job lock failed"),
+        Ok(Lock::Skipped) => {
+            tracing::trace!(job = name, "held by another replica");
+            state.jobs.skipped(name);
+        }
+        Err(e) => {
+            tracing::warn!(job = name, error = %e, "job lock failed");
+            state.jobs.failed(name, e.to_string());
+        }
     }
 }
 

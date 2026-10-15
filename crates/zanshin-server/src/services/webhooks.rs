@@ -323,6 +323,10 @@ impl WebhookService {
 
     // ---- admin surface
 
+    pub async fn delivery_overview(&self) -> Result<zanshin_store::webhooks::DeliveryOverview> {
+        self.repo.delivery_overview().await
+    }
+
     pub async fn list(&self) -> Result<Vec<Webhook>> {
         Ok(self
             .repo

@@ -276,6 +276,18 @@ read with a client key.
 * Readiness: `GET /readyz` returns the status of Postgres, Redis, ClickHouse and the pool; `503`
   during drain. Liveness: `GET /healthz`.
 
+### Platform → Health
+
+`GET /admin/v1/health` (console: **Platform → Health**) is the on-call view of one replica: readiness of
+PostgreSQL / Redis / ClickHouse with latencies and pool stats, ingest queue depth vs capacity and
+events in the last 5 min / 1 h, live WebSocket and server-SDK stream counts, every housekeeping job
+with its last run, duration and error (a job is `stale` when it has not run for 3× its interval),
+integration delivery health, webhook queue (pending / retrying / sent / dead in 24 h, age of the
+oldest undelivered item), export sinks, scheduled reports and metric alerts. `status` is `ok`,
+`warn` (something needs attention, see `issues[]`) or `fail` (a dependency is down). The page
+refreshes every 15 s and is usable from a phone; pair it with `/readyz` for load balancers and
+`/metrics` for dashboards.
+
 ## Security checklist
 
 - [ ] `server.production=true`; `zanshin --check-config` shows no `change-me` anywhere.
