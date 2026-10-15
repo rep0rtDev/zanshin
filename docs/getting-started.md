@@ -6,11 +6,11 @@ Ten minutes from zero to a flag evaluated for a real player.
 
 ```sh
 git clone https://github.com/rep0rtDev/zanshin && cd zanshin
-docker compose up -d                 # PostgreSQL, Redis, ClickHouse, Zanshin on :7350
+docker compose up -d                 # PostgreSQL, Redis, ClickHouse, Zanshin on :7550
 docker compose --profile demo up demo  # optional: sample config + 500 synthetic players with 30 days of events
 ```
 
-Open the console at <http://localhost:7350>. The first login uses the bootstrap key from
+Open the console at <http://localhost:7550>. The first login uses the bootstrap key from
 `docker-compose.yml` (`ZANSHIN__ADMIN__BOOTSTRAP_KEY`); create your own user right away under
 *Settings → Users* and remove the bootstrap key from production configs (`zanshin --doctor` reminds you).
 
@@ -19,7 +19,7 @@ Open the console at <http://localhost:7350>. The first login uses the bootstrap 
 Console → *Platform → API keys → New* (kind `server`), or with the CLI:
 
 ```sh
-zanshinctl --url http://localhost:7350 --key <bootstrap-key> keys create --kind server --name nakama
+zanshinctl --url http://localhost:7550 --key <bootstrap-key> keys create --kind server nakama
 zanshinctl flags set shop_v2 --value-type bool --default-value false
 ```
 
@@ -31,7 +31,7 @@ zanshinctl flags set shop_v2 --value-type bool --default-value false
 
     ```yaml
     environment:
-      ZANSHIN_URL: http://zanshin:7350
+      ZANSHIN_URL: http://zanshin:7550
       ZANSHIN_SERVER_KEY: <server key>
     ```
 
@@ -48,7 +48,7 @@ zanshinctl flags set shop_v2 --value-type bool --default-value false
 
 ```sh
 curl -s -H "x-api-key: <server key>" \
-  "http://localhost:7350/server/v1/flags?external_id=player-1&names=shop_v2"
+  "http://localhost:7550/server/v1/flags?external_id=player-1&names=shop_v2"
 ```
 
 ## 5. Next steps
@@ -59,3 +59,4 @@ curl -s -H "x-api-key: <server key>" \
 * `zanshinctl demo reset` removes the demo data again (`docker compose run --rm demo demo reset`).
 * The *Getting started* card on the Overview page tracks these steps against your real data.
 * Going to production: [Production guide](production.md) (sizing, TLS, backups, `zanshin --doctor`).
+* Full worked example with Nakama and Unity: [zanshin-unity-example](https://github.com/rep0rtDev/zanshin-unity-example).

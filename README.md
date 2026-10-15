@@ -218,6 +218,8 @@ version, stores, auth, rate limits and an inventory (`GET /admin/v1/system`).
 
 ## SDKs
 
+End-to-end example with Nakama and Unity: [rep0rtDev/zanshin-unity-example](https://github.com/rep0rtDev/zanshin-unity-example).
+
 - [`sdk/ts`](sdk/ts) — TypeScript for browsers and Node: `authenticate` / `restore`, automatic
   token refresh, `flags`, `experiments` + `expose`, `liveEvents`, `inbox`, `track`, and a
   reconnecting WebSocket stream (`z.stream().onFlag(...)`).
