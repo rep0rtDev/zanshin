@@ -1,0 +1,26 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- Server-side SDK for .NET services (game servers, backends, Nakama-adjacent workers). Not for Unity: use sdk/unity. -->
+  <PropertyGroup>
+    <TargetFrameworks>netstandard2.0;net8.0</TargetFrameworks>
+    <LangVersion>10.0</LangVersion>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <RootNamespace>Zanshin.Server</RootNamespace>
+    <AssemblyName>Zanshin.Server</AssemblyName>
+    <PackageId>Zanshin.Server</PackageId>
+    <Version>0.2.2</Version>
+    <Description>Server-side .NET SDK for Zanshin (self-hosted LiveOps): flags, experiments, audiences, live events, inbox, events, with a change-stream-invalidated cache.</Description>
+    <RepositoryUrl>https://github.com/rep0rtDev/zanshin</RepositoryUrl>
+    <PackageProjectUrl>https://github.com/rep0rtDev/zanshin</PackageProjectUrl>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <IncludeSymbols>false</IncludeSymbols>
+    <PackageLicenseExpression>Apache-2.0</PackageLicenseExpression>
+  </PropertyGroup>
+  <ItemGroup>
+    <None Include="../README.md" Pack="true" PackagePath="/" />
+  </ItemGroup>
+  <ItemGroup Condition="'$(TargetFramework)' == 'netstandard2.0'">
+    <PackageReference Include="System.Text.Json" Version="8.0.5" />
+  </ItemGroup>
+</Project>

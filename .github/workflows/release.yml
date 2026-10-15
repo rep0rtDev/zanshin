@@ -233,6 +233,7 @@ jobs:
           (cd sdk && zip -qr "../dist/zanshin-cpp-${v}.zip" cpp/include cpp/CMakeLists.txt cpp/README.md)
           (cd sdk/godot && zip -qr "../../dist/zanshin-godot-addon-${v}.zip" addons README.md)
           (cd sdk && zip -qr "../dist/zanshin-unity-upm-${v}.zip" unity -x 'unity/bin/*' 'unity/obj/*' 'unity/Tests~/*')
+          (cd sdk && zip -qr "../dist/zanshin-dotnet-${v}.zip" dotnet -x '*/bin/*' '*/obj/*' 'dotnet/Zanshin.Tests/*')
       - name: source sbom (spdx)
         uses: anchore/sbom-action@v0
         with:

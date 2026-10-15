@@ -26,7 +26,7 @@ remaining feature and production distance. Everything below is checked against `
 
 ## 0.2 — SDKs and console ✅
 
-- [x] Go (`sdk/go`), TypeScript (`sdk/ts`), Unity (`sdk/unity`), Unreal (`sdk/unreal`), Godot
+- [x] Go (`sdk/go`), TypeScript (`sdk/ts`), Unity (`sdk/unity`), .NET server (`sdk/dotnet`), Unreal (`sdk/unreal`), Godot
       (`sdk/godot`) SDKs; Nakama Go runtime module (`nakama/`)
 - [x] Embedded React console with a screen for every admin surface; console v2 (visual rule builder,
       calendar, template preview, comparative charts, audit log, dark theme)

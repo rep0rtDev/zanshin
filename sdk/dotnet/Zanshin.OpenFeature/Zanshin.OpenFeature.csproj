@@ -1,0 +1,24 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- OpenFeature provider backed by the Zanshin server SDK. -->
+  <PropertyGroup>
+    <TargetFrameworks>netstandard2.0;net8.0</TargetFrameworks>
+    <LangVersion>10.0</LangVersion>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <RootNamespace>Zanshin.OpenFeature</RootNamespace>
+    <AssemblyName>Zanshin.OpenFeature</AssemblyName>
+    <PackageId>Zanshin.OpenFeature</PackageId>
+    <Version>0.2.2</Version>
+    <Description>OpenFeature provider for Zanshin (self-hosted LiveOps) built on Zanshin.Server.</Description>
+    <RepositoryUrl>https://github.com/rep0rtDev/zanshin</RepositoryUrl>
+    <PackageProjectUrl>https://github.com/rep0rtDev/zanshin</PackageProjectUrl>
+    <PackageLicenseExpression>Apache-2.0</PackageLicenseExpression>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+  </PropertyGroup>
+  <ItemGroup>
+    <None Include="../README.md" Pack="true" PackagePath="/" />
+    <ProjectReference Include="../Zanshin.Server/Zanshin.Server.csproj" />
+    <PackageReference Include="OpenFeature" Version="2.0.0" />
+  </ItemGroup>
+</Project>

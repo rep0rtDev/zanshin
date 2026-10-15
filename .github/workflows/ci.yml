@@ -180,6 +180,22 @@ jobs:
           dotnet build Zanshin.csproj -c Release
           dotnet build Tests~/Smoke/Smoke.csproj -c Release
 
+  dotnet:
+    name: dotnet sdk
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "8.0.x"
+      - working-directory: sdk/dotnet
+        run: |
+          dotnet build Zanshin.Server -c Release
+          dotnet build Zanshin.OpenFeature -c Release
+          dotnet test Zanshin.Tests
+          dotnet pack Zanshin.Server -c Release -o dist
+          dotnet pack Zanshin.OpenFeature -c Release -o dist
+
   godot:
     name: godot sdk
     runs-on: ubuntu-latest
