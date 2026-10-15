@@ -100,7 +100,8 @@ async fn follow(c: &reqwest::Client, mut r: reqwest::Response, max: usize) -> re
             break;
         }
         let loc = r.headers()["location"].to_str().unwrap().to_string();
-        r = c.get(loc).send().await.unwrap();
+        let next = r.url().join(&loc).expect("location url");
+        r = c.get(next).send().await.unwrap();
     }
     r
 }

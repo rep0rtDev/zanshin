@@ -342,7 +342,7 @@ jobs:
           ZANSHIN__CLICKHOUSE__PASSWORD: zanshin
           ZANSHIN__AUTH__JWT_SECRET: ci-live-jwt-0123456789abcdef0123456789abcdef
           ZANSHIN__ADMIN__BOOTSTRAP_KEY: live-bootstrap-admin-key-49
-        run: ./target/debug/zanshin --migrate && ./target/debug/zanshin --doctor && ./target/debug/zanshin --doctor --json | head -5
+        run: ./target/debug/zanshin --migrate && ./target/debug/zanshin --doctor && ./target/debug/zanshin --doctor --json > /tmp/doctor.json && python3 -c "import json;d=json.load(open('/tmp/doctor.json'));print(len(d['checks']),'checks, ok =',d['ok'])"
       - name: Nakama (module → Zanshin on 127.0.0.1:7560)
         run: |
           docker run -d --name nakama --network host --entrypoint /nakama/nakama zanshin-nakama:ci \
