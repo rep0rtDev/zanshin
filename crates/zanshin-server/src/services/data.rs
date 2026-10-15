@@ -334,3 +334,149 @@ pub async fn generate_sample(state: &AppState, req: &SampleRequest) -> Result<Va
         json!({ "players": req.players, "days": req.days, "events": events_total, "revenue": (revenue * 100.0).round() / 100.0, "seed": req.seed }),
     )
 }
+
+/// Keys of the demo LiveOps configuration; everything the demo creates is prefixed `demo_`
+/// and every synthetic player carries `custom.sample = true`, so a reset can find it all again.
+const DEMO_PREFIX: &str = "demo_";
+
+fn demo_bundle() -> Value {
+    let now = Utc::now();
+    let starts = (now - chrono::Duration::days(1)).to_rfc3339();
+    let ends = (now + chrono::Duration::days(6)).to_rfc3339();
+    json!({
+        "format": "zanshin-config/1",
+        "entities": {
+            "audiences": [
+                { "key": "demo_whales", "name": "Demo · Whales", "description": "Players at level 20+ (sample data)",
+                  "expression": "custom.level >= 20" },
+                { "key": "demo_new_players", "name": "Demo · New players", "description": "Level below 5 (sample data)",
+                  "expression": "custom.level < 5" },
+                { "key": "demo_eu", "name": "Demo · Europe", "description": "DE / FR / GB (sample data)",
+                  "expression": "default.country in ['DE', 'FR', 'GB']" }
+            ],
+            "flags": [
+                { "key": "demo_shop_v2", "name": "Demo · Shop v2", "value_type": "bool", "default_value": false, "enabled": true,
+                  "description": "Sample flag: new shop layout, rolled out to half of the players",
+                  "rollout": 50 },
+                { "key": "demo_starter_pack_price", "name": "Demo · Starter pack price", "value_type": "number",
+                  "default_value": 4.99, "enabled": true,
+                  "description": "Sample flag: price is varied by the demo experiment" },
+                { "key": "demo_welcome_text", "name": "Demo · Welcome text", "value_type": "string",
+                  "default_value": "Welcome back!", "enabled": true,
+                  "description": "Sample flag: greeting shown on the title screen" }
+            ],
+            "experiments": [
+                { "key": "demo_starter_pack_pricing", "name": "Demo · Starter pack pricing", "status": "running",
+                  "flag_key": "demo_starter_pack_price", "control": "a", "description": "Sample A/B test on the starter pack price",
+                  "variants": [ { "key": "a", "value": 4.99, "weight": 1 }, { "key": "b", "value": 2.99, "weight": 1 } ] }
+            ],
+            "live_events": [
+                { "key": "demo_weekend_sale", "name": "Demo · Weekend sale", "description": "Sample live event with a 20% discount",
+                  "starts_at": starts, "ends_at": ends, "payload": { "discount": 20 }, "enabled": true }
+            ]
+        }
+    })
+}
+
+#[derive(Debug, Deserialize)]
+pub struct DemoRequest {
+    #[serde(default = "default_demo_players")]
+    pub players: u32,
+    #[serde(default = "default_days")]
+    pub days: u32,
+    #[serde(default)]
+    pub seed: u64,
+    /// Skip the synthetic players/events and only create the demo configuration.
+    #[serde(default)]
+    pub config_only: bool,
+}
+fn default_demo_players() -> u32 {
+    500
+}
+
+/// Seed a fresh deployment with demo configuration (flags, audiences, experiment, live event)
+/// plus synthetic players and events. Idempotent: configuration is merged by key and sample
+/// players are only generated when none exist yet.
+pub async fn demo_seed(state: &AppState, req: &DemoRequest) -> Result<Value> {
+    let config = super::config::import(
+        state,
+        &super::config::ImportRequest {
+            bundle: demo_bundle(),
+            mode: super::config::ImportMode::Merge,
+            kinds: None,
+            keys: None,
+            dry_run: false,
+        },
+    )
+    .await?;
+    let repo = zanshin_store::identities::IdentityRepo::new(state.stores.pg.clone());
+    let existing = repo.ids_where_custom("sample", &json!(true)).await?.len();
+    let sample = if req.config_only {
+        json!({ "skipped": "config_only" })
+    } else if existing > 0 {
+        json!({ "skipped": "sample players already present", "players": existing })
+    } else {
+        generate_sample(
+            state,
+            &SampleRequest {
+                players: req.players,
+                days: req.days,
+                seed: req.seed,
+            },
+        )
+        .await?
+    };
+    Ok(json!({ "config": config, "sample": sample }))
+}
+
+/// Remove everything `demo_seed` created: synthetic players (and their events, assignments,
+/// inbox, …) and every `demo_*` configuration entity.
+pub async fn demo_reset(state: &AppState) -> Result<Value> {
+    let repo = zanshin_store::identities::IdentityRepo::new(state.stores.pg.clone());
+    let ids = repo.ids_where_custom("sample", &json!(true)).await?;
+    let mut identities = 0usize;
+    for id in ids {
+        if gdpr_delete(state, id).await.is_ok() {
+            identities += 1;
+        }
+    }
+    let mut removed = vec![];
+    for kind in ["experiments", "live_events", "flags", "audiences"] {
+        let keys: Vec<String> = match kind {
+            "experiments" => state
+                .experiments
+                .list()
+                .await
+                .iter()
+                .map(|e| e.key.clone())
+                .collect(),
+            "live_events" => state
+                .live_events
+                .list()
+                .await
+                .iter()
+                .map(|e| e.key.clone())
+                .collect(),
+            "flags" => state
+                .flags
+                .list()
+                .await
+                .iter()
+                .map(|f| f.key.clone())
+                .collect(),
+            _ => state
+                .audiences
+                .list()
+                .await
+                .iter()
+                .map(|a| a.key.clone())
+                .collect(),
+        };
+        for key in keys.into_iter().filter(|k| k.starts_with(DEMO_PREFIX)) {
+            if super::config::remove(state, kind, &key).await.is_ok() {
+                removed.push(json!({ "kind": kind, "key": key }));
+            }
+        }
+    }
+    Ok(json!({ "identities_deleted": identities, "config_removed": removed }))
+}

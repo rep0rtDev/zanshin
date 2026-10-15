@@ -44,6 +44,7 @@ pub fn router() -> Router<AppState> {
         .route("/data/identities/{id}/takeout", get(takeout))
         .route("/data/events/purge", post(purge_events))
         .route("/data/sample", post(sample))
+        .route("/data/demo", post(demo_seed).delete(demo_reset))
         .route("/data/defaults", post(defaults))
 }
 
@@ -365,4 +366,19 @@ async fn sample(
     Json(b): Json<SampleRequest>,
 ) -> ApiResult<Json<Value>> {
     Ok(Json(data::generate_sample(&state, &b).await?))
+}
+
+async fn demo_seed(
+    State(state): State<AppState>,
+    AdminAuth(_): AdminAuth,
+    Json(b): Json<data::DemoRequest>,
+) -> ApiResult<Json<Value>> {
+    Ok(Json(data::demo_seed(&state, &b).await?))
+}
+
+async fn demo_reset(
+    State(state): State<AppState>,
+    AdminAuth(_): AdminAuth,
+) -> ApiResult<Json<Value>> {
+    Ok(Json(data::demo_reset(&state).await?))
 }

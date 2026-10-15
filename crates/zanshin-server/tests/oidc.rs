@@ -262,7 +262,7 @@ async fn oidc_login_and_roles() {
     // Audit attributes the mutation to the OIDC user.
     let audit: Value = http
         .get(format!(
-            "{base}/admin/v1/audit?path=/admin/v1/flags&method=post&limit=50"
+            "{base}/admin/v1/audit?path=/admin/v1/flags&method=post&actor=kai%40example.com&limit=200"
         ))
         .header("x-api-key", ADMIN_KEY)
         .send()
