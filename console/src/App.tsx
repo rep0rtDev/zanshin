@@ -70,6 +70,7 @@ function Login({ onDone, cfg }: { onDone: () => void; cfg: AuthConfig }) {
     <div className="login">
       <div className="card">
         <div className="brand">Zanshin<small>admin console</small></div>
+        {cfg.saml && (<a className="btn" href="/console/auth/saml/login" style={{ width: '100%', display: 'block', textAlign: 'center', boxSizing: 'border-box', marginBottom: 8 }}>Sign in with SAML</a>)}
         {cfg.oidc && (<><a className="btn" href="/console/auth/login" style={{ width: '100%', display: 'block', textAlign: 'center', boxSizing: 'border-box' }}>Sign in with SSO</a><div className="hint" style={{ textAlign: 'center', margin: '12px 0' }}>or</div></>)}
         {tab !== 'reset' && tabs.length > 1 && <div className="tabs" style={{ marginBottom: 12 }}>{tabs.map(([t, l]) => <button key={t} type="button" className={'tab' + (tab === t ? ' active' : '')} onClick={() => { setTab(t); setErr(null); }}>{l}</button>)}</div>}
         {tab === 'password' && (
@@ -186,7 +187,7 @@ function ProjectSwitcher() {
 
 export default function App() {
   const [me, setMe] = useState<Me | null | undefined>(undefined);
-  const [cfg, setCfg] = useState<AuthConfig>({ oidc: false, password: false, needs_bootstrap: false });
+  const [cfg, setCfg] = useState<AuthConfig>({ oidc: false, saml: false, password: false, needs_bootstrap: false });
   const [palette, setPalette] = useState(false);
   const [collapsed, setCollapsed] = useState(() => localStorage.getItem('zanshin.nav') === 'collapsed');
   const loadMe = useCallback(async () => {

@@ -5,7 +5,7 @@ import { useMe } from '../me';
 import { toast } from '../toast';
 import { Badge, ErrorBox, Field, Page, displayTimezone, fmtDate, fmtNum, setDisplayTz } from '../ui';
 
-type System = { version: string; started_at: string; uptime_secs: number; stores: { postgres: boolean; redis: boolean; clickhouse: boolean; event_store: string }; push: { provider: string }; auth: { oidc: boolean; access_ttl_secs: number; refresh_ttl_secs: number }; limits: Record<string, number>; taxonomy: { mode: string; auto_discover: boolean; geoip: boolean }; audit_retention_days: number; counts: Record<string, number> };
+type System = { version: string; started_at: string; uptime_secs: number; stores: { postgres: boolean; redis: boolean; clickhouse: boolean; event_store: string }; push: { provider: string }; auth: { oidc: boolean; saml?: boolean; scim?: boolean; access_ttl_secs: number; refresh_ttl_secs: number }; limits: Record<string, number>; taxonomy: { mode: string; auto_discover: boolean; geoip: boolean }; audit_retention_days: number; counts: Record<string, number> };
 type TaxSettings = { mode: string; auto_discover: boolean; geoip_enabled: boolean; session_inactivity_secs: number };
 
 function General() {
@@ -35,7 +35,7 @@ function General() {
             <strong>Authentication</strong>
             <dl className="kv" style={{ marginTop: 8 }}>
               <dt>You</dt><dd>{me?.name} · <span className={'role role-' + me?.role}>{me?.role}</span> · via {me?.auth}</dd>
-              <dt>Console SSO</dt><dd>{s.auth.oidc ? <Badge tone="ok">OpenID Connect enabled</Badge> : <Badge>admin API keys only</Badge>}</dd>
+              <dt>Console SSO</dt><dd>{s.auth.oidc && <Badge tone="ok">OpenID Connect</Badge>} {s.auth.saml && <Badge tone="ok">SAML 2.0</Badge>} {s.auth.scim && <Badge tone="info">SCIM provisioning</Badge>} {!s.auth.oidc && !s.auth.saml && <Badge>password / admin API keys</Badge>}</dd>
               <dt>Player access token</dt><dd>{fmtNum(s.auth.access_ttl_secs)} s</dd>
               <dt>Player refresh token</dt><dd>{fmtNum(s.auth.refresh_ttl_secs)} s</dd>
               <dt>Audit retention</dt><dd>{s.audit_retention_days} days</dd>

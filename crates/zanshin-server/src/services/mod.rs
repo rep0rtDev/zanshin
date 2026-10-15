@@ -26,6 +26,7 @@ pub mod oidc;
 pub mod projects;
 pub mod push;
 pub mod refs;
+pub mod saml;
 pub mod taxonomy;
 pub mod templates;
 pub mod webhooks;

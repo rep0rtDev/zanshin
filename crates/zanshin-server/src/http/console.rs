@@ -34,6 +34,9 @@ pub fn router() -> Router<AppState> {
         .route("/console/auth/config", get(auth_config))
         .route("/console/auth/login", get(auth_login))
         .route("/console/auth/callback", get(auth_callback))
+        .route("/console/auth/saml/login", get(saml_login))
+        .route("/console/auth/saml/acs", post(saml_acs))
+        .route("/console/auth/saml/metadata", get(saml_metadata))
         .route("/console/auth/logout", post(auth_logout))
         .route("/console/auth/password", post(auth_password))
         .route("/console/auth/reset", post(auth_reset))
@@ -43,6 +46,7 @@ pub fn router() -> Router<AppState> {
 #[derive(Serialize)]
 struct AuthConfig {
     oidc: bool,
+    saml: bool,
     /// Email + password (+ TOTP) login is always available once a user exists.
     password: bool,
     /// No console users yet: the UI offers "create the first admin" with the bootstrap key.
@@ -53,6 +57,7 @@ async fn auth_config(State(state): State<AppState>) -> Json<AuthConfig> {
     let users = state.console_users.repo().count().await.unwrap_or(1);
     Json(AuthConfig {
         oidc: state.oidc.enabled(),
+        saml: state.saml.enabled(),
         password: users > 0,
         needs_bootstrap: users == 0,
     })
@@ -325,4 +330,101 @@ fn missing() -> Response {
         "admin console was not built into this binary (run `npm run build` in console/ before cargo build)",
     )
         .into_response()
+}
+
+async fn saml_metadata(State(state): State<AppState>) -> Response {
+    match state.saml.metadata() {
+        Ok(xml) => (
+            [(header::CONTENT_TYPE, "application/samlmetadata+xml")],
+            xml,
+        )
+            .into_response(),
+        Err(e) => ApiError::from(e).into_response(),
+    }
+}
+
+async fn saml_login(State(state): State<AppState>) -> Result<Response, ApiError> {
+    use crate::services::saml::STATE_COOKIE as SAML_STATE;
+    let start = state.saml.begin_login()?;
+    let mut r = Redirect::to(&start.redirect_url).into_response();
+    r.headers_mut().insert(
+        header::SET_COOKIE,
+        cookie(
+            SAML_STATE,
+            &start.state_cookie,
+            Some(600),
+            state.oidc.secure_cookies(),
+        )
+        .parse()
+        .expect("cookie header"),
+    );
+    Ok(r)
+}
+
+#[derive(Deserialize)]
+struct SamlAcsForm {
+    #[serde(rename = "SAMLResponse")]
+    saml_response: String,
+    #[serde(default, rename = "RelayState")]
+    _relay_state: Option<String>,
+}
+
+/// Assertion consumer service: the IdP posts the signed response here.
+async fn saml_acs(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    axum::Form(form): axum::Form<SamlAcsForm>,
+) -> Response {
+    use crate::services::saml::STATE_COOKIE as SAML_STATE;
+    let secure = state.oidc.secure_cookies();
+    let fail = |msg: String| {
+        let mut r = Redirect::to(&format!(
+            "/console/?error={}",
+            url::form_urlencoded::byte_serialize(msg.as_bytes()).collect::<String>()
+        ))
+        .into_response();
+        r.headers_mut().insert(
+            header::SET_COOKIE,
+            cookie(SAML_STATE, "", Some(0), secure)
+                .parse()
+                .expect("cookie header"),
+        );
+        r
+    };
+    let state_cookie = headers
+        .get(header::COOKIE)
+        .and_then(|v| v.to_str().ok())
+        .and_then(|c| cookie_value(c, SAML_STATE));
+    let user = match state.saml.finish_login(&form.saml_response, state_cookie) {
+        Ok(u) => u,
+        Err(e) => {
+            tracing::warn!(error = %e, "console saml login rejected");
+            return fail(e.to_string());
+        }
+    };
+    let token = match state.oidc.issue_session(&user) {
+        Ok(t) => t,
+        Err(e) => return fail(e.to_string()),
+    };
+    tracing::info!(email = %user.email, role = user.role.as_str(), "console saml login");
+    let mut r = Redirect::to("/console/").into_response();
+    let h = r.headers_mut();
+    h.append(
+        header::SET_COOKIE,
+        cookie(SAML_STATE, "", Some(0), secure)
+            .parse()
+            .expect("cookie header"),
+    );
+    h.append(
+        header::SET_COOKIE,
+        cookie(
+            SESSION_COOKIE,
+            &token,
+            Some(state.oidc.session_ttl().as_secs()),
+            secure,
+        )
+        .parse()
+        .expect("cookie header"),
+    );
+    r
 }

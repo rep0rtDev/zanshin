@@ -1837,6 +1837,8 @@ async fn system(
         },
         "auth": {
             "oidc": cfg.admin.oidc.is_some(),
+            "saml": state.saml.enabled(),
+            "scim": cfg.admin.scim.as_ref().is_some_and(|s| !s.token().is_empty()),
             "access_ttl_secs": cfg.auth.access_ttl.as_secs(),
             "refresh_ttl_secs": cfg.auth.refresh_ttl.as_secs(),
         },

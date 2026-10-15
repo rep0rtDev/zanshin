@@ -64,6 +64,9 @@ chrono.workspace = true
 chrono-tz.workspace = true
 cron.workspace = true
 flate2.workspace = true
+roxmltree = "0.20"
+x509-parser = "0.16"
+ring = "0.17"
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
 jsonwebtoken = { workspace = true }
 rust-embed.workspace = true

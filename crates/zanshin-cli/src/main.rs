@@ -121,6 +121,33 @@ enum ConfigCmd {
         #[arg(long)]
         dry_run: bool,
     },
+    /// Config as code: write the server configuration as <dir>/<kind>/<key>.yaml
+    Pull {
+        dir: PathBuf,
+        #[command(flatten)]
+        kinds: Kinds,
+    },
+    /// Config as code: apply a directory of <kind>/<key>.yaml|json files to the server
+    Apply {
+        dir: PathBuf,
+        #[command(flatten)]
+        kinds: Kinds,
+        /// Delete server entities that are missing from the directory (replace mode)
+        #[arg(long)]
+        prune: bool,
+        /// Plan only, change nothing
+        #[arg(long)]
+        dry_run: bool,
+    },
+    /// Config as code: exit 2 when the server differs from the directory
+    Drift {
+        dir: PathBuf,
+        #[command(flatten)]
+        kinds: Kinds,
+        /// Also report entities present on the server but not in the directory
+        #[arg(long)]
+        prune: bool,
+    },
     /// Export from this server and import into another one (dev → staging → prod)
     Promote {
         /// Target server URL
@@ -358,6 +385,125 @@ fn kinds_v(k: &Kinds) -> Value {
     }
 }
 
+/// Directory layout: `<dir>/<kind>/<key>.yaml` (or `.json`); the file is the entity object.
+fn read_bundle_dir(dir: &std::path::Path) -> Result<Value> {
+    let mut entities = serde_json::Map::new();
+    let rd = std::fs::read_dir(dir).with_context(|| format!("read {}", dir.display()))?;
+    let mut kinds: Vec<_> = rd
+        .filter_map(|e| e.ok())
+        .filter(|e| e.path().is_dir())
+        .collect();
+    kinds.sort_by_key(|e| e.file_name());
+    for kd in kinds {
+        let kind = kd.file_name().to_string_lossy().to_string();
+        let mut items = Vec::new();
+        let mut files: Vec<_> = std::fs::read_dir(kd.path())?
+            .filter_map(|e| e.ok())
+            .map(|e| e.path())
+            .filter(|p| {
+                matches!(
+                    p.extension().and_then(|x| x.to_str()),
+                    Some("yaml") | Some("yml") | Some("json")
+                )
+            })
+            .collect();
+        files.sort();
+        for f in files {
+            let text =
+                std::fs::read_to_string(&f).with_context(|| format!("read {}", f.display()))?;
+            let mut v: Value = if f.extension().and_then(|x| x.to_str()) == Some("json") {
+                serde_json::from_str(&text)
+                    .with_context(|| format!("{} is not JSON", f.display()))?
+            } else {
+                serde_yaml::from_str(&text)
+                    .with_context(|| format!("{} is not YAML", f.display()))?
+            };
+            if v.get("key").is_none() {
+                if let Some(stem) = f.file_stem().and_then(|x| x.to_str()) {
+                    v["key"] = Value::String(stem.to_string());
+                }
+            }
+            items.push(v);
+        }
+        entities.insert(kind, Value::Array(items));
+    }
+    Ok(json!({ "format": "zanshin.config.v1", "exported_at": chrono_now(), "entities": entities }))
+}
+
+fn chrono_now() -> String {
+    let secs = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    // RFC 3339 without pulling chrono: days since epoch → civil date
+    let (days, rem) = (secs / 86_400, secs % 86_400);
+    let (h, m, s) = (rem / 3600, rem % 3600 / 60, rem % 60);
+    let z = days as i64 + 719_468;
+    let era = z.div_euclid(146_097);
+    let doe = z.rem_euclid(146_097);
+    let yoe = (doe - doe / 1460 + doe / 36_524 - doe / 146_096) / 365;
+    let y = yoe + era * 400;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let d = doy - (153 * mp + 2) / 5 + 1;
+    let mo = if mp < 10 { mp + 3 } else { mp - 9 };
+    let y = if mo <= 2 { y + 1 } else { y };
+    format!("{y:04}-{mo:02}-{d:02}T{h:02}:{m:02}:{s:02}Z")
+}
+
+fn write_bundle_dir(dir: &std::path::Path, bundle: &Value) -> Result<usize> {
+    let entities = bundle
+        .get("entities")
+        .and_then(|e| e.as_object())
+        .context("bundle has no entities")?;
+    let mut n = 0;
+    for (kind, items) in entities {
+        let kd = dir.join(kind);
+        std::fs::create_dir_all(&kd)?;
+        for it in items.as_array().into_iter().flatten() {
+            let Some(key) = it.get("key").and_then(|k| k.as_str()) else {
+                continue;
+            };
+            let safe: String = key
+                .chars()
+                .map(|c| {
+                    if c.is_ascii_alphanumeric() || c == '-' || c == '_' || c == '.' {
+                        c
+                    } else {
+                        '_'
+                    }
+                })
+                .collect();
+            let path = kd.join(format!("{safe}.yaml"));
+            std::fs::write(&path, serde_yaml::to_string(it)?)
+                .with_context(|| format!("write {}", path.display()))?;
+            n += 1;
+        }
+    }
+    Ok(n)
+}
+
+fn plan_has_changes(v: &Value) -> bool {
+    let obj = v.get("plan").unwrap_or(v);
+    if let Some(sum) = obj.get("summary").and_then(|s| s.as_object()) {
+        return ["added", "changed", "removed"]
+            .iter()
+            .any(|f| sum.get(*f).and_then(|x| x.as_u64()).unwrap_or(0) > 0);
+    }
+    let Some(kinds) = obj.get("kinds").unwrap_or(obj).as_object() else {
+        return false;
+    };
+    kinds.values().any(|d| {
+        ["added", "changed", "removed"]
+            .iter()
+            .any(|f| match d.get(*f) {
+                Some(Value::Array(a)) => !a.is_empty(),
+                Some(Value::Number(n)) => n.as_u64().unwrap_or(0) > 0,
+                _ => false,
+            })
+    })
+}
+
 fn print_plan(v: &Value) {
     if let Some(kinds) = v.get("plan").or(Some(v)).and_then(|p| p.as_object()) {
         for (kind, d) in kinds {
@@ -429,6 +575,49 @@ async fn main() -> Result<()> {
                     )
                     .await?;
                 print_plan(&v);
+                v
+            }
+            ConfigCmd::Pull { dir, kinds } => {
+                let bundle = api
+                    .get(&format!("/admin/v1/config/export{}", kinds_q(&kinds)))
+                    .await?;
+                let n = write_bundle_dir(&dir, &bundle)?;
+                eprintln!("wrote {n} files to {}", dir.display());
+                json!({ "files": n })
+            }
+            ConfigCmd::Apply {
+                dir,
+                kinds,
+                prune,
+                dry_run,
+            } => {
+                let bundle = read_bundle_dir(&dir)?;
+                let mode = if prune { "replace" } else { "merge" };
+                let v = api
+                    .post(
+                        "/admin/v1/config/import",
+                        json!({"bundle": bundle, "mode": mode, "kinds": kinds_v(&kinds), "dry_run": dry_run}),
+                    )
+                    .await?;
+                print_plan(&v);
+                v
+            }
+            ConfigCmd::Drift { dir, kinds, prune } => {
+                let bundle = read_bundle_dir(&dir)?;
+                let mode = if prune { "replace" } else { "merge" };
+                let v = api
+                    .post(
+                        "/admin/v1/config/diff",
+                        json!({"bundle": bundle, "mode": mode, "kinds": kinds_v(&kinds)}),
+                    )
+                    .await?;
+                print_plan(&v);
+                if plan_has_changes(&v) {
+                    eprintln!("drift detected");
+                    println!("{}", serde_json::to_string_pretty(&v)?);
+                    std::process::exit(2);
+                }
+                eprintln!("no drift");
                 v
             }
             ConfigCmd::Promote {

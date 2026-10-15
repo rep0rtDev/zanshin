@@ -87,6 +87,8 @@ function ConfigTab() {
   const [result, setResult] = useState<unknown>(null);
   const [err, setErr] = useState<Error | null>(null);
   const [remote, setRemote] = useState({ url: '', admin_key: '' });
+  const [target, setTarget] = useState({ url: '', admin_key: '', project: '' });
+  const promote = (dry_run: boolean) => post<unknown>('/config/promote', { ...target, mode, dry_run }).then((r) => { setResult(r); setErr(null); }, setErr);
   const download = () => get<unknown>('/config/export').then((b) => {
     const blob = new Blob([JSON.stringify(b, null, 2)], { type: 'application/json' });
     const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `zanshin-config-${new Date().toISOString().slice(0, 10)}.json`; a.click();
@@ -132,6 +134,18 @@ function ConfigTab() {
           </div>
         )}
         {result != null && <pre className="mono hint" style={{ whiteSpace: 'pre-wrap', maxHeight: 240, overflow: 'auto' }}>{JSON.stringify(result, null, 2)}</pre>}
+      </div>
+      <div className="card stack">
+        <strong>Promote to another environment</strong>
+        <p className="hint">Push this project's configuration into another server (dev → staging → prod) using the import mode above. Preview first: the plan is computed on the target and nothing changes.</p>
+        <div className="row" style={{ alignItems: 'end' }}>
+          <Text label="Target server URL" value={target.url} onChange={(url) => setTarget({ ...target, url })} mono />
+          <Text label="Target admin key" value={target.admin_key} onChange={(admin_key) => setTarget({ ...target, admin_key })} mono />
+          <Text label="Target project (optional)" value={target.project} onChange={(project) => setTarget({ ...target, project })} mono />
+          <button className="btn ghost" disabled={!target.url || !target.admin_key} onClick={() => promote(true)}>Preview plan</button>
+          <button className="btn" disabled={!target.url || !target.admin_key} onClick={() => promote(false)}>Promote</button>
+        </div>
+        <div className="hint">Same thing from CI: <code>zanshinctl config promote --to … --to-key …</code>, or keep configuration in git with <code>zanshinctl config pull / apply / drift</code> and the <code>zanshin-apply</code> GitHub Action.</div>
       </div>
     </div>
   );

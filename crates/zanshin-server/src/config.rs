@@ -297,6 +297,12 @@ pub struct AdminConfig {
     /// Single sign-on for the console via any OpenID Connect provider.
     #[serde(default)]
     pub oidc: Option<OidcConfig>,
+    /// SAML 2.0 single sign-on for the admin console (SP-initiated, HTTP-POST binding).
+    #[serde(default)]
+    pub saml: Option<SamlConfig>,
+    /// SCIM 2.0 provisioning of console users (bearer token).
+    #[serde(default)]
+    pub scim: Option<ScimConfig>,
     /// Lifetime of a console login (cookie session) established through OIDC.
     #[serde(default = "default_console_session_ttl", with = "humantime_serde")]
     pub console_session_ttl: Duration,
@@ -330,6 +336,75 @@ pub struct OidcConfig {
     /// Only allow emails from these domains (empty = any).
     #[serde(default)]
     pub allowed_domains: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SamlConfig {
+    /// IdP single-sign-on URL (HTTP-Redirect binding) the browser is sent to.
+    pub idp_sso_url: String,
+    /// Expected `Issuer` of responses; empty = not checked.
+    #[serde(default)]
+    pub idp_entity_id: String,
+    /// IdP signing certificate(s), PEM or bare base64 DER. Any of them may sign.
+    pub idp_certs: Vec<String>,
+    /// Our entity id (defaults to the metadata URL).
+    #[serde(default)]
+    pub sp_entity_id: String,
+    /// Public URL of `/console/auth/saml/acs`.
+    pub acs_url: String,
+    /// Assertion attribute holding the email (default: NameID when it is an email, else `email` / `mail`).
+    #[serde(default = "default_saml_email_attr")]
+    pub email_attribute: String,
+    #[serde(default = "default_saml_name_attr")]
+    pub name_attribute: String,
+    /// Attribute holding groups / roles.
+    #[serde(default = "default_saml_role_attr")]
+    pub role_attribute: String,
+    #[serde(default)]
+    pub role_map: HashMap<String, zanshin_core::apikey::Role>,
+    #[serde(default)]
+    pub default_role: Option<zanshin_core::apikey::Role>,
+    #[serde(default)]
+    pub allowed_domains: Vec<String>,
+    /// Accept RSA-SHA1 signatures (legacy IdPs). Off by default.
+    #[serde(default)]
+    pub allow_sha1: bool,
+}
+
+fn default_saml_email_attr() -> String {
+    "email".into()
+}
+fn default_saml_name_attr() -> String {
+    "name".into()
+}
+fn default_saml_role_attr() -> String {
+    "groups".into()
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ScimConfig {
+    /// Bearer token the identity provider presents (or `token_file`).
+    #[serde(default)]
+    pub token: String,
+    #[serde(default)]
+    pub token_file: Option<String>,
+    /// Archetype for users created without a matching group (`None` = minimal viewer permissions).
+    #[serde(default)]
+    pub default_archetype: Option<String>,
+    /// SCIM group `displayName` → console archetype.
+    #[serde(default)]
+    pub group_archetypes: HashMap<String, String>,
+}
+
+impl ScimConfig {
+    pub fn token(&self) -> String {
+        if let Some(f) = &self.token_file {
+            if let Ok(t) = std::fs::read_to_string(f) {
+                return t.trim().to_string();
+            }
+        }
+        self.token.clone()
+    }
 }
 
 fn default_console_session_ttl() -> Duration {
