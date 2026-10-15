@@ -196,7 +196,9 @@ export default function App() {
   const [collapsed, setCollapsed] = useState(() => localStorage.getItem('zanshin.nav') === 'collapsed');
   const loadMe = useCallback(async () => {
     try {
-      setMe(await get<Me>('/me'));
+      const m = await get<Me>('/me');
+      setMe(m);
+      if (m.locale && m.locale !== locale && LOCALES.some(([k]) => k === m.locale)) setLocale(m.locale as Locale);
       get<{ timezone?: string }>('/console/settings').then((c) => setDisplayTz(c.timezone ?? ''), () => {});
     } catch {
       setMe(null);

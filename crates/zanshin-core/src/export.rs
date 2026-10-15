@@ -267,6 +267,9 @@ pub struct ConfigSnapshot {
 }
 
 /// Field-level difference between two entity JSON objects (top-level keys only; nested values compared whole).
+/// Fields of `after` (the incoming file) that differ from `before` (the server's current entity).
+/// Keys the file does not mention are not drift: imports are patches, so an absent key keeps the
+/// server's value, and a hand-written file need not spell out every default.
 pub fn diff_fields(before: &Value, after: &Value) -> Vec<String> {
     let mut keys: Vec<String> = Vec::new();
     if let (Some(a), Some(b)) = (before.as_object(), after.as_object()) {
@@ -278,19 +281,29 @@ pub fn diff_fields(before: &Value, after: &Value) -> Vec<String> {
                 keys.push(k.clone());
             }
         }
-        for k in a.keys() {
-            if !VOLATILE.contains(&k.as_str()) && !b.contains_key(k) {
-                keys.push(k.clone());
-            }
-        }
     }
     keys.sort();
     keys
 }
 
-/// Keys that differ between servers without being a configuration change.
+/// Keys that differ between servers without being a configuration change — ids, timestamps and
+/// runtime state the server maintains on its own (computed-at markers, delivery health, guardrail
+/// interruptions, experiment winners, counters). They are stripped from pulled files and ignored
+/// when planning an import.
 pub const VOLATILE: &[&str] = &[
     "id",
+    "last_computed_at",
+    "interrupted_at",
+    "interrupt_reason",
+    "health",
+    "winner",
+    "last_fired_at",
+    "fired_count",
+    "last_status",
+    "last_at",
+    "sent_count",
+    "failed_count",
+    "runs",
     "version",
     "created_at",
     "updated_at",
@@ -314,6 +327,16 @@ mod tests {
         let a = json!({"key": "x", "enabled": true, "version": 1, "updated_at": "a"});
         let b = json!({"key": "x", "enabled": false, "version": 2, "updated_at": "b", "name": "n"});
         assert_eq!(diff_fields(&a, &b), vec!["enabled", "name"]);
+    }
+
+    #[test]
+    fn diff_ignores_keys_absent_from_the_file_and_runtime_state() {
+        let server = json!({"key": "x", "enabled": true, "metrics": [], "join_mode": "auto",
+            "last_computed_at": "2026-01-01T00:00:00Z", "health": {"last_status": "failed"}});
+        let file = json!({"key": "x", "enabled": true});
+        assert!(diff_fields(&server, &file).is_empty());
+        let file2 = json!({"key": "x", "enabled": true, "join_mode": "explicit", "health": {"last_status": "ok"}});
+        assert_eq!(diff_fields(&server, &file2), vec!["join_mode"]);
     }
 
     #[test]

@@ -93,7 +93,7 @@ export function qs(params: Record<string, string | number | boolean | undefined 
 }
 
 export type Role = 'viewer' | 'editor' | 'admin';
-export type Me = { name: string; auth: 'api_key' | 'bootstrap' | 'oidc' | 'user'; role: Role; read_only: boolean; permissions: Record<string, ('read' | 'write' | 'delete')[]>; user_id: string | null; mfa_enabled: boolean; must_change_password: boolean };
+export type Me = { name: string; auth: 'api_key' | 'bootstrap' | 'oidc' | 'user'; role: Role; read_only: boolean; permissions: Record<string, ('read' | 'write' | 'delete')[]>; user_id: string | null; mfa_enabled: boolean; must_change_password: boolean; locale?: string | null };
 
 /** Whether the server offers OIDC single sign-on for the console. */
 export type AuthConfig = { oidc: boolean; saml: boolean; password: boolean; needs_bootstrap: boolean };

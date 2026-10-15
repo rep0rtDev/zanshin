@@ -4766,7 +4766,7 @@ dependencies = [
 
 [[package]]
 name = "zanshin-cli"
-version = "0.2.1"
+version = "0.2.2"
 dependencies = [
  "anyhow",
  "chrono",
@@ -4777,11 +4777,12 @@ dependencies = [
  "serde_json",
  "serde_yaml",
  "tokio",
+ "zanshin-core",
 ]
 
 [[package]]
 name = "zanshin-core"
-version = "0.2.1"
+version = "0.2.2"
 dependencies = [
  "anyhow",
  "base64 0.22.1",
@@ -4804,7 +4805,7 @@ dependencies = [
 
 [[package]]
 name = "zanshin-proto"
-version = "0.2.1"
+version = "0.2.2"
 dependencies = [
  "prost",
  "prost-types",
@@ -4815,7 +4816,7 @@ dependencies = [
 
 [[package]]
 name = "zanshin-server"
-version = "0.2.1"
+version = "0.2.2"
 dependencies = [
  "anyhow",
  "argon2",
@@ -4880,7 +4881,7 @@ dependencies = [
 
 [[package]]
 name = "zanshin-store"
-version = "0.2.1"
+version = "0.2.2"
 dependencies = [
  "anyhow",
  "chrono",

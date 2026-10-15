@@ -815,6 +815,7 @@ admin must be changed on first login (`must_change_password` in `GET /admin/v1/m
 | --- | --- | --- |
 | `GET` | `/me` | now also `permissions`, `user_id`, `mfa_enabled`, `must_change_password`, `auth: "user"` |
 | `POST` | `/me/password` | `{current_password, new_password}`; revokes other sessions |
+| `PUT` | `/me/locale` | `{locale}` — console language for this user (`en`, `ru`, …; `null` = browser default), returned as `locale` in `/me` |
 | `POST` | `/me/mfa/setup` | `{secret, otpauth_url}` (RFC 6238, SHA-1, 30 s, 6 digits) |
 | `POST` | `/me/mfa/enable` | `{code}` → `{recovery_codes: [10 single-use codes]}` |
 | `POST` | `/me/mfa/disable` | `{code}` |
@@ -936,6 +937,7 @@ Configure `admin.scim.token` (or `token_file`), optional `default_archetype` and
 
 ## Config as code & promotion
 
+- Drift semantics: a file only needs the fields you care about — keys it does not mention keep the server's value and are not drift; runtime state (`last_computed_at`, `health`, `winner`, `interrupted_at`, counters, timestamps) is never compared and is stripped by `config pull`.
 - `zanshinctl config pull <dir>` writes `<dir>/<kind>/<key>.yaml`; `zanshinctl config apply <dir> [--prune] [--dry-run] [--kinds a,b]` imports the directory (merge, or replace with `--prune`); `zanshinctl config drift <dir>` prints the plan and exits with code 2 when the server differs. Files may also be `.json`; a missing `key` is taken from the file name.
 - GitHub Action `rep0rtDev/zanshin/.github/actions/zanshin-apply@main` with inputs `server`, `key`, `project`, `dir`, `mode` (`apply` / `plan` / `drift`), `prune`, `kinds`, `version`.
 

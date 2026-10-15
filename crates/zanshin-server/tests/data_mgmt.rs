@@ -281,6 +281,21 @@ async fn data_management_flow() {
         .unwrap()
         .iter()
         .any(|a| a["key"] == fkey2));
+    // A hand-written file that only spells out some fields is not drift: absent keys keep the
+    // server's values, and runtime state (`stats`, timestamps) is never compared.
+    let partial = json!({"format": "zanshin-config/1", "entities": {"flags": [
+        {"key": fkey, "value_type": "bool", "default_value": false, "description": "v1"}
+    ]}});
+    let (st, d2) = adm(
+        reqwest::Method::POST,
+        "/admin/v1/config/diff".into(),
+        Some(json!({"bundle": partial, "mode": "merge", "kinds": ["flags"]})),
+    )
+    .await;
+    assert_eq!(st, 200, "{d2}");
+    let fl2 = &d2["kinds"]["flags"];
+    assert_eq!(fl2["unchanged"], 1, "{fl2}");
+    assert!(fl2["changed"].as_array().unwrap().is_empty(), "{fl2}");
     let (_, dry) = adm(
         reqwest::Method::POST,
         "/admin/v1/config/import".into(),
