@@ -58,7 +58,7 @@ function Sql() {
     <div className="stack">
       {st.data && !st.data.available && <div className="card"><Badge tone="warn">ClickHouse is not enabled</Badge> <span className="hint">The SQL explorer reads the ClickHouse <code>events</code> table; configure <code>clickhouse.enabled</code> to use it.</span></div>}
       <div className="card">
-        <Field label="Read-only SQL" hint="single SELECT / WITH statement on `events`; readonly=1, 30 s, row cap">
+        <Field label="Read-only SQL" hint="single SELECT / WITH statement on `events`; readonly=2, 30 s, row cap">
           <textarea className="mono" value={sql} onChange={(e) => setSql(e.target.value)} rows={8} style={{ width: '100%' }} spellCheck={false} />
         </Field>
         <div className="row" style={{ alignItems: 'end' }}>

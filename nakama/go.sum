@@ -2,8 +2,8 @@ github.com/coder/websocket v1.8.12 h1:5bUXkEPPIbewrnkU8LTCLVaxi4N4J8ahufH2vlo4NA
 github.com/coder/websocket v1.8.12/go.mod h1:LNVeNrXQZfe5qhS9ALED3uA+l5pPqvwXg3CKoDBB2gs=
 github.com/google/go-cmp v0.5.5 h1:Khx7svrCpmxxtHBq5j2mp/xVjsi8hQMfNLvJFAlrGgU=
 github.com/google/go-cmp v0.5.5/go.mod h1:v8dTdLbMG2kIc/vJvl+f65V22dbkXbowE6jgT/gNBxE=
-github.com/heroiclabs/nakama-common v1.33.0 h1:ojGPgVZ/goyAH6jrm3Emg7034yGDdqB/f5vTa6AJ5n0=
-github.com/heroiclabs/nakama-common v1.33.0/go.mod h1:lPG64MVCs0/tEkh311Cd6oHX9NLx2vAPx7WW7QCJHQ0=
+github.com/heroiclabs/nakama-common v1.32.0 h1:aCWyYf9mQzifeVu3bXBiRRL9Z/dGBgwY/rgUWoYCnQM=
+github.com/heroiclabs/nakama-common v1.32.0/go.mod h1:lPG64MVCs0/tEkh311Cd6oHX9NLx2vAPx7WW7QCJHQ0=
 github.com/klauspost/cpuid/v2 v2.0.9 h1:lgaqFMSdTdQYdZ04uHyN2d/eKdOMyi2YLSvlQIBFYa4=
 github.com/klauspost/cpuid/v2 v2.0.9/go.mod h1:FInQzS24/EEf25PyTYn52gqo7WaD8xa0213Md/qVLRg=
 github.com/zeebo/assert v1.3.0 h1:g7C04CbJuIDKNPFHmsk4hwZDO5O+kntRxzaUoNXj+IQ=

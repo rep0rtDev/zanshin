@@ -891,7 +891,7 @@ Campaign fields (`POST/PUT /admin/v1/messages`):
 | Method | Path | Permission | Notes |
 |---|---|---|---|
 | GET | `/admin/v1/sql` | `sql:read` | `{ available, max_rows }` — the explorer needs ClickHouse |
-| POST | `/admin/v1/sql` | `sql:write` | `{ sql, limit? }` → `{ columns, types, rows, rows_read, elapsed_secs, truncated }`. One `SELECT` / `WITH` statement; DDL / DML / `SETTINGS` / table functions / comments are rejected (400); runs with `readonly=1`, ≤ 10 000 rows, 30 s |
+| POST | `/admin/v1/sql` | `sql:write` | `{ sql, limit? }` → `{ columns, types, rows, rows_read, elapsed_secs, truncated }`. One `SELECT` / `WITH` statement; DDL / DML / `SETTINGS` / table functions / comments are rejected (400); runs with `readonly=2`, ≤ 10 000 rows, 30 s |
 | POST | `/admin/v1/sql/cohort` | `sql:write` | `{ sql, audience_key, name? }` — the `identity_id` column becomes a managed audience (created if missing) |
 | GET/POST | `/admin/v1/analytics/queries` | `analytics` | saved queries `{ key, name, description, sql, tags }` |
 | GET/PUT/DELETE | `/admin/v1/analytics/queries/{key}` | `analytics` | |

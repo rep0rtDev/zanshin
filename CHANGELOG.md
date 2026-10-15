@@ -7,6 +7,12 @@ Release automation reads the section whose heading contains the tagged version.
 ## [Unreleased]
 
 ### Added
+- Hardening: `zanshin --doctor [--json]` checks a deployment end to end (config sanity, PostgreSQL +
+  pending migrations, Redis, ClickHouse, clock skew, integrations, console users, SSO) and exits 1
+  on failures; CI job `live` runs the suite against real services — Keycloak (OIDC **and** SAML
+  logins with group → role mapping), ClickHouse (SQL explorer, paths, alerts), Mailpit (SMTP),
+  RustFS (S3 jsonl + Parquet export) and Nakama with the Zanshin module (RPCs, identity sync);
+  SCIM request shapes of Okta and Microsoft Entra ID are replayed in e2e.
 - Platform — SDKs: **local evaluation** of flags in the Go and TypeScript server SDKs from a new
   rules bundle (`GET /server/v1/rules`: flag definitions + dynamic audiences; same xxh3 bucketing,
   operators and reasons as the server; refreshed on TTL and change-stream events — zero-latency
@@ -36,7 +42,7 @@ Release automation reads the section whose heading contains the tagged version.
   (`POST /admin/v1/config/promote` pushes this project's configuration into another server with a
   dry-run plan).
 - Analytics v5: read-only **SQL explorer** over ClickHouse (`POST /admin/v1/sql`, permission `sql`,
-  single-statement guard, `readonly=1`, row / time caps), **saved queries**, **scheduled reports**
+  single-statement guard, `readonly=2`, row / time caps), **saved queries**, **scheduled reports**
   (cron + timezone, saved query → Slack / Discord / webhook channels and/or email through an email
   integration), **metric alerts** (count / unique / sum of an event over a window; above / below
   threshold or z-score anomaly vs previous windows; cooldown, fire history, `alert` notifications),

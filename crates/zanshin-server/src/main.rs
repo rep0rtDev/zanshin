@@ -22,6 +22,12 @@ struct Cli {
     /// Apply database migrations and exit (for init containers / release steps).
     #[arg(long)]
     migrate: bool,
+    /// Check configuration, stores, migrations, clock and integrations; exit 1 on failures.
+    #[arg(long)]
+    doctor: bool,
+    /// With --doctor: machine-readable JSON report.
+    #[arg(long)]
+    json: bool,
 }
 
 #[tokio::main]
@@ -31,6 +37,15 @@ async fn main() -> anyhow::Result<()> {
     if cli.check_config {
         println!("{}", cfg.redacted_yaml()?);
         return Ok(());
+    }
+    if cli.doctor {
+        let report = zanshin_server::doctor::run(&cfg).await;
+        if cli.json {
+            println!("{}", serde_json::to_string_pretty(&report)?);
+        } else {
+            print!("{}", zanshin_server::doctor::render(&report));
+        }
+        std::process::exit(if report.ok { 0 } else { 1 });
     }
     telemetry::init_with(&cfg.log, &cfg.telemetry)?;
     telemetry::prometheus();

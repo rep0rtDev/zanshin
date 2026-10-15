@@ -114,7 +114,9 @@ struct Stats {
 }
 
 impl ClickHouse {
-    /// Runs an already-validated read-only statement with `readonly=1`, a row cap and a time limit.
+    /// Runs an already-validated read-only statement with `readonly=2` (no writes or DDL; `1` would
+    /// reject the row/time limits because HTTP sessions already run with readonly=2), a row cap
+    /// and a time limit.
     pub async fn sql_readonly(
         &self,
         sql: &str,
@@ -124,7 +126,7 @@ impl ClickHouse {
         let mut cursor = self
             .client
             .query(sql)
-            .with_option("readonly", "1")
+            .with_option("readonly", "2")
             .with_option("max_result_rows", max_rows.to_string())
             .with_option("result_overflow_mode", "break")
             .with_option("max_execution_time", timeout_secs.to_string())
