@@ -28,6 +28,7 @@ pub const RESOURCES: &[&str] = &[
     "api_keys",
     "users",
     "settings",
+    "approvals",
 ];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
@@ -214,6 +215,7 @@ pub fn resource_for_path(path: &str) -> Option<&'static str> {
         "flags" => "flags",
         "audiences" => "audiences",
         "experiments" | "holdouts" => "experiments",
+        "change-requests" => "approvals",
         "metrics" => "metrics",
         "live-events" => "live_events",
         "messages" | "push" => "messages",

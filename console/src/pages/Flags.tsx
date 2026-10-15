@@ -6,7 +6,10 @@ import { RulesEditor, TypedValue } from '../RuleBuilder';
 import type { Rule } from '../RuleBuilder';
 import { Badge, Confirm, ErrorBox, Field, JsonField, Table, Toggle, fmtDate } from '../ui';
 
+type Prerequisite = { flag: string; value?: unknown };
+type Schedule = { id: string; at: string; patch: unknown; status: string; created_by: string; note: string; error: string; applied_at?: string | null };
 type Flag = {
+  prerequisites?: Prerequisite[];
   key: string; name: string; description: string; value_type: 'bool' | 'string' | 'number' | 'json'; default_value: unknown;
   enabled: boolean; rules: Rule[]; tags: string[]; version: number; updated_at: string;
 };
@@ -140,6 +143,98 @@ function DryRun({ flag }: { flag: Flag }) {
   );
 }
 
+function PrerequisitesEditor({ self, value, onChange }: { self: string; value: Prerequisite[]; onChange: (v: Prerequisite[]) => void }) {
+  const q = useLoad(() => get<{ items: Flag[] }>('/flags'), []);
+  const flags = (q.data?.items ?? []).filter((f) => f.key !== self);
+  const upd = (i: number, p: Partial<Prerequisite>) => onChange(value.map((x, j) => (j === i ? { ...x, ...p } : x)));
+  return (
+    <div className="stack" style={{ gap: 6 }}>
+      {value.map((p, i) => (
+        <div className="row" key={i} style={{ alignItems: 'end' }}>
+          <label className="field"><span className="label">Flag</span>
+            <select value={p.flag} onChange={(e) => upd(i, { flag: e.target.value })}>
+              <option value="">— pick —</option>
+              {flags.map((f) => <option key={f.key} value={f.key}>{f.key}</option>)}
+            </select>
+          </label>
+          <Field label="Required value (JSON, empty = just enabled)"><input className="mono" value={p.value === undefined ? '' : JSON.stringify(p.value)} onChange={(e) => { const v = e.target.value; try { upd(i, { value: v.trim() ? JSON.parse(v) : undefined }); } catch { /* keep typing */ } }} /></Field>
+          <button type="button" className="btn ghost sm" onClick={() => onChange(value.filter((_, j) => j !== i))}>remove</button>
+        </div>
+      ))}
+      <div><button type="button" className="btn ghost sm" onClick={() => onChange([...value, { flag: '' }])}>+ add prerequisite</button></div>
+    </div>
+  );
+}
+
+function SchedulePanel({ flag, reload }: { flag: Flag; reload: () => void }) {
+  const q = useLoad(() => get<{ items: Schedule[] }>(`/flags/${encodeURIComponent(flag.key)}/schedules`), [flag.key, flag.version]);
+  const [at, setAt] = useState('');
+  const [patch, setPatch] = useState('{\n  "enabled": false\n}');
+  const [note, setNote] = useState('');
+  const [err, setErr] = useState<Error | null>(null);
+  const submit = async () => {
+    try {
+      await post(`/flags/${encodeURIComponent(flag.key)}/schedules`, { at: new Date(at).toISOString(), patch: JSON.parse(patch), note });
+      setErr(null); setAt(''); setNote(''); q.reload();
+    } catch (e) { setErr(e as Error); }
+  };
+  return (
+    <div className="stack">
+      <div className="card">
+        <strong>Kill switch</strong> <span className="hint">disable the flag for everyone right now; clients fall back to the default</span>
+        <div style={{ marginTop: 8 }}>
+          {flag.enabled
+            ? <Confirm danger onConfirm={() => post(`/flags/${encodeURIComponent(flag.key)}/kill`).then(reload, setErr)}>Kill flag</Confirm>
+            : <button className="btn" onClick={() => post(`/flags/${encodeURIComponent(flag.key)}/restore`).then(reload, setErr)}>Restore (enable)</button>}
+        </div>
+      </div>
+      <div className="card">
+        <strong>Scheduled changes</strong> <span className="hint">a patch applied at the given time (checked every minute)</span>
+        <ErrorBox error={err ?? q.error} />
+        <Table<Schedule> rows={q.data?.items ?? []} rowKey={(s) => s.id} empty="Nothing scheduled."
+          cols={[
+            { h: 'When', c: (s) => fmtDate(s.at) },
+            { h: 'Patch', c: (s) => <code>{JSON.stringify(s.patch)}</code> },
+            { h: 'Status', c: (s) => <Badge tone={s.status === 'applied' ? 'ok' : s.status === 'failed' ? 'bad' : s.status === 'pending' ? 'info' : undefined}>{s.status}</Badge> },
+            { h: 'Note', c: (s) => <>{s.note}{s.error && <div className="hint">{s.error}</div>}</> },
+            { h: 'By', c: (s) => s.created_by },
+            { h: '', c: (s) => s.status === 'pending' ? <button className="btn ghost sm" onClick={() => del(`/flags/${encodeURIComponent(flag.key)}/schedules/${s.id}`).then(() => q.reload(), setErr)}>cancel</button> : null },
+          ]} />
+        <div className="row" style={{ alignItems: 'end', marginTop: 8 }}>
+          <label className="field"><span className="label">At (local time)</span><input type="datetime-local" value={at} onChange={(e) => setAt(e.target.value)} /></label>
+          <Field label="Patch (flag fields)"><textarea className="mono" rows={3} value={patch} onChange={(e) => setPatch(e.target.value)} /></Field>
+          <Text label="Note" value={note} onChange={setNote} />
+          <button className="btn" disabled={!at} onClick={submit}>Schedule</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+type Stats = { total: number; days: number; last_day?: string | null; by_variant: Record<string, number>; series: { day: string; variant: string; count: number }[] };
+function StatsPanel({ flag }: { flag: Flag; reload: () => void }) {
+  const [days, setDays] = useState(30);
+  const q = useLoad(() => get<Stats>(`/flags/${encodeURIComponent(flag.key)}/stats?days=${days}`), [flag.key, days]);
+  const s = q.data;
+  return (
+    <div className="card">
+      <div className="row" style={{ alignItems: 'center' }}>
+        <strong>Evaluations</strong>
+        <select value={days} onChange={(e) => setDays(Number(e.target.value))}>{[7, 30, 90].map((d) => <option key={d} value={d}>last {d} days</option>)}</select>
+        {s && <span className="hint">{s.total.toLocaleString()} evaluations · last {s.last_day ?? '—'}{s.total === 0 ? ' · ' : ''}{s.total === 0 && <Badge tone="warn">no traffic — candidate for cleanup</Badge>}</span>}
+      </div>
+      <ErrorBox error={q.error} />
+      {s && (
+        <Table rows={Object.entries(s.by_variant)} rowKey={([v]) => v} empty="No evaluations in this window." cols={[
+          { h: 'Served variant', c: ([v]) => v ? <code>{v}</code> : <span className="hint">(value / default)</span> },
+          { h: 'Evaluations', c: ([, n]) => n.toLocaleString() },
+          { h: 'Share', c: ([, n]) => s.total ? ((n / s.total) * 100).toFixed(1) + '%' : '—' },
+        ]} />
+      )}
+    </div>
+  );
+}
+
 export default function Flags() {
   return (
     <EntityPage<Flag>
@@ -174,6 +269,9 @@ export default function Flags() {
           </div>
           <div className="label" style={{ margin: '4px 0 6px' }}>Rules <span className="hint">— evaluated top to bottom, first match wins</span></div>
           <RulesEditor type={d.value_type ?? 'bool'} value={d.rules ?? []} onChange={(rules) => set({ rules })} />
+          <Field label="Prerequisites" hint="rules apply only while these flags are enabled and (optionally) equal the given value; otherwise the default is served">
+            <PrerequisitesEditor self={d.key ?? ''} value={d.prerequisites ?? []} onChange={(prerequisites) => set({ prerequisites })} />
+          </Field>
           <Tags value={d.tags} onChange={(tags) => set({ tags })} />
         </>
       )}
@@ -187,6 +285,8 @@ export default function Flags() {
         { id: 'explain', label: 'Explain', render: (f) => <Explain flag={f} /> },
         { id: 'diff', label: 'Diff & size', render: (f) => <Diff flag={f} /> },
         { id: 'dryrun', label: 'Dry run', render: (f) => <DryRun flag={f} /> },
+        { id: 'schedule', label: 'Schedule', render: (f, reload) => <SchedulePanel flag={f} reload={reload} /> },
+        { id: 'stats', label: 'Stats', render: (f, reload) => <StatsPanel flag={f} reload={reload} /> },
       ]}
     />
   );

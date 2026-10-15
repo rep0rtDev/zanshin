@@ -7,6 +7,12 @@ Release automation reads the section whose heading contains the tagged version.
 ## [Unreleased]
 
 ### Added
+- Flags v3: **prerequisites** between flags (dependency must be enabled / at a value, cycles
+  rejected, `reason: prerequisite`), one-click **kill switch** (`/kill`, `/restore`), **scheduled
+  changes** applied by housekeeping, **evaluation counters** per flag / variant with a
+  **stale-flag** report, and **change requests with approvals** (`/admin/v1/change-requests`,
+  permission `approvals`, four-eyes rule) for every config kind; console: prerequisites editor,
+  Schedule and Stats tabs, kill switch, stale badges, Change requests page.
 - Experiments v4: mutually exclusive **layers**, **holdout groups** (`/admin/v1/holdouts`) that keep a
   deterministic slice of players out of experiments, **guardrail metrics** that pause an experiment
   automatically when a variant regresses control beyond a tolerance (webhook

@@ -71,6 +71,7 @@ pub struct AppState {
     pub audit: AuditService,
     pub bus: ChangeBus,
     pub flags: FlagService,
+    pub flags_v3: zanshin_store::flags_v3::FlagsV3Repo,
     pub audiences: AudienceService,
     pub experiments: ExperimentService,
     pub metrics: MetricService,
@@ -296,6 +297,7 @@ impl AppState {
             bus.clone(),
         );
         let metrics = MetricService::new(MetricRepo::new(stores.pg.clone()), events.clone());
+        let flags_v3 = zanshin_store::flags_v3::FlagsV3Repo::new(stores.pg.clone());
         let eval = Evaluator::new(
             flags.clone(),
             audiences.clone(),
@@ -341,6 +343,7 @@ impl AppState {
             audit,
             bus,
             flags,
+            flags_v3,
             audiences,
             experiments,
             events,

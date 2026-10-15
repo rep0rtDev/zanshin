@@ -3,6 +3,7 @@ import { NavLink, Navigate, Route, Routes, useLocation } from 'react-router-dom'
 import { Palette, type PaletteItem } from './Palette';
 import { Toasts } from './toast';
 import Settings from './pages/Settings';
+import ChangeRequests from './pages/ChangeRequests';
 import { MeContext } from './me';
 import { setDisplayTz } from './ui';
 import { ApiError, auth, authConfig, get, passwordLogin, project, resetPassword, ssoLogout, type AuthConfig, type Me } from './api';
@@ -132,7 +133,7 @@ const GROUPS: NavGroup[] = [
   { name: 'Engage', items: [['/messages', 'Messages', I.mail], ['/templates', 'Templates', I.doc], ['/journeys', 'Journeys', I.route], ['/integrations', 'Integrations', I.plug], ['/recipes', 'Recipes', I.lab]] },
   { name: 'Players', items: [['/identities', 'Identities', I.users], ['/taxonomy', 'Taxonomy', I.tag]] },
   { name: 'Analytics', items: [['/insights', 'Insights', I.chart], ['/analytics', 'Events', I.pulse], ['/metrics', 'Metrics', I.gauge]] },
-  { name: 'Platform', items: [['/webhooks', 'Webhooks', I.hook], ['/notifications', 'Notifications', I.mail], ['/data', 'Data', I.db], ['/api-keys', 'API keys', I.key], ['/users', 'Users', I.users], ['/audit', 'Audit log', I.list], ['/settings', 'Settings', I.gear]] },
+  { name: 'Platform', items: [['/change-requests', 'Change requests', I.list], ['/webhooks', 'Webhooks', I.hook], ['/notifications', 'Notifications', I.mail], ['/data', 'Data', I.db], ['/api-keys', 'API keys', I.key], ['/users', 'Users', I.users], ['/audit', 'Audit log', I.list], ['/settings', 'Settings', I.gear]] },
 ];
 
 const THEME_KEY = 'zanshin.theme';
@@ -217,7 +218,7 @@ export default function App() {
   }, []);
   if (me === undefined) return <div className="login"><div className="card">Loading…</div></div>;
   if (!me) return <Login cfg={cfg} onDone={() => { authConfig().then(setCfg); void loadMe(); }} />;
-  const RES: Record<string, string> = { '/flags': 'flags', '/audiences': 'audiences', '/experiments': 'experiments', '/live-events': 'live_events', '/messages': 'messages', '/templates': 'templates', '/journeys': 'journeys', '/integrations': 'integrations', '/identities': 'identities', '/taxonomy': 'taxonomy', '/insights': 'analytics', '/analytics': 'analytics', '/metrics': 'metrics', '/webhooks': 'webhooks', '/data': 'data', '/api-keys': 'api_keys', '/users': 'users', '/audit': 'audit', '/settings': 'settings' };
+  const RES: Record<string, string> = { '/flags': 'flags', '/audiences': 'audiences', '/experiments': 'experiments', '/change-requests': 'approvals', '/live-events': 'live_events', '/messages': 'messages', '/templates': 'templates', '/journeys': 'journeys', '/integrations': 'integrations', '/identities': 'identities', '/taxonomy': 'taxonomy', '/insights': 'analytics', '/analytics': 'analytics', '/metrics': 'metrics', '/webhooks': 'webhooks', '/data': 'data', '/api-keys': 'api_keys', '/users': 'users', '/audit': 'audit', '/settings': 'settings' };
   const groups = GROUPS.map((g) => ({ ...g, items: g.items.filter(([to]) => !RES[to] || allows(me.permissions, RES[to], 'read')) }));
   const pages: PaletteItem[] = groups.flatMap((g) => g.items.map(([to, label]) => ({ label, to, group: g.name || 'Pages' })));
   const signOut = async (e: React.MouseEvent) => {
@@ -279,6 +280,7 @@ export default function App() {
               <Route path="/account" element={<Account onChanged={() => void loadMe()} />} />
               <Route path="/audit" element={<Audit />} />
               <Route path="/settings/*" element={<Settings />} />
+              <Route path="/change-requests" element={<ChangeRequests />} />
               <Route path="*" element={<Navigate to="/" replace />} />
             </Routes>
           </main>
