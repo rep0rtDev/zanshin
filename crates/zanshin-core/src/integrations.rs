@@ -98,7 +98,14 @@ pub const SECRET_KEYS: &[&str] = &[
     "token",
     "password",
     "secret_key",
+    "authorization",
 ];
+
+/// Config keys whose string values are secrets: masked in API responses and encrypted at rest.
+pub fn is_secret_key(key: &str) -> bool {
+    let k = key.to_ascii_lowercase();
+    SECRET_KEYS.iter().any(|s| k.contains(s))
+}
 
 impl Integration {
     pub fn validate(&self) -> Result<()> {
@@ -154,7 +161,7 @@ impl Integration {
         let mut out = self.clone();
         if let Some(obj) = out.config.as_object_mut() {
             for (k, v) in obj.iter_mut() {
-                if SECRET_KEYS.iter().any(|s| k.contains(s)) && v.is_string() {
+                if is_secret_key(k) && v.is_string() {
                     *v = Value::String("••••".into());
                 }
             }

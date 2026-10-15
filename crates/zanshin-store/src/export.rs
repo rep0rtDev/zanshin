@@ -44,7 +44,7 @@ impl TryFrom<SinkRow> for ExportSink {
             name: r.name,
             kind: SinkKind::parse(&r.kind)
                 .ok_or_else(|| Error::invalid(format!("unknown sink kind {}", r.kind)))?,
-            config: r.config,
+            config: crate::crypto::open_value(&r.config).map_err(zanshin_core::Error::internal)?,
             format: ExportFormat::parse(&r.format).unwrap_or_default(),
             gzip: r.gzip,
             enabled: r.enabled,
@@ -107,7 +107,7 @@ impl ExportSinkRepo {
         .bind(&s.key)
         .bind(&s.name)
         .bind(s.kind.as_str())
-        .bind(&s.config)
+        .bind(crate::crypto::seal_value(&s.config))
         .bind(s.format.as_str())
         .bind(s.gzip)
         .bind(s.enabled)
@@ -130,7 +130,7 @@ impl ExportSinkRepo {
         .bind(&s.key)
         .bind(&s.name)
         .bind(s.kind.as_str())
-        .bind(&s.config)
+        .bind(crate::crypto::seal_value(&s.config))
         .bind(s.format.as_str())
         .bind(s.gzip)
         .bind(s.enabled)

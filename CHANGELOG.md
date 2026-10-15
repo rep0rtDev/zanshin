@@ -8,6 +8,7 @@ Release automation reads the section whose heading contains the tagged version.
 
 ### Added
 - Console end-to-end tests (Playwright, `console/e2e`, CI job `console-e2e`): admin-key login, Overview, creating a flag through the UI, Platform → Health, Russian locale, phone layout with the drawer. `npm run e2e` against a running server (`ZANSHIN_URL`, `ADMIN_KEY`).
+- Secrets at rest: integration and export-sink config secrets, webhook signing secrets and notification-channel URLs/headers are encrypted in Postgres with AES-256-GCM under `security.data_keys` (`ZANSHIN__SECURITY__DATA_KEYS=kid:base64,...`); the first key seals, all listed keys open. `zanshin --rewrap-secrets` re-encrypts everything under the first key (rotation), `--doctor` warns while the keys are unset. API responses keep masking secrets; existing plaintext rows keep working and are sealed on next write or rewrap.
 - CI: `upgrade-drill` (previous release seeds data → current migrations → data still served, `--doctor` clean) and `multi-replica` (two replicas, cross-replica propagation, rolling restart) jobs; documented under Upgrades.
 
 ## [0.2.2] — 2026-10-15
@@ -77,8 +78,6 @@ config as code, SDKs for 12 runtimes and the Nakama module. Highlights of the fi
   `.github/actions/zanshin-apply`, and **environment promotion** from the console / API
   (`POST /admin/v1/config/promote` pushes this project's configuration into another server with a
   dry-run plan).
-||||||| 8fbff05
-- Platform — identity & config: **SAML 2.0** console login (SP-initiated, HTTP-POST binding,
   XML-DSig verification with exclusive C14N and RSA-SHA256 — no libxml; `admin.saml`, routes
   `/console/auth/saml/{login,acs,metadata}`), **SCIM 2.0** provisioning of console users
   (`/scim/v2` Users + Groups → archetypes, bearer token `admin.scim.token`), **config as code** in
@@ -250,7 +249,6 @@ config as code, SDKs for 12 runtimes and the Nakama module. Highlights of the fi
   on admin API keys, key rotation with a grace period (`POST /admin/v1/api-keys/{id}/rotate`),
   `GET /admin/v1/permissions` catalog, Users and Account pages in the console with a permission
   matrix editor, navigation and controls that follow the caller's grants.
-||||||| constructed merge base
 - Analytics v3: events carry `country` / `platform` / `app_version` (denormalised from identity
   defaults at ingest) and every event-based report accepts a dimension filter (`country`,
   `platform`, `app_version`, `experiment` + `variant`); LiveOps **Status** board

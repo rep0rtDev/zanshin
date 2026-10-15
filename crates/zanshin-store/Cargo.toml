@@ -22,3 +22,5 @@ tracing.workspace = true
 uuid.workspace = true
 chrono.workspace = true
 futures-util = "0.3"
+ring = "0.17"
+base64.workspace = true

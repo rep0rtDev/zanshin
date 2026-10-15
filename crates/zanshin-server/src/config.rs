@@ -37,6 +37,19 @@ pub struct Config {
     pub telemetry: TelemetryConfig,
     #[serde(default)]
     pub retention: RetentionConfig,
+    #[serde(default)]
+    pub security: SecurityConfig,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SecurityConfig {
+    /// Data keys for encrypting stored secrets (integration/sink configs, webhook secrets,
+    /// notification URLs/headers) at rest: `kid:base64(32 bytes)[,kid2:...]`. The first key seals
+    /// new values, all of them can open; rotate by prepending a key and running
+    /// `zanshin --rewrap-secrets`. Unset = plaintext at rest.
+    #[serde(default)]
+    pub data_keys: Option<String>,
 }
 
 /// Event taxonomy enforcement and player-session tracking.
@@ -686,6 +699,7 @@ impl Config {
             "clickhouse": { "enabled": self.clickhouse.enabled, "url": self.clickhouse.url, "user": self.clickhouse.user, "password": "***", "database": self.clickhouse.database },
             "auth": { "jwt_secret": "***", "issuer": self.auth.issuer, "access_ttl": humantime::format_duration(self.auth.access_ttl).to_string(), "refresh_ttl": humantime::format_duration(self.auth.refresh_ttl).to_string(), "allow_anonymous_authenticate": self.auth.allow_anonymous_authenticate },
             "admin": { "bootstrap_key": self.admin.bootstrap_key.as_ref().map(|_| "***") },
+            "security": { "data_keys": self.security.data_keys.as_ref().map(|_| "***") },
             "log": self.log,
         });
         if let Some(s) = v.get_mut("server") {

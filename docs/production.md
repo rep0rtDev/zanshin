@@ -227,7 +227,33 @@ docker compose run --rm backup restore-drill.sh "/backups/$(docker compose exec 
 | OIDC client secret | update `admin.oidc.client_secret`, restart | logins in progress fail once |
 | SCIM token | set the new token (`admin.scim.token` / `token_file`), restart, update the IdP connector | provisioning fails until the IdP has the new token |
 | PostgreSQL / Redis / ClickHouse passwords | rotate in the database, update the URL / `*_FILE` secret, restart replicas one by one (each replica reconnects with its own config) | none when rolled |
+| `security.data_keys` (encryption of stored secrets) | prepend a new key: `ZANSHIN__SECURITY__DATA_KEYS=k2:<new>,k1:<old>`, restart replicas, run `zanshin --rewrap-secrets` once, then drop `k1` from the list and restart again | nothing player-facing; `--rewrap-secrets` is idempotent and reports how many rows it rewrote per project |
 | Webhook signing secrets | edit the webhook's secret in the console and switch the receiver at the same time (one secret signs `x-zanshin-signature`); for zero downtime create a second webhook with the new secret, then delete the old one | receiver must accept the new secret before the switch |
+
+### Secrets at rest
+
+Integration configs (SMTP / SES / SendGrid / FCM / APNs / Slack / ...), export-sink credentials
+(S3 / RustFS / Snowflake / Redshift), webhook signing secrets and notification-channel URLs and
+headers live in Postgres. With `security.data_keys` set they are stored as
+`enc:v1:<kid>:<AES-256-GCM ciphertext>`; without it they are plaintext and `--doctor` warns.
+
+```bash
+# generate a key (exactly 32 random bytes, base64)
+export ZANSHIN__SECURITY__DATA_KEYS="k1:$(openssl rand -base64 32)"
+zanshin --rewrap-secrets      # seals rows written before the key existed (all project schemas)
+```
+
+* The first key in the list seals new values; every listed key can open — so a restart with the
+  new list is safe before the rewrap and old rows keep working until they are rewritten.
+* Values already sealed are never re-encrypted on read; a plaintext row is sealed the next time it
+  is saved or when `--rewrap-secrets` runs.
+* Losing every key that sealed a row makes that integration / sink / webhook unreadable (the API
+  returns 500 with the key id in the message) — keep the keys in the same secret store as
+  `auth.jwt_secret` and include them in your backup runbook: a Postgres dump alone is not enough
+  to restore integrations.
+* The keyring is per process: every replica, the `--rewrap-secrets` run and `--doctor` must see the
+  same `security.data_keys`. In compose it is the `data_keys` secret file
+  (`ZANSHIN_FILE__SECURITY__DATA_KEYS`).
 
 ## Degraded mode — what keeps working
 

@@ -27,12 +27,13 @@ x-zanshin: &zanshin
     ZANSHIN__CLICKHOUSE__USER: zanshin
     ZANSHIN_FILE__CLICKHOUSE__PASSWORD: /run/secrets/clickhouse_password
     ZANSHIN_FILE__AUTH__JWT_SECRET: /run/secrets/jwt_secret
+    ZANSHIN_FILE__SECURITY__DATA_KEYS: /run/secrets/data_keys
     ZANSHIN_FILE__ADMIN__BOOTSTRAP_KEY: /run/secrets/admin_bootstrap_key
     ZANSHIN__LOG__JSON: "true"
     ZANSHIN__LOG__LEVEL: ${ZANSHIN_LOG_LEVEL:-info}
     ZANSHIN__TELEMETRY__OTLP_ENDPOINT: ${ZANSHIN_OTLP_ENDPOINT:-}
     ZANSHIN__CLICKHOUSE__RETENTION_DAYS: ${ZANSHIN_RETENTION_DAYS:-400}
-  secrets: [database_url, clickhouse_password, jwt_secret, admin_bootstrap_key]
+  secrets: [database_url, clickhouse_password, jwt_secret, data_keys, admin_bootstrap_key]
   healthcheck:
     test: ["CMD", "curl", "-fsS", "http://localhost:7550/readyz"]
     interval: 10s
@@ -248,6 +249,7 @@ secrets:
   database_url: { file: ./secrets/database_url }
   clickhouse_password: { file: ./secrets/clickhouse_password }
   jwt_secret: { file: ./secrets/jwt_secret }
+  data_keys: { file: ./secrets/data_keys }
   admin_bootstrap_key: { file: ./secrets/admin_bootstrap_key }
   backup_s3_secret: { file: ./secrets/backup_s3_secret }
   grafana_admin_password: { file: ./secrets/grafana_admin_password }
