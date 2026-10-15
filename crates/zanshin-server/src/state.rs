@@ -83,6 +83,7 @@ pub struct AppState {
     pub webhooks: WebhookService,
     pub journeys: JourneyService,
     pub analytics: AnalyticsService,
+    pub analytics_v5: crate::services::analytics_v5::AnalyticsV5Service,
     pub export: ExportService,
     pub config_history: ConfigHistoryRepo,
     pub push: PushService,
@@ -331,6 +332,20 @@ impl AppState {
         export.attach_notifier(notifications.clone());
         let config_history = ConfigHistoryRepo::new(stores.pg.clone());
         let locks = zanshin_store::locks::JobLock::new(stores.pg.clone());
+        let analytics_v5 = crate::services::analytics_v5::AnalyticsV5Service::new(
+            events.clone(),
+            stores.clickhouse.clone(),
+            (
+                zanshin_store::analytics_v5::SavedQueryRepo::new(stores.pg.clone()),
+                zanshin_store::analytics_v5::ReportRepo::new(stores.pg.clone()),
+                zanshin_store::analytics_v5::AlertRepo::new(stores.pg.clone()),
+                zanshin_store::analytics_v5::TimelineRepo::new(stores.pg.clone()),
+            ),
+            audiences.clone(),
+            journeys.clone(),
+            notifications.clone(),
+            integrations.clone(),
+        );
         Ok(Self {
             cfg,
             project: project.to_string(),
@@ -354,6 +369,7 @@ impl AppState {
             webhooks,
             journeys,
             analytics,
+            analytics_v5,
             export,
             config_history,
             push,

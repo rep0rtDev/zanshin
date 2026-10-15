@@ -462,6 +462,10 @@ impl EventService {
         self.store.count_since(from).await
     }
 
+    pub fn store(&self) -> &EventStore {
+        &self.store
+    }
+
     pub async fn recent_for_identity(
         &self,
         identity_id: Uuid,

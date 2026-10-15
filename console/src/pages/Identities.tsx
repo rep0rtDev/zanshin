@@ -77,7 +77,7 @@ function QaTime({ id }: { id: string }) {
 function Detail() {
   const { id } = useParams();
   const nav = useNavigate();
-  const [tab, setTab] = useState<'props' | 'flags' | 'events' | 'inbox' | 'push' | 'journeys'>('props');
+  const [tab, setTab] = useState<'props' | 'timeline' | 'flags' | 'events' | 'inbox' | 'push' | 'journeys'>('props');
   const [err, setErr] = useState<Error | null>(null);
   const q = useLoad(() => get<Identity>(`/identities/${id}`), [id]);
   const i = q.data;
@@ -99,9 +99,10 @@ function Detail() {
           </div>
           <QaTime id={i.id} />
           <div className="tabs">
-            {(['props', 'flags', 'events', 'inbox', 'push', 'journeys'] as const).map((t) => <button key={t} className={tab === t ? 'active' : ''} onClick={() => setTab(t)}>{{ props: 'Properties', flags: 'Flags', events: 'Events', inbox: 'Inbox', push: 'Push devices', journeys: 'Journeys' }[t]}</button>)}
+            {(['props', 'timeline', 'flags', 'events', 'inbox', 'push', 'journeys'] as const).map((t) => <button key={t} className={tab === t ? 'active' : ''} onClick={() => setTab(t)}>{{ props: 'Properties', timeline: 'Timeline', flags: 'Flags', events: 'Events', inbox: 'Inbox', push: 'Push devices', journeys: 'Journeys' }[t]}</button>)}
           </div>
           {tab === 'props' && <Props i={i} onSaved={(n) => q.setData(n)} />}
+          {tab === 'timeline' && <TimelineTab id={i.id} />}
           {tab === 'flags' && <FlagsTab id={i.id} />}
           {tab === 'events' && <Events id={i.id} />}
           {tab === 'inbox' && <InboxTab id={i.id} />}
@@ -278,5 +279,36 @@ function PushTab({ id }: { id: string }) {
         ]}
       />
     </>
+  );
+}
+
+type TimelineItem = { at: string; kind: 'event' | 'session' | 'message' | 'journey'; title: string; detail: Record<string, unknown> };
+const TL_KINDS: TimelineItem['kind'][] = ['event', 'session', 'message', 'journey'];
+
+function TimelineTab({ id }: { id: string }) {
+  const q = useLoad(() => get<{ items: TimelineItem[] }>(`/identities/${id}/timeline?limit=300`), [id]);
+  const [kinds, setKinds] = useState<Set<TimelineItem['kind']>>(new Set(TL_KINDS));
+  const toggle = (k: TimelineItem['kind']) => { const n = new Set(kinds); if (n.has(k)) n.delete(k); else n.add(k); setKinds(n); };
+  const rows = (q.data?.items ?? []).filter((it) => kinds.has(it.kind));
+  return (
+    <div className="card">
+      <div className="row" style={{ alignItems: 'center', marginBottom: 8 }}>
+        <strong>Timeline</strong>
+        {TL_KINDS.map((k) => <label key={k} className="hint"><input type="checkbox" checked={kinds.has(k)} onChange={() => toggle(k)} /> {k}s</label>)}
+        <button className="btn ghost sm" style={{ marginLeft: 'auto' }} onClick={q.reload}>Refresh</button>
+      </div>
+      <ErrorBox error={q.error} />
+      <Table<TimelineItem>
+        rows={q.data ? rows : undefined}
+        rowKey={(it) => `${it.kind}-${it.at}-${it.title}`}
+        empty="Nothing yet."
+        cols={[
+          { h: 'When', c: (it) => fmtDate(it.at), w: '170px' },
+          { h: 'Kind', c: (it) => <Badge tone={it.kind === 'event' ? 'muted' : it.kind === 'message' ? 'info' : it.kind === 'journey' ? 'warn' : 'ok'}>{it.kind}</Badge>, w: '90px' },
+          { h: 'What', c: (it) => <span className="mono">{it.title}</span> },
+          { h: 'Detail', c: (it) => <span className="hint mono">{Object.entries(it.detail).filter(([, v]) => v !== null && v !== '' && !(typeof v === 'object' && v && Object.keys(v as object).length === 0)).map(([k, v]) => `${k}=${typeof v === 'object' ? JSON.stringify(v) : String(v)}`).join(' · ').slice(0, 200)}</span> },
+        ]}
+      />
+    </div>
   );
 }

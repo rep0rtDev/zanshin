@@ -2,6 +2,7 @@
 
 pub mod admin;
 pub mod analytics_v2;
+pub mod analytics_v5;
 pub mod audiences;
 pub mod audit;
 pub mod auth;
@@ -133,6 +134,7 @@ pub fn router(state: AppState) -> Router {
                 .merge(flags_v3::router())
                 .merge(journeys::router())
                 .merge(analytics_v2::router())
+                .merge(analytics_v5::router())
                 .merge(data::router())
                 .merge(users::router()),
         )

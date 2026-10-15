@@ -434,17 +434,72 @@ impl IntegrationService {
             Ok(m) => m,
             Err(e) => return Outcome::skipped(&i.key, e),
         };
+        self.send_email(i, &mail, out.message_key, out.external_id)
+            .await
+    }
+
+    /// Sends an arbitrary email through an email integration (reports, tests); `to` may hold
+    /// several recipients, one outcome each.
+    pub(crate) async fn email_raw(
+        &self,
+        key: &str,
+        to: &[String],
+        subject: &str,
+        text: &str,
+        html: &str,
+    ) -> Result<Vec<Outcome>> {
+        let i = self.repo.get(key).await?;
+        if !matches!(
+            i.kind,
+            IntegrationKind::Smtp
+                | IntegrationKind::Ses
+                | IntegrationKind::Sendgrid
+                | IntegrationKind::Resend
+        ) {
+            return Err(Error::invalid(format!(
+                "integration {key:?} is not an email provider"
+            )));
+        }
+        let from = i.config["from"].as_str().unwrap_or_default().to_string();
+        if from.is_empty() {
+            return Err(Error::invalid("integration has no `from` address"));
+        }
+        let mut out = Vec::with_capacity(to.len());
+        for rcpt in to {
+            let mail = Email {
+                to: rcpt.clone(),
+                from: from.clone(),
+                reply_to: i.config["reply_to"]
+                    .as_str()
+                    .unwrap_or_default()
+                    .to_string(),
+                subject: subject.to_string(),
+                text: text.to_string(),
+                html: html.to_string(),
+            };
+            out.push(self.send_email(&i, &mail, "report", "").await);
+        }
+        Ok(out)
+    }
+
+    async fn send_email(
+        &self,
+        i: &Integration,
+        mail: &Email,
+        tag_key: &str,
+        tag_id: &str,
+    ) -> Outcome {
         match i.kind {
             IntegrationKind::Sendgrid => {
                 let mut body = json!({
-                    "personalizations": [{ "to": [{ "email": mail.to }] }],
-                    "from": { "email": mail.from },
-                    "subject": mail.subject,
+                    "personalizations": [{ "to": [{ "email": &mail.to }] }],
+                    "from": { "email": &mail.from },
+                    "subject": &mail.subject,
                     "content": [
-                        { "type": "text/plain", "value": mail.text },
-                        { "type": "text/html", "value": mail.html }
+                        { "type": "text/plain", "value": &mail.text },
+                        { "type": "text/html", "value": &mail.html }
                     ],
-                    "custom_args": { "zanshin_message_key": out.message_key, "zanshin_identity": out.external_id }
+                    "custom_args": { "zanshin_message_key": tag_key, "zanshin_identity": tag_id }
                 });
                 if !mail.reply_to.is_empty() {
                     body["reply_to"] = json!({ "email": mail.reply_to });
@@ -462,9 +517,9 @@ impl IntegrationService {
             }
             IntegrationKind::Resend => {
                 let mut body = json!({
-                    "from": mail.from, "to": [mail.to], "subject": mail.subject,
-                    "text": mail.text, "html": mail.html,
-                    "tags": [{ "name": "zanshin_message_key", "value": out.message_key.replace(|c: char| !c.is_ascii_alphanumeric() && c != '_' && c != '-', "_") }]
+                    "from": &mail.from, "to": [&mail.to], "subject": &mail.subject,
+                    "text": &mail.text, "html": &mail.html,
+                    "tags": [{ "name": "zanshin_message_key", "value": tag_key.replace(|c: char| !c.is_ascii_alphanumeric() && c != '_' && c != '-', "_") }]
                 });
                 if !mail.reply_to.is_empty() {
                     body["reply_to"] = Value::String(mail.reply_to.clone());
@@ -489,13 +544,13 @@ impl IntegrationService {
                     .unwrap_or_else(|| format!("email.{region}.amazonaws.com"));
                 let path = "/v2/email/outbound-emails";
                 let mut body = json!({
-                    "FromEmailAddress": mail.from,
-                    "Destination": { "ToAddresses": [mail.to] },
+                    "FromEmailAddress": &mail.from,
+                    "Destination": { "ToAddresses": [&mail.to] },
                     "Content": { "Simple": {
-                        "Subject": { "Data": mail.subject, "Charset": "UTF-8" },
+                        "Subject": { "Data": &mail.subject, "Charset": "UTF-8" },
                         "Body": {
-                            "Text": { "Data": mail.text, "Charset": "UTF-8" },
-                            "Html": { "Data": mail.html, "Charset": "UTF-8" }
+                            "Text": { "Data": &mail.text, "Charset": "UTF-8" },
+                            "Html": { "Data": &mail.html, "Charset": "UTF-8" }
                         }
                     }}
                 });
@@ -522,7 +577,7 @@ impl IntegrationService {
                     .header("x-amz-content-sha256", payload_hash);
                 self.post_json(&i.key, req, payload).await
             }
-            _ => match smtp::send(&i.config, &mail).await {
+            _ => match smtp::send(&i.config, mail).await {
                 Ok(id) => Outcome::sent(&i.key, id),
                 Err(e) => Outcome::failed(&i.key, e),
             },

@@ -42,6 +42,7 @@ pub const TOPICS: &[&str] = &[
     "export.failed",
     "integration.unhealthy",
     "alert",
+    "report",
     "test",
 ];
 

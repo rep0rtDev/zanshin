@@ -1,4 +1,5 @@
 pub mod analytics;
+pub mod analytics_v5;
 pub mod apikeys;
 pub mod audiences;
 pub mod audit;

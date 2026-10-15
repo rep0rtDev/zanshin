@@ -76,6 +76,11 @@ async fn sweeps(state: &AppState) {
     flag_eval_flush(state).await;
     locked(state, "experiment_guardrails", || guardrails(state)).await;
     locked(state, "experiment_bandit", || bandit(state)).await;
+    locked(state, "metric_alerts", || state.analytics_v5.check_alerts()).await;
+    locked(state, "report_schedules", || {
+        state.analytics_v5.run_due_reports()
+    })
+    .await;
     locked(state, "label_sync", || async {
         if let Err(e) = state.taxonomy.repo.sync_labels().await {
             tracing::debug!(error = %e, "label sync failed");
