@@ -1089,6 +1089,52 @@ paths:
         required: true
         description: Player external id
       - *id005
+  /server/v1/rules:
+    get:
+      tags:
+      - Server API
+      summary: Rules bundle for local evaluation in server SDKs
+      description: Every flag definition plus the dynamic audiences they reference; managed audiences are listed by key only. Same bucketing / operators / reasons as the server.
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  generated_at:
+                    type: string
+                    format: date-time
+                  flags:
+                    type: array
+                    items:
+                      type: object
+                      additionalProperties: true
+                  audiences:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        key:
+                          type: string
+                        condition:
+                          type: object
+                          additionalProperties: true
+                        percentage:
+                          type: number
+                        salt:
+                          type: string
+                        enabled:
+                          type: boolean
+                  managed_audiences:
+                    type: array
+                    items:
+                      type: string
+        '401': *id002
+        '429': *id004
+      security:
+      - serverKey: []
   /server/v1/flags/{key}:
     get:
       tags:

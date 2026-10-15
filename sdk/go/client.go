@@ -39,6 +39,7 @@ type Client struct {
 	gen   uint64
 
 	streamCancel context.CancelFunc
+	rules        *rulesCache
 }
 
 type cacheEntry struct {

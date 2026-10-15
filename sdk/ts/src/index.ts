@@ -17,3 +17,8 @@ declare module './client.js' {
 ZanshinClient.prototype.stream = function (this: ZanshinClient, opts?: StreamOptions): ZanshinStream {
   return new ZanshinStream(this, opts);
 };
+export { LocalEvaluator, flatten, matches } from './local.js';
+export type { RulesBundle, RuleFlag, Rule, RuleAudience, Condition, FlatProps } from './local.js';
+export { xxh3_64, bucket, inRollout, weightedPick } from './xxh3.js';
+export { ZanshinProvider } from './openfeature.js';
+export type { ZanshinProviderOptions, EvaluationContext, ResolutionDetails } from './openfeature.js';

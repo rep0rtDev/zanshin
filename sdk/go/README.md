@@ -29,3 +29,22 @@ z.JoinLiveEvent(ctx, accountID, "weekend_boost")     // explicit live-event part
 z.LeaveLiveEvent(ctx, accountID, "weekend_boost")
 z.MarkRead(ctx, accountID, msgID); z.Consume(ctx, accountID, msgID); z.DeleteInboxMessage(ctx, accountID, msgID)
 ```
+
+## Local evaluation and OpenFeature
+
+```go
+z := zanshin.New(url, serverKey, zanshin.WithLocalEvaluation(time.Minute))
+z.StartStream(ctx) // optional: refresh the rules bundle as soon as a flag changes
+flags, err := z.LocalFlags(ctx, "player-42", map[string]map[string]any{"custom": {"level": 7}})
+```
+
+`LocalFlags` / `LocalFlag` evaluate in-process from `GET /server/v1/rules` with the server's exact
+semantics (same hashing, operators and reasons) — no network call per player. Overrides, experiments
+and live events are not applied locally; managed audiences never match (`Evaluator.DependsOnManaged`).
+
+```go
+import zof "github.com/rep0rtDev/zanshin/sdk/go/openfeature"
+openfeature.SetProvider(zof.New(z, zof.Local()))
+on, _ := openfeature.NewClient("game").BooleanValue(ctx, "shop", false,
+    openfeature.NewEvaluationContext("player-42", map[string]any{"level": 7}))
+```

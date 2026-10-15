@@ -7,6 +7,25 @@ Release automation reads the section whose heading contains the tagged version.
 ## [Unreleased]
 
 ### Added
+- Platform — SDKs: **local evaluation** of flags in the Go and TypeScript server SDKs from a new
+  rules bundle (`GET /server/v1/rules`: flag definitions + dynamic audiences; same xxh3 bucketing,
+  operators and reasons as the server; refreshed on TTL and change-stream events — zero-latency
+  reads; overrides / experiments / live events stay server-side), **OpenFeature providers** for
+  Go (`sdk/go/openfeature`, `open-feature/go-sdk`) and TypeScript (`ZanshinProvider`, structural
+  types, remote or local mode), and **Nakama zero-code core events**: the Nakama module mirrors
+  validated purchases (Apple / Google / Huawei / Facebook Instant → `purchaseCompleted`),
+  leaderboard and tournament record writes (`eventLeaderboardScore`) and friend invites
+  (`inviteSent`) into Zanshin without client changes (`ZANSHIN_CORE_EVENTS=false` to disable).
+- Platform — identity & config: **SAML 2.0** console login (SP-initiated, HTTP-POST binding,
+  XML-DSig verification with exclusive C14N and RSA-SHA256 — no libxml; `admin.saml`, routes
+  `/console/auth/saml/{login,acs,metadata}`), **SCIM 2.0** provisioning of console users
+  (`/scim/v2` Users + Groups → archetypes, bearer token `admin.scim.token`), **config as code** in
+  `zanshinctl` (`config pull <dir>` / `config apply <dir> [--prune] [--dry-run]` /
+  `config drift <dir>` exits 2 on drift; `<kind>/<key>.yaml`) with the composite GitHub Action
+  `.github/actions/zanshin-apply`, and **environment promotion** from the console / API
+  (`POST /admin/v1/config/promote` pushes this project's configuration into another server with a
+  dry-run plan).
+||||||| 8fbff05
 - Platform — identity & config: **SAML 2.0** console login (SP-initiated, HTTP-POST binding,
   XML-DSig verification with exclusive C14N and RSA-SHA256 — no libxml; `admin.saml`, routes
   `/console/auth/saml/{login,acs,metadata}`), **SCIM 2.0** provisioning of console users

@@ -34,3 +34,12 @@ Build (the plugin must match the Nakama Go toolchain, hence the pluginbuilder im
 docker build -f nakama/Dockerfile --build-arg NAKAMA_VERSION=3.22.0 -t nakama-zanshin .
 docker run -e ZANSHIN_URL=http://zanshin:7550 -e ZANSHIN_SERVER_KEY=… nakama-zanshin
 ```
+
+## Zero-code core events
+
+The module mirrors Nakama's own server-side actions into Zanshin's core event catalog, without any
+client work: validated purchases (Apple / Google / Huawei / Facebook Instant → `purchaseCompleted`
+with `store`, `product_id`, `transaction_id`, `environment`), leaderboard and tournament record
+writes (`eventLeaderboardScore` with `leaderboard_id`, `kind`, `score`, `subscore`, `rank`) and
+friend invites (`inviteSent`). Events are sent in the background and never block the request.
+Set `ZANSHIN_CORE_EVENTS=false` to turn the hooks off.
