@@ -13,11 +13,16 @@ pub async fn run(state: AppState, mut shutdown: watch::Receiver<bool>) {
     let mut tick = tokio::time::interval(Duration::from_secs(600));
     let mut sweep = tokio::time::interval(Duration::from_secs(60));
     let mut gauges = tokio::time::interval(Duration::from_secs(10));
+    let mut updates = tokio::time::interval(Duration::from_secs(60));
     let mut changes = state.bus.subscribe();
 
     loop {
         tokio::select! {
             _ = gauges.tick() => report_gauges(&state),
+            _ = updates.tick() => {
+                let checker = state.updates.clone();
+                tokio::spawn(async move { checker.refresh_if_due().await });
+            }
             _ = sweep.tick() => {
                 if interruptible(&mut shutdown, sweeps(&state)).await { break; }
             }

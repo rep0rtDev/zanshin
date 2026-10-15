@@ -4853,6 +4853,7 @@ dependencies = [
  "ring",
  "roxmltree",
  "rust-embed",
+ "semver",
  "serde",
  "serde_json",
  "sha1",

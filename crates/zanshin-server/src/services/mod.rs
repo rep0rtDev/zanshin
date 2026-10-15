@@ -30,4 +30,5 @@ pub mod refs;
 pub mod saml;
 pub mod taxonomy;
 pub mod templates;
+pub mod updates;
 pub mod webhooks;

@@ -8,6 +8,8 @@ type Stats = { identities: number; uptime_seconds: number; clickhouse_enabled: b
 type Series = { buckets: { bucket: string; count: number; identities: number }[] };
 type Onboarding = { steps: { id: string; title: string; done: boolean; href: string; hint: string }[]; done: number; total: number };
 const DISMISS_KEY = 'zanshin.onboarding.dismissed';
+const UPDATE_KEY = 'zanshin.update.dismissed';
+type Updates = { enabled: boolean; current: string; latest?: string | null; update_available: boolean; url?: string | null };
 const since = new Date(Date.now() - 24 * 3600e3).toISOString();
 
 export default function Dashboard() {
@@ -20,12 +22,23 @@ export default function Dashboard() {
   const push = useLoad(() => get<{ mode: string; tokens: number; identities: number }>('/push/stats'));
   const auth = useLoad(() => get<Series>(`/analytics/events?name=%24authenticate&granularity=hour&from=${since}`));
   const onboarding = useLoad(() => get<Onboarding>('/onboarding'));
+  const updates = useLoad(() => get<Updates>('/updates'));
+  const [hiddenUpdate, setHiddenUpdate] = useState(() => localStorage.getItem(UPDATE_KEY));
   const [dismissed, setDismissed] = useState(() => localStorage.getItem(DISMISS_KEY) === '1');
   const s = stats.data;
   const up = s ? `${Math.floor(s.uptime_seconds / 3600)}h ${Math.floor((s.uptime_seconds % 3600) / 60)}m` : '';
   return (
     <Page title={t('Overview')}>
       <ErrorBox error={stats.error} />
+      {updates.data?.update_available && updates.data.latest && hiddenUpdate !== updates.data.latest && (
+        <UpdateBanner
+          data={updates.data}
+          onDismiss={() => {
+            localStorage.setItem(UPDATE_KEY, updates.data!.latest!);
+            setHiddenUpdate(updates.data!.latest!);
+          }}
+        />
+      )}
       {onboarding.data && onboarding.data.done < onboarding.data.total && !dismissed && (
         <GettingStarted
           data={onboarding.data}
@@ -53,6 +66,24 @@ export default function Dashboard() {
         <Sparkline points={(auth.data?.buckets ?? []).map((b) => b.count)} height={80} />
       </div>
     </Page>
+  );
+}
+
+function UpdateBanner({ data, onDismiss }: { data: Updates; onDismiss: () => void }) {
+  return (
+    <div className="card" style={{ marginBottom: 16 }}>
+      <div className="row" style={{ justifyContent: 'space-between', alignItems: 'baseline', gap: 12, flexWrap: 'wrap' }}>
+        <span>
+          {t('Zanshin')} <strong>{data.latest}</strong> {t('is available')} · {t('you are running')} {data.current}
+          {data.url && (
+            <>
+              {' '}· <a href={data.url} target="_blank" rel="noreferrer">{t('Release notes')}</a>
+            </>
+          )}
+        </span>
+        <button className="link" onClick={onDismiss}>{t('Dismiss')}</button>
+      </div>
+    </div>
   );
 }
 

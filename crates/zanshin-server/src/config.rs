@@ -39,6 +39,8 @@ pub struct Config {
     pub retention: RetentionConfig,
     #[serde(default)]
     pub security: SecurityConfig,
+    #[serde(default)]
+    pub updates: UpdatesConfig,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -50,6 +52,39 @@ pub struct SecurityConfig {
     /// `zanshin --rewrap-secrets`. Unset = plaintext at rest.
     #[serde(default)]
     pub data_keys: Option<String>,
+}
+
+/// Release check shown as a banner in the console.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct UpdatesConfig {
+    /// Set to false on air-gapped or policy-restricted deployments; nothing leaves the server then.
+    #[serde(default = "default_true")]
+    pub check: bool,
+    /// Endpoint answering in the GitHub Releases API shape (a single release or a list).
+    #[serde(default = "default_updates_url")]
+    pub url: String,
+    /// How often to ask; the answer is cached in memory per replica.
+    #[serde(default = "default_updates_interval", with = "humantime_serde")]
+    pub interval: Duration,
+}
+
+impl Default for UpdatesConfig {
+    fn default() -> Self {
+        Self {
+            check: true,
+            url: default_updates_url(),
+            interval: default_updates_interval(),
+        }
+    }
+}
+
+fn default_updates_url() -> String {
+    "https://api.github.com/repos/rep0rtDev/zanshin/releases/latest".into()
+}
+
+fn default_updates_interval() -> Duration {
+    Duration::from_secs(6 * 3600)
 }
 
 /// Event taxonomy enforcement and player-session tracking.
@@ -701,6 +736,7 @@ impl Config {
             "admin": { "bootstrap_key": self.admin.bootstrap_key.as_ref().map(|_| "***") },
             "security": { "data_keys": self.security.data_keys.as_ref().map(|_| "***") },
             "log": self.log,
+            "updates": { "check": self.updates.check, "url": self.updates.url, "interval": humantime::format_duration(self.updates.interval).to_string() },
         });
         if let Some(s) = v.get_mut("server") {
             if let Some(t) = s.get_mut("request_timeout") {

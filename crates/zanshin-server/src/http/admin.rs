@@ -182,6 +182,7 @@ pub fn router() -> Router<AppState> {
         .route("/stats", get(stats))
         .route("/me", get(me))
         .route("/system", get(system))
+        .route("/updates", get(updates))
         .route("/onboarding", get(onboarding))
         .route("/health", get(health))
         .route("/system/config", get(system_config))
@@ -1894,6 +1895,16 @@ async fn health(
     AdminAuth(_): AdminAuth,
 ) -> ApiResult<Json<serde_json::Value>> {
     Ok(Json(crate::services::health::overview(&state).await?))
+}
+
+async fn updates(
+    State(state): State<AppState>,
+    AdminAuth(_): AdminAuth,
+) -> ApiResult<Json<crate::services::updates::Status>> {
+    if state.updates.due() {
+        state.updates.check().await;
+    }
+    Ok(Json(state.updates.status()))
 }
 
 async fn onboarding(
