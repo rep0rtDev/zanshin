@@ -6,6 +6,8 @@ Release automation reads the section whose heading contains the tagged version.
 
 ## [Unreleased]
 
+## [0.3.0] — 2026-10-15
+
 ### Added
 - .NET server SDK (`sdk/dotnet`): `Zanshin.Server` (netstandard2.0 / net8.0, System.Text.Json only) — flags, experiments, audiences, live events, inbox, events and messages by external id with a change-stream-invalidated cache — and `Zanshin.OpenFeature`, an OpenFeature provider on top of it. Built, tested and packed (`.nupkg`) in CI; `zanshin-dotnet-<version>.zip` in releases.
 - Update check: `GET /admin/v1/updates` compares the running version with the latest stable GitHub release (cached per replica, `updates.interval`, default 6h) and the console Overview shows a dismissable "new version available" banner with a link to the release notes. Opt out with `updates.check = false` (`ZANSHIN__UPDATES__CHECK=false`) — nothing leaves the server then; `updates.url` can point at a mirror in the GitHub Releases shape.
