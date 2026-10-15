@@ -328,8 +328,10 @@ jobs:
           for i in $(seq 1 60); do curl -sf -u zanshin:zanshin "http://localhost:8123/?query=SELECT%201" >/dev/null && break; sleep 2; done
           curl -sf -u zanshin:zanshin "http://localhost:8123/?query=SELECT%201" || { echo "clickhouse not ready"; exit 1; }
           for i in $(seq 1 90); do curl -sf http://localhost:8080/realms/zanshin >/dev/null && exit 0; sleep 2; done; docker logs keycloak | tail -50; exit 1
-      - name: Build test binary and server
-        run: cargo build -p zanshin-server --bin zanshin && cargo test -p zanshin-server --test live_services --no-run
+      - name: Build test binary and server (console assets not needed here)
+        run: |
+          mkdir -p console/dist && touch console/dist/.gitkeep
+          cargo build -p zanshin-server --bin zanshin && cargo test -p zanshin-server --test live_services --no-run
       - name: zanshin --doctor
         env:
           ZANSHIN__DATABASE__URL: postgres://zanshin:zanshin@localhost:5432/zanshin
