@@ -31,3 +31,16 @@ npm run build      # writes dist/, which `cargo build` embeds into the zanshin b
 The server embeds `console/dist` at compile time (`rust-embed`). Build the console before
 `cargo build` to get a binary with the UI; without it `/console` answers 503. The Dockerfile
 and CI do both steps.
+
+## End-to-end tests
+
+`console/e2e` holds Playwright tests that drive the built console against a real server (the CI job
+`console-e2e` builds the console, embeds it into the server, starts it on `:7560` and runs them).
+Locally:
+
+```sh
+npm run build && (cd .. && cargo build -p zanshin-server --bin zanshin)
+ZANSHIN__ADMIN__BOOTSTRAP_KEY=e2e-bootstrap-admin-key-0001 ZANSHIN__SERVER__HTTP_ADDR=127.0.0.1:7560 ../target/debug/zanshin &
+npx playwright install chromium   # once; or PW_EXECUTABLE=/path/to/chrome to use an installed browser
+npm run e2e                       # ZANSHIN_URL / ADMIN_KEY override the defaults
+```

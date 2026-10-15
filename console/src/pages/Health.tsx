@@ -40,7 +40,7 @@ export default function Health() {
   return (
     <div className="page">
       <div className="page-head">
-        <h1>Health {h && <Badge tone={tone}>{h.status}</Badge>}</h1>
+        <h1>{t('Health')} {h && <Badge tone={tone}>{h.status}</Badge>}</h1>
         <p className="blurb">{t('Is this deployment doing its background work? Dependencies, ingest queue, housekeeping jobs and every delivery channel in one place. Refreshes every 15 s.')}</p>
         <div className="actions">
           <label className="check"><input type="checkbox" checked={auto} onChange={(e) => setAuto(e.target.checked)} /> auto-refresh</label>
@@ -66,9 +66,9 @@ export default function Health() {
             <section className="card">
               <h2>{t('Dependencies')}</h2>
               <Table cols={[
-                { h: 'Service', c: (d) => <strong>{d.name}</strong> },
-                { h: 'Status', c: (d) => okBadge(d.c.ok) },
-                { h: 'Latency', c: (d) => d.c.latency_ms != null ? `${d.c.latency_ms} ms` : '—' },
+                { h: t('Service'), c: (d) => <strong>{d.name}</strong> },
+                { h: t('Status'), c: (d) => okBadge(d.c.ok) },
+                { h: t('Latency'), c: (d) => d.c.latency_ms != null ? `${d.c.latency_ms} ms` : '—' },
                 { h: '', c: (d) => <span className="muted">{d.c.error ?? ''}</span> },
               ]} rows={deps} rowKey={(d) => d.name} />
               <div className="hint" style={{ marginTop: 8 }}>Postgres pool: {h.dependencies.pool.size} open, {h.dependencies.pool.idle} idle, max {h.dependencies.pool.max}.</div>
@@ -87,23 +87,23 @@ export default function Health() {
           <section className="card">
             <h2>{t('Housekeeping jobs') + ' '}<span className="count">{t('this replica')}</span></h2>
             <Table cols={[
-              { h: 'Job', c: (j) => <strong>{j.name}</strong> },
-              { h: 'State', c: (j) => j.last_error ? <Badge tone="bad">failed</Badge> : j.stale ? <Badge tone="warn">stale</Badge> : <Badge tone="ok">ok</Badge> },
-              { h: 'Last run', c: (j) => ago(j.last_finished_at) },
-              { h: 'Took', c: (j) => `${j.last_ms} ms` },
-              { h: 'Every', c: (j) => dur(j.interval_secs) },
-              { h: 'Runs / skipped', c: (j) => `${j.runs} / ${j.skipped}` },
+              { h: t('Job'), c: (j) => <strong>{j.name}</strong> },
+              { h: t('State'), c: (j) => j.last_error ? <Badge tone="bad">failed</Badge> : j.stale ? <Badge tone="warn">stale</Badge> : <Badge tone="ok">ok</Badge> },
+              { h: t('Last run'), c: (j) => ago(j.last_finished_at) },
+              { h: t('Took'), c: (j) => `${j.last_ms} ms` },
+              { h: t('Every'), c: (j) => dur(j.interval_secs) },
+              { h: t('Runs / skipped'), c: (j) => `${j.runs} / ${j.skipped}` },
               { h: '', c: (j) => <span className="muted">{j.last_error ?? ''}</span> },
             ]} rows={h.jobs} rowKey={(j) => j.name} empty={t('Housekeeping has not reported yet — first jobs run within a minute of start.')} />
           </section>
           <section className="card">
             <h2>{t('Integrations')}</h2>
             <Table cols={[
-              { h: 'Integration', c: (i) => <><strong>{i.name || i.key}</strong> <span className="muted">{i.kind}</span></> },
-              { h: 'Enabled', c: (i) => okBadge(i.enabled, i.enabled ? 'on' : 'off') },
-              { h: 'Last delivery', c: (i) => i.last_status ? <Badge tone={statusTone(i.last_status)}>{i.last_status}</Badge> : <span className="muted">never</span> },
-              { h: 'When', c: (i) => ago(i.last_at) },
-              { h: 'Sent / failed', c: (i) => `${i.sent} / ${i.failed}` },
+              { h: t('Integration'), c: (i) => <><strong>{i.name || i.key}</strong> <span className="muted">{i.kind}</span></> },
+              { h: t('Enabled'), c: (i) => okBadge(i.enabled, i.enabled ? 'on' : 'off') },
+              { h: t('Last delivery'), c: (i) => i.last_status ? <Badge tone={statusTone(i.last_status)}>{i.last_status}</Badge> : <span className="muted">never</span> },
+              { h: t('When'), c: (i) => ago(i.last_at) },
+              { h: t('Sent / failed'), c: (i) => `${i.sent} / ${i.failed}` },
               { h: '', c: (i) => <span className="muted">{i.last_error ?? ''}</span> },
             ]} rows={h.integrations} rowKey={(i) => i.key} empty={t('No integrations configured.')} />
           </section>
@@ -111,30 +111,30 @@ export default function Health() {
             <section className="card">
               <h2>{t('Export sinks')}</h2>
               <Table cols={[
-                { h: 'Sink', c: (s) => <><strong>{s.name || s.key}</strong> <span className="muted">{s.kind}</span></> },
-                { h: 'Last run', c: (s) => s.last_status ? <Badge tone={statusTone(s.last_status)}>{s.last_status}</Badge> : <span className="muted">never</span> },
-                { h: 'When', c: (s) => ago(s.last_run_at) },
-                { h: 'Next', c: (s) => s.enabled ? fmtDate(s.next_run_at) : <span className="muted">disabled</span> },
+                { h: t('Sink'), c: (s) => <><strong>{s.name || s.key}</strong> <span className="muted">{s.kind}</span></> },
+                { h: t('Last run'), c: (s) => s.last_status ? <Badge tone={statusTone(s.last_status)}>{s.last_status}</Badge> : <span className="muted">never</span> },
+                { h: t('When'), c: (s) => ago(s.last_run_at) },
+                { h: t('Next'), c: (s) => s.enabled ? fmtDate(s.next_run_at) : <span className="muted">disabled</span> },
               ]} rows={h.exports} rowKey={(s) => s.key} empty={t('No export sinks.')} />
             </section>
             <section className="card">
               <h2>{t('Scheduled reports')}</h2>
               <Table cols={[
-                { h: 'Report', c: (r) => <strong>{r.name || r.key}</strong> },
-                { h: 'Cron', c: (r) => <code>{r.cron}</code> },
-                { h: 'Last run', c: (r) => r.last_status ? <Badge tone={statusTone(r.last_status)}>{r.last_status}</Badge> : <span className="muted">never</span> },
-                { h: 'When', c: (r) => ago(r.last_run_at) },
+                { h: t('Report'), c: (r) => <strong>{r.name || r.key}</strong> },
+                { h: t('Cron'), c: (r) => <code>{r.cron}</code> },
+                { h: t('Last run'), c: (r) => r.last_status ? <Badge tone={statusTone(r.last_status)}>{r.last_status}</Badge> : <span className="muted">never</span> },
+                { h: t('When'), c: (r) => ago(r.last_run_at) },
               ]} rows={h.reports} rowKey={(r) => r.key} empty={t('No scheduled reports.')} />
             </section>
           </div>
           <section className="card">
             <h2>{t('Metric alerts')}</h2>
             <Table cols={[
-              { h: 'Alert', c: (a) => <><strong>{a.name || a.key}</strong> <span className="muted">{a.event}</span></> },
-              { h: 'State', c: (a) => !a.enabled ? <Badge tone="muted">off</Badge> : a.firing ? <Badge tone="bad">firing</Badge> : <Badge tone="ok">quiet</Badge> },
-              { h: 'Last value', c: (a) => a.last_value ?? '—' },
-              { h: 'Checked', c: (a) => ago(a.last_checked_at) },
-              { h: 'Last fired', c: (a) => ago(a.last_fired_at) },
+              { h: t('Alert'), c: (a) => <><strong>{a.name || a.key}</strong> <span className="muted">{a.event}</span></> },
+              { h: t('State'), c: (a) => !a.enabled ? <Badge tone="muted">off</Badge> : a.firing ? <Badge tone="bad">firing</Badge> : <Badge tone="ok">quiet</Badge> },
+              { h: t('Last value'), c: (a) => a.last_value ?? '—' },
+              { h: t('Checked'), c: (a) => ago(a.last_checked_at) },
+              { h: t('Last fired'), c: (a) => ago(a.last_fired_at) },
             ]} rows={h.alerts} rowKey={(a) => a.key} empty={t('No metric alerts.')} />
           </section>
           <div className="hint">Checked {fmtDate(h.checked_at)} · {h.process.production ? 'production' : 'development'} mode · project {h.process.project}</div>
