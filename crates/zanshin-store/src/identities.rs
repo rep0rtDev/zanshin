@@ -371,6 +371,19 @@ impl IdentityRepo {
         self.get(into).await
     }
 
+    /// Ids of identities whose custom properties contain `{key: value}` (used to reset demo data).
+    pub async fn ids_where_custom(&self, key: &str, value: &Value) -> Result<Vec<Uuid>> {
+        let rows: Vec<(Uuid,)> = sqlx::query_as(
+            "SELECT id FROM identities WHERE custom_properties @> jsonb_build_object($1::text, $2::jsonb)",
+        )
+        .bind(key)
+        .bind(value)
+        .fetch_all(&self.pg)
+        .await
+        .map_err(map_sqlx)?;
+        Ok(rows.into_iter().map(|r| r.0).collect())
+    }
+
     pub async fn delete(&self, id: Uuid) -> Result<()> {
         let res = sqlx::query("DELETE FROM identities WHERE id = $1")
             .bind(id)

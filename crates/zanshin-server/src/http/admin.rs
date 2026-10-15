@@ -182,6 +182,7 @@ pub fn router() -> Router<AppState> {
         .route("/stats", get(stats))
         .route("/me", get(me))
         .route("/system", get(system))
+        .route("/onboarding", get(onboarding))
         .route("/system/config", get(system_config))
         .route(
             "/console/settings",
@@ -1881,4 +1882,40 @@ async fn me(State(state): State<AppState>, AdminAuth(p): AdminAuth) -> ApiResult
         mfa_enabled: user.as_ref().is_some_and(|u| u.totp_enabled),
         must_change_password: user.as_ref().is_some_and(|u| u.must_change_password),
     }))
+}
+
+/// Day-1 checklist computed from real data: which first steps a fresh deployment still has ahead.
+async fn onboarding(State(state): State<AppState>) -> ApiResult<Json<serde_json::Value>> {
+    let identities = zanshin_store::identities::IdentityRepo::new(state.stores.pg.clone())
+        .count()
+        .await?;
+    let users = zanshin_store::console_users::ConsoleUserRepo::new(state.stores.pg.clone())
+        .count()
+        .await?;
+    let keys = state.api_keys.list().await?;
+    let channels = state.notifications.list().await?;
+    let cfg = &state.cfg;
+    let step = |id: &str, title: &str, done: bool, href: &str, hint: &str| serde_json::json!({ "id": id, "title": title, "done": done, "href": href, "hint": hint });
+    let steps = vec![
+        step("server_key", "Create a server API key", keys.iter().any(|k| k.kind == "server"), "/api-keys",
+            "Your game backend (or the Nakama module) authenticates with a server key."),
+        step("first_identity", "Connect a backend — first player seen", identities > 0, "/identities",
+            "Drop the Nakama module in or call POST /server/v1/identities from any SDK."),
+        step("first_flag", "Create a feature flag", !state.flags.list().await.is_empty(), "/flags",
+            "Flags are evaluated per player with rules, rollouts and variants."),
+        step("first_audience", "Define an audience", !state.audiences.list().await.is_empty(), "/audiences",
+            "Audiences target flags, experiments, live events and messages."),
+        step("teammate", "Invite a teammate", users > 1, "/users",
+            "Console users with archetypes replace the bootstrap key."),
+        step("sso", "Set up SSO (OIDC or SAML)", cfg.admin.oidc.is_some() || cfg.admin.saml.is_some(), "/settings",
+            "Configure admin.oidc or admin.saml; SCIM provisioning is optional."),
+        step("notifications", "Connect a notification channel (Slack / Discord / webhook)", !channels.is_empty(), "/notifications",
+            "Config changes, alerts and guardrail pauses are posted there."),
+        step("backups", "Verify a backup restore", std::env::var("ZANSHIN_ONBOARDING_BACKUPS_OK").is_ok(), "/settings",
+            "Run restore-drill.sh from the backup kit; set ZANSHIN_ONBOARDING_BACKUPS_OK=1 once it is scheduled."),
+    ];
+    let done = steps.iter().filter(|s| s["done"] == true).count();
+    Ok(Json(
+        serde_json::json!({ "steps": steps, "done": done, "total": steps.len() }),
+    ))
 }

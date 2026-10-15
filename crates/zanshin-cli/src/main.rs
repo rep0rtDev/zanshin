@@ -46,6 +46,16 @@ enum Cmd {
         #[command(subcommand)]
         cmd: KeysCmd,
     },
+    /// Import configuration from other LiveOps products (best effort)
+    Import {
+        #[command(subcommand)]
+        cmd: ImportCmd,
+    },
+    /// Demo data: seed a fresh server with sample LiveOps config and synthetic players, or remove it again
+    Demo {
+        #[command(subcommand)]
+        cmd: DemoCmd,
+    },
     /// Players
     Player {
         #[command(subcommand)]
@@ -177,6 +187,43 @@ enum ConfigCmd {
     },
     /// Revert an entity to a history snapshot
     Revert { snapshot_id: String },
+}
+
+#[derive(Subcommand)]
+enum ImportCmd {
+    /// Map a Satori JSON export (flags, live events, experiments, audiences) to a Zanshin config bundle and import it
+    Satori {
+        /// JSON file (`-` for stdin)
+        file: PathBuf,
+        /// Only print the mapping report and the server-side plan
+        #[arg(long)]
+        dry_run: bool,
+        /// Turn string values like "true" / "10" / "{...}" into bool / number / json flags
+        #[arg(long)]
+        infer_types: bool,
+        /// Write the mapped Zanshin bundle to this file instead of importing
+        #[arg(long)]
+        out: Option<PathBuf>,
+    },
+}
+
+#[derive(Subcommand)]
+enum DemoCmd {
+    /// Create `demo_*` flags / audiences / experiment / live event and synthetic players with 30 days of events
+    Seed {
+        #[arg(long, default_value_t = 500)]
+        players: u32,
+        #[arg(long, default_value_t = 30)]
+        days: u32,
+        /// Deterministic seed for the synthetic data
+        #[arg(long, default_value_t = 0)]
+        seed: u64,
+        /// Only create the demo configuration, no synthetic players/events
+        #[arg(long)]
+        config_only: bool,
+    },
+    /// Delete every synthetic player (custom.sample = true) and every `demo_*` configuration entity
+    Reset,
 }
 
 #[derive(Subcommand)]
@@ -332,7 +379,12 @@ impl Api {
     async fn post(&self, path: &str, body: Value) -> Result<Value> {
         self.call("POST", path, Some(body)).await
     }
+    async fn delete(&self, path: &str) -> Result<Value> {
+        self.call("DELETE", path, None).await
+    }
 }
+
+mod satori;
 
 fn read_json(file: &PathBuf) -> Result<Value> {
     let mut text = String::new();
@@ -427,7 +479,7 @@ fn read_bundle_dir(dir: &std::path::Path) -> Result<Value> {
         }
         entities.insert(kind, Value::Array(items));
     }
-    Ok(json!({ "format": "zanshin.config.v1", "exported_at": chrono_now(), "entities": entities }))
+    Ok(json!({ "format": "zanshin-config/1", "exported_at": chrono_now(), "entities": entities }))
 }
 
 fn chrono_now() -> String {
@@ -665,6 +717,47 @@ async fn main() -> Result<()> {
                 )
                 .await?
             }
+        },
+        Cmd::Import { cmd } => match cmd {
+            ImportCmd::Satori {
+                file,
+                dry_run,
+                infer_types,
+                out,
+            } => {
+                let src = read_json(&file)?;
+                let (bundle, report) = satori::map(&src, infer_types);
+                satori::print_report(&report);
+                if let Some(out) = out {
+                    std::fs::write(&out, serde_json::to_string_pretty(&bundle)?)?;
+                    eprintln!("wrote bundle to {}", out.display());
+                    json!({ "bundle": out, "report": report })
+                } else {
+                    let v = api
+                        .post(
+                            "/admin/v1/config/import",
+                            json!({"bundle": bundle, "mode": "merge", "dry_run": dry_run}),
+                        )
+                        .await?;
+                    print_plan(&v);
+                    json!({ "report": report, "import": v })
+                }
+            }
+        },
+        Cmd::Demo { cmd } => match cmd {
+            DemoCmd::Seed {
+                players,
+                days,
+                seed,
+                config_only,
+            } => {
+                api.post(
+                    "/admin/v1/data/demo",
+                    json!({ "players": players, "days": days, "seed": seed, "config_only": config_only }),
+                )
+                .await?
+            }
+            DemoCmd::Reset => api.delete("/admin/v1/data/demo").await?,
         },
         Cmd::Keys { cmd } => match cmd {
             KeysCmd::List => api.get("/admin/v1/api-keys").await?,

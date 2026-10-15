@@ -11,3 +11,6 @@ console/node_modules/
 console/dist/*
 !console/dist/.gitkeep
 sdk/cpp/build/
+docs/index.md
+docs/CHANGELOG.md
+site/

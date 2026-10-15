@@ -218,3 +218,11 @@ details.section>summary::before{content:"";width:6px;height:6px;border-right:1.5
 details.section[open]>summary::before{transform:rotate(45deg)}
 details.section>summary .hint{font-weight:400;margin-left:auto}
 details.section>.body{padding:0 16px 14px}
+
+.checklist{list-style:none;margin:8px 0 0;padding:0;display:grid;gap:6px}
+.checklist li{display:flex;gap:10px;align-items:flex-start;padding:6px 8px;border-radius:6px}
+.checklist li.done{color:var(--muted)}
+.checklist .mark{width:18px;flex:none;text-align:center;font-weight:600}
+.checklist li.done .mark{color:var(--ok,#2e9e5b)}
+.small{font-size:12px}
+button.link{background:none;border:0;padding:0;color:var(--accent,inherit);cursor:pointer;text-decoration:underline;font:inherit}

@@ -25,6 +25,19 @@ services:
         condition: service_healthy
     restart: unless-stopped
 
+  # `docker compose --profile demo up demo` seeds sample LiveOps config + 500 synthetic players
+  # (idempotent; `docker compose run --rm demo demo reset` removes it all again).
+  demo:
+    image: zanshin:local
+    profiles: [demo]
+    entrypoint: ["zanshinctl"]
+    command: ["demo", "seed"]
+    environment:
+      ZANSHIN_URL: http://zanshin:7350
+      ZANSHIN_ADMIN_KEY: ${ZANSHIN_ADMIN_KEY:-change-me-admin-key}
+    depends_on: [zanshin]
+    restart: "no"
+
   postgres:
     image: postgres:16-alpine
     environment:

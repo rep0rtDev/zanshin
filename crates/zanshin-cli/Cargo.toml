@@ -11,6 +11,8 @@ name = "zanshinctl"
 path = "src/main.rs"
 
 [dependencies]
+chrono = { workspace = true }
+regex = { workspace = true }
 anyhow.workspace = true
 clap.workspace = true
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }

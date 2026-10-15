@@ -25,6 +25,7 @@ the known gaps.
 ```sh
 git clone https://github.com/rep0rtDev/zanshin && cd zanshin
 docker compose up -d
+docker compose --profile demo up demo   # optional: sample flags/audiences/experiment/live event + 500 synthetic players
 ```
 
 Mint a client API key with the bootstrap admin key from `docker-compose.yml`, then authenticate a player:

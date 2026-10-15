@@ -1,9 +1,12 @@
+import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { get, useLoad } from '../api';
 import { ErrorBox, Page, Sparkline, Stat, fmtNum } from '../ui';
 
 type Stats = { identities: number; uptime_seconds: number; clickhouse_enabled: boolean };
 type Series = { buckets: { bucket: string; count: number; identities: number }[] };
+type Onboarding = { steps: { id: string; title: string; done: boolean; href: string; hint: string }[]; done: number; total: number };
+const DISMISS_KEY = 'zanshin.onboarding.dismissed';
 const since = new Date(Date.now() - 24 * 3600e3).toISOString();
 
 export default function Dashboard() {
@@ -15,11 +18,22 @@ export default function Dashboard() {
   const msgs = useLoad(() => get<{ enabled: boolean }[]>('/messages'));
   const push = useLoad(() => get<{ mode: string; tokens: number; identities: number }>('/push/stats'));
   const auth = useLoad(() => get<Series>(`/analytics/events?name=%24authenticate&granularity=hour&from=${since}`));
+  const onboarding = useLoad(() => get<Onboarding>('/onboarding'));
+  const [dismissed, setDismissed] = useState(() => localStorage.getItem(DISMISS_KEY) === '1');
   const s = stats.data;
   const up = s ? `${Math.floor(s.uptime_seconds / 3600)}h ${Math.floor((s.uptime_seconds % 3600) / 60)}m` : '';
   return (
     <Page title="Overview">
       <ErrorBox error={stats.error} />
+      {onboarding.data && onboarding.data.done < onboarding.data.total && !dismissed && (
+        <GettingStarted
+          data={onboarding.data}
+          onDismiss={() => {
+            localStorage.setItem(DISMISS_KEY, '1');
+            setDismissed(true);
+          }}
+        />
+      )}
       <div className="grid c4">
         <Stat label="Identities" value={fmtNum(s?.identities ?? 0)} sub={s ? `server up ${up} · analytics on ${s.clickhouse_enabled ? 'ClickHouse' : 'Postgres'}` : undefined} />
         <Stat label="Feature flags" value={<Link to="/flags">{fmtNum(flags.data?.length ?? 0)}</Link>} sub={flags.data ? `${flags.data.filter((f) => f.enabled).length} enabled` : undefined} />
@@ -38,5 +52,32 @@ export default function Dashboard() {
         <Sparkline points={(auth.data?.buckets ?? []).map((b) => b.count)} height={80} />
       </div>
     </Page>
+  );
+}
+
+function GettingStarted({ data, onDismiss }: { data: Onboarding; onDismiss: () => void }) {
+  return (
+    <div className="card" style={{ marginBottom: 16 }}>
+      <div className="row" style={{ justifyContent: 'space-between', alignItems: 'baseline' }}>
+        <h3 style={{ margin: 0 }}>Getting started</h3>
+        <span className="muted">
+          {data.done} / {data.total} done ·{' '}
+          <button className="link" onClick={onDismiss}>
+            Dismiss
+          </button>
+        </span>
+      </div>
+      <ul className="checklist">
+        {data.steps.map((st) => (
+          <li key={st.id} className={st.done ? 'done' : ''}>
+            <span className="mark">{st.done ? '✓' : '○'}</span>
+            <div>
+              {st.done ? st.title : <Link to={st.href}>{st.title}</Link>}
+              {!st.done && <div className="muted small">{st.hint}</div>}
+            </div>
+          </li>
+        ))}
+      </ul>
+    </div>
   );
 }

@@ -1,0 +1,46 @@
+site_name: Zanshin
+site_description: Open-source LiveOps backend for games — feature flags, experiments, audiences, live events, journeys, messaging and analytics, Nakama-first.
+site_url: https://rep0rtdev.github.io/zanshin/
+repo_url: https://github.com/rep0rtDev/zanshin
+repo_name: rep0rtDev/zanshin
+edit_uri: edit/main/docs/
+docs_dir: docs
+theme:
+  name: material
+  language: en
+  features:
+    - navigation.sections
+    - navigation.top
+    - navigation.footer
+    - search.suggest
+    - search.highlight
+    - content.code.copy
+    - content.action.edit
+  palette:
+    - scheme: default
+      primary: black
+      accent: teal
+      toggle: { icon: material/weather-night, name: Dark mode }
+    - scheme: slate
+      primary: black
+      accent: teal
+      toggle: { icon: material/weather-sunny, name: Light mode }
+markdown_extensions:
+  - admonition
+  - tables
+  - toc: { permalink: true }
+  - pymdownx.superfences
+  - pymdownx.tabbed: { alternate_style: true }
+  - pymdownx.highlight: { anchor_linenums: true }
+plugins:
+  - search
+nav:
+  - Overview: index.md
+  - Getting started: getting-started.md
+  - Migrating from Satori: migrating-from-satori.md
+  - API reference: api.md
+  - Architecture: ARCHITECTURE.md
+  - Production: production.md
+  - Releasing: releasing.md
+  - Roadmap: ROADMAP.md
+  - Changelog: CHANGELOG.md
