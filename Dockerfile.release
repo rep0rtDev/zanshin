@@ -15,7 +15,7 @@ LABEL org.opencontainers.image.title="zanshin" \
       org.opencontainers.image.created="${BUILD_TIME}"
 RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates curl && rm -rf /var/lib/apt/lists/* \
     && useradd -r -u 10001 zanshin
-COPY dist/linux-${TARGETARCH}/zanshin /usr/local/bin/zanshin
+COPY dist/linux-${TARGETARCH}/zanshin dist/linux-${TARGETARCH}/zanshinctl /usr/local/bin/
 USER zanshin
 EXPOSE 7550 7549
 HEALTHCHECK --interval=15s --timeout=3s --start-period=10s CMD curl -fsS http://localhost:7550/healthz || exit 1

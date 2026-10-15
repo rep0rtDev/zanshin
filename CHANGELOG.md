@@ -6,6 +6,11 @@ Release automation reads the section whose heading contains the tagged version.
 
 ## [Unreleased]
 
+## [0.2.1] — 2026-10-15
+
+### Fixed
+- The release container image (`ghcr.io/rep0rtdev/zanshin`) did not include `zanshinctl`: `Dockerfile.release` and the release workflow only carried the server binary from the build artifacts. The dev `Dockerfile`, tarballs and zips were unaffected.
+
 ## [0.2.0] — 2026-10-15
 
 ### Added
