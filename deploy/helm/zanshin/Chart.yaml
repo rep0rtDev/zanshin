@@ -2,8 +2,8 @@ apiVersion: v2
 name: zanshin
 description: Zanshin LiveOps server — feature flags, experiments, live events, messaging and analytics for games
 type: application
-version: 0.2.2
-appVersion: "0.2.2"
+version: 0.3.0
+appVersion: "0.3.0"
 home: https://github.com/rep0rtDev/zanshin
 sources: [https://github.com/rep0rtDev/zanshin]
 keywords: [liveops, feature-flags, experiments, games, nakama]
