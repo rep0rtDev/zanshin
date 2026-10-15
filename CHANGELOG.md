@@ -6,6 +6,9 @@ Release automation reads the section whose heading contains the tagged version.
 
 ## [Unreleased]
 
+### Added
+- Console end-to-end tests (Playwright, `console/e2e`, CI job `console-e2e`): admin-key login, Overview, creating a flag through the UI, Platform → Health, Russian locale, phone layout with the drawer. `npm run e2e` against a running server (`ZANSHIN_URL`, `ADMIN_KEY`).
+
 ## [0.2.2] — 2026-10-15
 
 ### Added
