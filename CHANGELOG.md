@@ -6,6 +6,9 @@ Release automation reads the section whose heading contains the tagged version.
 
 ## [Unreleased]
 
+### Added
+- CI: `upgrade-drill` (previous release seeds data → current migrations → data still served, `--doctor` clean) and `multi-replica` (two replicas, cross-replica propagation, rolling restart) jobs; documented under Upgrades.
+
 ## [0.2.2] — 2026-10-15
 
 ### Added
