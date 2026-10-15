@@ -634,6 +634,25 @@ fn verify_signature(
 
 /// Exclusive XML canonicalization (xml-exc-c14n, no comments) of `el`, omitting the subtree
 /// `omit` (enveloped signature). Prefixes in `inclusive` (or `*`) are rendered inclusively.
+/// The prefix the element was written with in the source document (c14n must keep it even when
+/// another declaration — e.g. a default namespace — maps to the same URI).
+fn orig_prefix(n: Node<'_, '_>) -> String {
+    let src = &n.document().input_text()[n.range()];
+    let q = src.trim_start_matches('<');
+    let end = q
+        .find(|c: char| c.is_whitespace() || c == '>' || c == '/')
+        .unwrap_or(q.len());
+    q[..end]
+        .split_once(':')
+        .map(|(p, _)| p.to_string())
+        .unwrap_or_default()
+}
+
+fn attr_prefix(n: Node<'_, '_>, a: &roxmltree::Attribute<'_, '_>) -> Option<String> {
+    let q = &n.document().input_text()[a.range_qname()];
+    q.split_once(':').map(|(p, _)| p.to_string())
+}
+
 pub fn canonicalize(el: Node<'_, '_>, omit: Option<Node<'_, '_>>, inclusive: &[String]) -> Vec<u8> {
     let mut out = Vec::new();
     // namespaces in scope at the apex that have to be re-declared when used
@@ -655,7 +674,7 @@ fn write_node(
     match n.node_type() {
         roxmltree::NodeType::Element => {
             let tag = n.tag_name();
-            let prefix = n.lookup_prefix(tag.namespace().unwrap_or("")).unwrap_or("");
+            let prefix = orig_prefix(n);
             let qname = if prefix.is_empty() {
                 tag.name().to_string()
             } else {
@@ -672,14 +691,14 @@ fn write_node(
                     .find(|ns| ns.name().unwrap_or("") == p)
                     .map(|ns| ns.uri().to_string())
             };
-            if let Some(uri) = ns_uri(prefix) {
+            if let Some(uri) = ns_uri(&prefix) {
                 used.insert(prefix.to_string(), uri);
             } else if prefix.is_empty() {
                 used.insert(String::new(), String::new());
             }
             for a in n.attributes() {
                 if let Some(ns) = a.namespace() {
-                    if let Some(p) = n.lookup_prefix(ns) {
+                    if let Some(p) = attr_prefix(n, &a) {
                         if !p.is_empty() {
                             used.insert(p.to_string(), ns.to_string());
                         }
@@ -730,8 +749,8 @@ fn write_node(
                     let ns = a.namespace().unwrap_or("").to_string();
                     let p = a
                         .namespace()
-                        .and_then(|ns| n.lookup_prefix(ns))
-                        .unwrap_or("");
+                        .and_then(|_| attr_prefix(n, &a))
+                        .unwrap_or_default();
                     let q = if p.is_empty() {
                         a.name().to_string()
                     } else {

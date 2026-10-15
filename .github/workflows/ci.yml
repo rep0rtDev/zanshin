@@ -345,10 +345,10 @@ jobs:
         run: ./target/debug/zanshin --migrate && ./target/debug/zanshin --doctor && ./target/debug/zanshin --doctor --json > /tmp/doctor.json && python3 -c "import json;d=json.load(open('/tmp/doctor.json'));print(len(d['checks']),'checks, ok =',d['ok'])"
       - name: Nakama (module → Zanshin on 127.0.0.1:7560)
         run: |
-          docker run -d --name nakama --network host --entrypoint /nakama/nakama zanshin-nakama:ci \
+          docker run -d --name nakama --network host --entrypoint /nakama/nakama \
+            -e ZANSHIN_URL=http://127.0.0.1:7560 -e ZANSHIN_SERVER_KEY=live-bootstrap-admin-key-49 zanshin-nakama:ci \
             --database.address zanshin:zanshin@localhost:5432/nakama --logger.level INFO \
-            --socket.server_key defaultkey --console.port 7351 \
-            --runtime.env ZANSHIN_URL=http://127.0.0.1:7560 --runtime.env ZANSHIN_SERVER_KEY=live-bootstrap-admin-key-49
+            --socket.server_key defaultkey --console.port 7351
           sleep 5; docker logs nakama | tail -20
       - name: live suite
         env:

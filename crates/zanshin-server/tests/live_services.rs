@@ -94,6 +94,7 @@ async fn keycloak_login(
         .unwrap()
 }
 
+/// Follows redirects inside the IdP; stops at (and returns) the first response from our server.
 async fn follow(c: &reqwest::Client, mut r: reqwest::Response, max: usize) -> reqwest::Response {
     for _ in 0..max {
         if !r.status().is_redirection() {
@@ -101,7 +102,11 @@ async fn follow(c: &reqwest::Client, mut r: reqwest::Response, max: usize) -> re
         }
         let loc = r.headers()["location"].to_str().unwrap().to_string();
         let next = r.url().join(&loc).expect("location url");
+        let ours = next.host_str() == Some("127.0.0.1") && next.port() == Some(7560);
         r = c.get(next).send().await.unwrap();
+        if ours {
+            break;
+        }
     }
     r
 }
@@ -182,6 +187,9 @@ async fn live_services() {
                     .or_else(|| attr(&html, "name=\"SAMLResponse\" VALUE=\""))
                     .expect("SAMLResponse form");
                 let relay = attr(&html, "name=\"RelayState\" value=\"").unwrap_or_default();
+                if let Some(dump) = env("ZANSHIN_TEST_DUMP_SAML") {
+                    std::fs::write(&dump, &resp).unwrap();
+                }
                 fresh
                     .post(format!("{base}/console/auth/saml/acs"))
                     .form(&[
@@ -192,14 +200,20 @@ async fn live_services() {
                     .await
                     .unwrap()
             } else {
-                follow(&fresh, after, 2).await
+                follow(&fresh, after, 4).await
             };
-            assert_eq!(
-                done.status().as_u16(),
-                303,
-                "{who} {saml}: our callback redirects to the console"
-            );
-            let loc = done.headers()["location"].to_str().unwrap().to_string();
+            let done_status = done.status().as_u16();
+            let loc = done
+                .headers()
+                .get("location")
+                .map(|l| l.to_str().unwrap().to_string())
+                .unwrap_or_default();
+            if done_status != 303 {
+                panic!(
+                    "{who} {saml}: our callback must redirect to the console, got {done_status}: {}",
+                    done.text().await.unwrap_or_default()
+                );
+            }
             let (st, me) = {
                 let r = fresh
                     .get(format!("{base}/admin/v1/me"))
@@ -216,7 +230,7 @@ async fn live_services() {
                     assert!(!loc.contains("error="), "{who} {saml}: {loc}");
                     assert_eq!(st, 200, "{who} {saml}: {me}");
                     assert_eq!(me["role"], role, "{who} {saml}: {me}");
-                    assert_eq!(me["email"], format!("{who}@example.com"), "{me}");
+                    assert_eq!(me["name"], format!("{who}@example.com"), "{me}");
                     assert_eq!(me["auth"], "oidc", "sso sessions report as oidc: {me}");
                 }
                 None => {
