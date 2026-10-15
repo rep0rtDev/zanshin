@@ -11,13 +11,10 @@ use base64::{
 use chrono::{DateTime, Utc};
 use jsonwebtoken::{Algorithm, DecodingKey, EncodingKey, Header, Validation};
 use rand::RngCore;
-use roxmltree::{Document, Node};
-use rsa::{
-    pkcs1::DecodeRsaPublicKey,
-    pkcs1v15::{Signature, VerifyingKey},
-    signature::Verifier,
-    RsaPublicKey,
+use ring::signature::{
+    UnparsedPublicKey, RSA_PKCS1_2048_8192_SHA1_FOR_LEGACY_USE_ONLY, RSA_PKCS1_2048_8192_SHA256,
 };
+use roxmltree::{Document, Node};
 use serde::{Deserialize, Serialize};
 use sha1::Sha1;
 use sha2::{Digest, Sha256};
@@ -52,7 +49,7 @@ pub struct SamlService {
     cfg: Option<SamlConfig>,
     enc: EncodingKey,
     dec: DecodingKey,
-    certs: Vec<RsaPublicKey>,
+    certs: Vec<Vec<u8>>,
 }
 
 pub struct LoginStart {
@@ -292,11 +289,7 @@ pub struct VerifyOptions<'a> {
 
 /// Parses and verifies a SAML `Response`: status, a valid signature over the Response or the
 /// Assertion by one of `certs`, destination / audience / time window / InResponseTo.
-pub fn verify_response(
-    xml: &str,
-    certs: &[RsaPublicKey],
-    o: VerifyOptions<'_>,
-) -> Result<Assertion> {
+pub fn verify_response(xml: &str, certs: &[Vec<u8>], o: VerifyOptions<'_>) -> Result<Assertion> {
     let doc = Document::parse(xml)
         .map_err(|e| Error::unauthenticated(format!("saml: malformed xml: {e}")))?;
     let root = doc.root_element();
@@ -503,7 +496,7 @@ fn parse_time(s: &str) -> Option<DateTime<Utc>> {
 fn verify_signature(
     signed: Node<'_, '_>,
     sig: Node<'_, '_>,
-    certs: &[RsaPublicKey],
+    certs: &[Vec<u8>],
     allow_sha1: bool,
 ) -> Result<()> {
     let signed_info = sig
@@ -615,15 +608,15 @@ fn verify_signature(
     let sig_bytes = STANDARD
         .decode(&sig_value)
         .map_err(|_| Error::unauthenticated("saml: SignatureValue is not base64"))?;
-    let signature = Signature::try_from(sig_bytes.as_slice())
-        .map_err(|_| Error::unauthenticated("saml: malformed signature value"))?;
     let ok = certs.iter().any(|k| match sig_alg {
-        ALG_RSA_SHA256 => VerifyingKey::<Sha256>::new(k.clone())
-            .verify(&si_canon, &signature)
+        ALG_RSA_SHA256 => UnparsedPublicKey::new(&RSA_PKCS1_2048_8192_SHA256, k)
+            .verify(&si_canon, &sig_bytes)
             .is_ok(),
-        ALG_RSA_SHA1 if allow_sha1 => VerifyingKey::<Sha1>::new(k.clone())
-            .verify(&si_canon, &signature)
-            .is_ok(),
+        ALG_RSA_SHA1 if allow_sha1 => {
+            UnparsedPublicKey::new(&RSA_PKCS1_2048_8192_SHA1_FOR_LEGACY_USE_ONLY, k)
+                .verify(&si_canon, &sig_bytes)
+                .is_ok()
+        }
         _ => false,
     });
     if !ok {
@@ -793,7 +786,8 @@ fn xml_escape(s: &str) -> String {
 }
 
 /// Accepts PEM (`-----BEGIN CERTIFICATE-----`) or bare base64 DER as found in IdP metadata.
-pub fn parse_cert(input: &str) -> Result<RsaPublicKey> {
+/// Returns the PKCS#1 `RSAPublicKey` DER of the certificate's subject public key.
+pub fn parse_cert(input: &str) -> Result<Vec<u8>> {
     let b64: String = input
         .lines()
         .filter(|l| !l.starts_with("-----"))
@@ -806,8 +800,11 @@ pub fn parse_cert(input: &str) -> Result<RsaPublicKey> {
         .map_err(|_| Error::invalid("certificate is not base64"))?;
     let (_, cert) = x509_parser::parse_x509_certificate(&der)
         .map_err(|e| Error::invalid(format!("certificate: {e}")))?;
-    RsaPublicKey::from_pkcs1_der(&cert.tbs_certificate.subject_pki.subject_public_key.data)
-        .map_err(|e| Error::invalid(format!("certificate public key is not RSA: {e}")))
+    let spki = &cert.tbs_certificate.subject_pki;
+    if spki.algorithm.algorithm != x509_parser::oid_registry::OID_PKCS1_RSAENCRYPTION {
+        return Err(Error::invalid("certificate public key is not RSA"));
+    }
+    Ok(spki.subject_public_key.data.to_vec())
 }
 
 fn random_token() -> String {
@@ -819,11 +816,14 @@ fn random_token() -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use rsa::{
-        pkcs1v15::SigningKey,
-        signature::{SignatureEncoding, Signer},
-        RsaPrivateKey,
+    use ring::{
+        rand::SystemRandom,
+        signature::{RsaKeyPair, RSA_PKCS1_SHA256},
     };
+
+    // throwaway 2048-bit test keys (PKCS#1 DER), used only to sign fixtures
+    const TEST_KEY_1: &str = "MIIEogIBAAKCAQEAyF1gzsRBqOkSxtacbuj9wCstubV+G49ogISBPPIxahW/vaXk08+/7lF2fGs1/NxUTmLqfa6r8ffXLs+/i+Fj9/ZsUAERTtCmkILTbSP9uB8EhFFyB5YNQDr+I58kGav/58xZ/RXGe65K9juv1Xaw1BbVrx9ILfFwFXXuoOUBzPcAzvWeU8Dl3tdjmoTajBajSmhYXurcNnzO5g9Rv6tgVcoXAcTcRKQRvyFu38jCjJ9uNIcMGS/5xJ3OO8pODPYCJBT7N86jSBGj3eGo9awQ34KHakLUo3k1N0qgy+p3KLTbiX6l/gNxMV+7E2kCT97zIJmtQsM5rQGEWRBdnkH1KwIDAQABAoIBADFDDBcqF36g91Xd1A5MyH6j3xUmsz+xbZ8TdPb4EQAlIsRM8krFbEn6y2fhsB9gSHYRSdfmxy2xor1GpLCOlNaVRqIQ8SFwmVM0ZykRTUMklSa3I5ML6GwfVPaLHQQWzs895e4cmXU1MAcEO8H+8ZDjoFvzE/r/vm/4U9hJFb0/mYKMFqCh2ls016dNuky52sM2rXgl4g9FywtR0FnOZzVeVRLpAJ8O8bJ2Ae9gzV5giY8icfEhE4NEWZygOxhH2+CArG794N37iVPgxpSPfi+MrB3DUSMDMKcgpFI09Qql9XdURqvX0cm8e9bMiJq6s9vS6l9RYJiViQY+22fowHECgYEA+0EJSz7exCk3F88mzhhNgo6qxz7cyo3j5fs0Ie1D5qh7g/0/LieBgq9qQ+OhK9zK7vcjGTyu+oehs+xec59D2qB6LEvbz2gdVHFjebgGWF2gUrFlR8VqdJ3sDpuvO2aSHOFyJ2p4OwQBuTRd+m1kdGUNA4mDxZeNV+XRyzd727kCgYEAzCZC/VsBIQJssdryfp1goEeLy6SJpBP4JvEJ7xXN2yLmV+U0xWNyBH9dHA9qMbui3VUgcLMNZzPV6RMIyAnHQDa/KRspf/EbU2OgOYvw9BX962iwUb5jWCG+3B3gZiMply/ENHlKE9nLCT0b2Xz3bWQC5ZXKUGqUGTKZUAamcgMCgYAuSP/WTcGp71HH4BBs/QsiVvfc9paj9dma31juOxA8KKOAYCHIddyk3326/e8N7oGv3fUoTAaL/npqc8u+jwNn/hIjoOHgZnSovq6tmJoKo0zKjwVyYErJKuJ2mnWAgte93EY0Pqfhb06F+MCrRoWv74GjOiz9NHsES0EHp7P4eQKBgCQqWw+7AXYxkcPoP7FCfA2o3xEScvfIOdvcM6BRQoihpCDKEBEvztERJxODf5KT5QREwlx0u9kei7SglJurb8rmZ/MGRtHNisO5EHdhXSxAgR0lDKdOjRbd04v3FvvBGusXoTCSlBb0LE3Ur4xV4RdV8lVttcuNNfNIzXQp2W61AoGAIvKgkAL5Ycj0Pi/SdX+HgSL7UiEJZHJ30eLKG2Fd2XLQA2aaoSna7XQjvGc08TnDcmchuGggj9ISuJPCXUjV+ygjC1l/lyWjmeOGqNyIyRNIH3ed75LbxQ7SYqtY5BoUi3LgwDvhNRUIDsbx9braqmrm1LS8L7yQUTx6ubdTQKU=";
+    const TEST_KEY_2: &str = "MIIEpAIBAAKCAQEA6TW9XkJm0otJ+Oj/FoqoIPpz8JLSB49jfd8w+MJPhPDeLFSuNEdh1DT0knsxAmTZsU3nMOkQugeO5lXUaBc856E25l7tO2HPDPZ6B8OZpwpJW1RAZALfd7rDEjKD496gwgCCglYp8viiu1de3JazU0aEtVq4hggcE3DI8N1U4tMBwf0nWoLs5I/dfZIvFF+XL+OgYsxj+SiA531LY2WVZ6eVRZAcQOLBoDTGv/xOQhWZ8N2CGLmUw1nj+lbjakMm/mmDfFUSyChjLnmkG6FfA+V5JE5hcbRopcCwnMYawVsYpLtzrJToyOb73zmlSE1z+dbz4eZNdlKyxWwCVruVEwIDAQABAoIBAEmgRD1mhFTTUdLKKIKi2uqyd3kLuVBWtiful2Tp37YOX24qe+cYZCvdXhuC1hm14j6GZEd+RWAd88EHduw37ewI6y626Hm3auliRWt/Ftr0Ne2l/0Az4f5IUb7EgPwndKRbCdkBP/QsCCBSOKo2z72qRUqGLjxuggKnOGFG1z5WmmLleYxkf+RDEVPiVXxYaL6DCafE4SvaPuXVNEcBLBYiY7r4JIqRy467gyd6T42JLkBPM5W3UbRinOot9X1ALHxB5zOV0b2pbTM0Gq6x2qAad4UF1wcK+F48qsXH+rEjNL3UemXO0O9JMxR/Ev45a1LXh+qMfc5LpcTtbKEAKZ0CgYEA+mwBhKqpyxcBRiY7CjXehlk4IL6sJwSYu6MVOVKvEzWCQoBBnq5vrjBytta0BRMqwAhpeT+ifdi03xa6EKq4tCHLXQTdRFaFUP7PAFIpHwXPfnauST3qIwq7+OlT/NO/8hDPAWzuAJec/WouWsH5kMin+5Yuy966L+fhLjT5FDcCgYEA7meVw7YtIK4TKKLJtKU4Ig5rG7ugr/bNV0Jpyf2wuSCgTGza1dsS6BNc8+r4wMGU/hrXmZrcu+sHyaT23t740uHI6Uh+ihWRlwaEV1NNdfUHHjA46STJwNrbCI1FwSSS2AW1Jjhi8Kd/VCYkAxx6ro+iHUu0oZ8zDZ6bAvhbUAUCgYEAl65z/PeigPEeRG9Ds5uNfbLs3GihvcB7Aqx1XpNGmEwA6mblWEgwPUH7OeQyhiBl9Isj191DfxaT98y8RvwhhHozw9P+cjY16iltGLSrU68hT2hziMmH2FHYKZyq0qkvyl+EA0kHoDQ1UwnNqgt0Ls5bcXg2QCZYgEvjiSls9WECgYEAr2Gcl0FpqWTlyzsWT8JLrSIWQWyiJVDWdp7w3Bu46jfKNO7PfguPuRKlivsMzCCczuJIQUPfpo6cSAcHZaV6PwjCmHswO7zqQcQVj3hEv8Xl2pt3AmyBz1IxV/U1n4ScUjbAsMFCZ++QiAMW8wL8bXZUuGB9HXjUQeyv9FtoMVECgYAb0t+cdzzq7ncgJdx59vOkjqAThVCIu9k4I/ct7P6LqBMcnT/LiQgWK+ZnB3UiKeKCru0GHLykH9cAiip7yDhYwcMnSsCbsY5UVn/ZZyPZvFqq0e1GRsDPUYwHJU2xv3IXDRk524vd1AZAKEGzSjHSdfoFRZtxJL38m5teDGr4IQ==";
 
     fn canon_str(xml: &str) -> String {
         let d = Document::parse(xml).unwrap();
@@ -848,7 +848,7 @@ mod tests {
         );
     }
 
-    fn signed_response(key: &RsaPrivateKey, assertion_body: &str, tamper: bool) -> String {
+    fn signed_response(key: &RsaKeyPair, assertion_body: &str, tamper: bool) -> String {
         let assertion = format!(
             r#"<saml:Assertion xmlns:saml="{NS_SAML}" ID="_a1" Version="2.0" IssueInstant="2026-01-01T00:00:00Z"><saml:Issuer>https://idp.example.com</saml:Issuer>{{SIG}}{assertion_body}</saml:Assertion>"#
         );
@@ -861,10 +861,12 @@ mod tests {
         );
         let si_doc = Document::parse(&signed_info).unwrap();
         let si_canon = canonicalize(si_doc.root_element(), None, &[]);
-        let sig = SigningKey::<Sha256>::new(key.clone()).sign(&si_canon);
+        let mut sig = vec![0u8; key.public().modulus_len()];
+        key.sign(&RSA_PKCS1_SHA256, &SystemRandom::new(), &si_canon, &mut sig)
+            .unwrap();
         let signature = format!(
             r#"<ds:Signature xmlns:ds="{NS_DS}">{signed_info}<ds:SignatureValue>{}</ds:SignatureValue></ds:Signature>"#,
-            STANDARD.encode(sig.to_bytes())
+            STANDARD.encode(&sig)
         );
         let mut signed = assertion.replace("{SIG}", &signature);
         if tamper {
@@ -892,10 +894,13 @@ mod tests {
 
     #[test]
     fn verifies_signed_assertion_and_rejects_tampering() {
-        let mut rng = rand::thread_rng();
-        let key = RsaPrivateKey::new(&mut rng, 2048).unwrap();
-        let pk = key.to_public_key();
-        let other = RsaPrivateKey::new(&mut rng, 2048).unwrap().to_public_key();
+        let key = RsaKeyPair::from_der(&STANDARD.decode(TEST_KEY_1).unwrap()).unwrap();
+        let pk: Vec<u8> = key.public().as_ref().to_vec();
+        let other: Vec<u8> = RsaKeyPair::from_der(&STANDARD.decode(TEST_KEY_2).unwrap())
+            .unwrap()
+            .public()
+            .as_ref()
+            .to_vec();
         let now = Utc::now();
 
         let a = verify_response(
