@@ -8,6 +8,8 @@ import { Badge, ErrorBox, Field, JsonField, Stat, Table, Toggle, fmtDate, fmtNum
 type Schedule = { kind: 'once' } | { kind: 'cron'; cron: string; window_secs?: number | null } | { kind: 'live_event'; live_event: string; anchor?: 'start' | 'end'; offset_secs?: number; window_secs?: number | null };
 type Campaign = {
   template_key?: string | null; schedule?: Schedule; channels?: string[];
+  frequency_cap?: { max: number; per_secs: number } | null; quiet_hours?: { start_hour: number; end_hour: number; timezone_prop?: string | null } | null;
+  variants?: Variant[]; push_options?: Record<string, unknown> | null;
   key: string; name: string; enabled: boolean; title: string; body: string; image_url: string; payload: unknown; condition: Cond | null; audiences: string[];
   percentage: number; starts_at: string | null; ends_at: string | null; ttl_secs: number | null; priority: number; push: boolean; tags: string[]; version: number; updated_at: string;
 };
@@ -95,6 +97,33 @@ function ChannelsPicker({ value, onChange }: { value: string[]; onChange: (v: st
       <span className="chip on">inbox</span>
       {items.map((i) => { const on = value.includes(i.key); return <button key={i.key} type="button" className={'chip' + (on ? ' on' : '')} onClick={() => onChange(on ? value.filter((k) => k !== i.key) : [...value.filter((k) => k !== 'inbox'), i.key, 'inbox'])}>{i.key} <span className="hint">{i.kind}</span></button>; })}
       {items.length === 0 && <span className="hint">No integrations yet — add one under Integrations.</span>}
+    </div>
+  );
+}
+
+type Variant = { key: string; weight: number; title: string; body: string; image_url: string; template_key?: string | null };
+type VariantStat = Variant & { sent: number; read: number; consumed: number; read_rate: number | null };
+
+function Variants({ c }: { c: Campaign }) {
+  const q = useLoad(() => get<{ total_sent: number; untagged: number; items: VariantStat[] }>(`/messages/${encodeURIComponent(c.key)}/variants`), [c.key]);
+  if (!(c.variants?.length)) return null;
+  return (
+    <div className="card">
+      <div className="row" style={{ alignItems: 'center' }}><strong>Copy variants (A/B)</strong><span className="hint">{q.data?.total_sent ?? 0} sent</span><button className="btn ghost sm" onClick={q.reload}>Refresh</button></div>
+      <ErrorBox error={q.error} />
+      <Table<VariantStat>
+        rows={q.data?.items}
+        rowKey={(v) => v.key}
+        empty="No deliveries yet"
+        cols={[
+          { h: 'Variant', c: (v) => <code>{v.key}</code> },
+          { h: 'Weight', c: (v) => v.weight },
+          { h: 'Title', c: (v) => v.title || (v.template_key ? <span className="hint">template {v.template_key}</span> : <span className="muted">campaign default</span>) },
+          { h: 'Sent', c: (v) => v.sent },
+          { h: 'Read', c: (v) => v.read },
+          { h: 'Read rate', c: (v) => (v.read_rate === null ? '—' : `${(v.read_rate * 100).toFixed(1)}%`) },
+        ]}
+      />
     </div>
   );
 }
@@ -196,12 +225,21 @@ export default function Messages() {
           </div>
           <Field label="Schedule" hint="once = on the first eligible inbox fetch; cron / live event = once per occurrence, also pushed proactively every minute"><ScheduleEditor value={d.schedule ?? { kind: 'once' }} onChange={(schedule) => set({ schedule })} /></Field>
           <Field label="Channels" hint="inbox is always the delivery record; integrations are sent in addition"><ChannelsPicker value={d.channels ?? ['inbox']} onChange={(channels) => set({ channels })} /></Field>
+          <div className="row">
+            <Num label="Frequency cap: max" value={d.frequency_cap?.max ?? null} onChange={(max) => set({ frequency_cap: max ? { max, per_secs: d.frequency_cap?.per_secs ?? 86400 } : null })} min={1} hint="deliveries of this campaign per player…" />
+            <Num label="…per hours" value={d.frequency_cap ? d.frequency_cap.per_secs / 3600 : null} onChange={(h) => set({ frequency_cap: d.frequency_cap ? { ...d.frequency_cap, per_secs: Math.max(1, Math.round((h ?? 24) * 3600)) } : null })} min={1} />
+            <Num label="Quiet hours from" value={d.quiet_hours?.start_hour ?? null} onChange={(start_hour) => set({ quiet_hours: start_hour === null || start_hour === undefined ? null : { start_hour, end_hour: d.quiet_hours?.end_hour ?? 8, timezone_prop: d.quiet_hours?.timezone_prop ?? 'default.timezone' } })} min={0} max={23} hint="local hour; blank = none" />
+            <Num label="…to" value={d.quiet_hours?.end_hour ?? null} onChange={(end_hour) => set({ quiet_hours: d.quiet_hours ? { ...d.quiet_hours, end_hour: end_hour ?? 8 } : null })} min={0} max={23} />
+            <Text label="Timezone property" value={d.quiet_hours?.timezone_prop ?? ''} onChange={(timezone_prop) => set({ quiet_hours: d.quiet_hours ? { ...d.quiet_hours, timezone_prop: timezone_prop || null } : null })} mono hint="default.timezone; UTC when the player has none" />
+          </div>
+          <Field label="Copy variants (A/B, JSON)" hint='[{"key":"a","weight":50,"title":"…","body":"…","image_url":"","template_key":null}] — sticky per player, stats on the campaign page'><JsonField value={d.variants ?? []} onChange={(variants) => set({ variants: (variants as Variant[] | null) ?? [] })} rows={2} /></Field>
+          <Field label="Rich push options (JSON)" hint='{"sound":"default","badge":1,"channel_id":"promo","collapse_key":"daily","deep_link":"game://shop","actions":[{"id":"open","title":"Open","url":"game://shop"}]}'><JsonField value={d.push_options ?? null} onChange={(push_options) => set({ push_options: (push_options as Record<string, unknown> | null) ?? null })} rows={1} /></Field>
           <Field label="Targeting condition"><ConditionEditor optional value={d.condition} onChange={(condition) => set({ condition })} /></Field>
           <Field label="Audiences"><AudiencePicker value={d.audiences ?? []} onChange={(audiences) => set({ audiences })} /></Field>
           <Tags value={d.tags} onChange={(tags) => set({ tags })} />
         </>
       )}
-      extra={(c) => <><CampaignStats c={c} /><Deliveries c={c} /></>}
+      extra={(c) => <><CampaignStats c={c} /><Variants c={c} /><Deliveries c={c} /></>}
     />
   );
 }

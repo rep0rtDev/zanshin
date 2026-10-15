@@ -55,6 +55,7 @@ async fn interruptible<F: std::future::Future<Output = ()>>(
 async fn sweeps(state: &AppState) {
     locked(state, "push_sweep", || sweep_push(state)).await;
     locked(state, "scheduled_sweep", || sweep_scheduled(state)).await;
+    locked(state, "message_deferrals", || sweep_deferrals(state)).await;
     locked(state, "idle_sessions", || close_idle_sessions(state)).await;
     locked(state, "export_runs", || state.export.run_due()).await;
     locked(state, "currency_rates", || async {
@@ -421,4 +422,17 @@ async fn flag_eval_flush(state: &AppState) {
 pub async fn sweep_once(state: &AppState) {
     flag_schedules(state).await;
     flag_eval_flush(state).await;
+}
+
+async fn sweep_deferrals(state: &AppState) {
+    let identities = zanshin_store::identities::IdentityRepo::new(state.stores.pg.clone());
+    match state
+        .messages
+        .sweep_deferrals(&state.eval, &identities)
+        .await
+    {
+        Ok(n) if n > 0 => tracing::info!(delivered = n, "deferred messages delivered"),
+        Ok(_) => {}
+        Err(e) => tracing::warn!(error = %e, "deferred message sweep failed"),
+    }
 }

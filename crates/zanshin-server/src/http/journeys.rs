@@ -143,7 +143,7 @@ async fn runs(
         .collect();
     Ok(Json(json!({
         "items": r.items, "next": next, "stats": by_status, "steps": steps,
-        "timing": r.timing, "status": r.journey.status(chrono::Utc::now()),
+        "timing": r.timing, "conversions": r.conversions, "status": r.journey.status(chrono::Utc::now()),
     })))
 }
 

@@ -34,6 +34,10 @@ struct Row {
     schedule: Value,
     channels: Vec<String>,
     tags: Vec<String>,
+    frequency_cap: Option<Value>,
+    quiet_hours: Option<Value>,
+    variants: Value,
+    push_options: Option<Value>,
     version: i64,
     created_at: DateTime<Utc>,
     updated_at: DateTime<Utc>,
@@ -65,6 +69,10 @@ impl TryFrom<Row> for MessageCampaign {
             schedule: serde_json::from_value(r.schedule).unwrap_or_default(),
             channels: r.channels,
             tags: r.tags,
+            frequency_cap: r.frequency_cap.and_then(|v| serde_json::from_value(v).ok()),
+            quiet_hours: r.quiet_hours.and_then(|v| serde_json::from_value(v).ok()),
+            variants: serde_json::from_value(r.variants).unwrap_or_default(),
+            push_options: r.push_options.and_then(|v| serde_json::from_value(v).ok()),
             version: r.version,
             created_at: r.created_at,
             updated_at: r.updated_at,
@@ -103,7 +111,7 @@ impl From<InboxRow> for InboxMessage {
     }
 }
 
-const COLS: &str = "id, key, name, enabled, title, body, image_url, payload, condition, audiences, percentage, starts_at, ends_at, ttl_secs, priority, push, inbox, template_key, schedule, channels, tags, version, created_at, updated_at";
+const COLS: &str = "id, key, name, enabled, title, body, image_url, payload, condition, audiences, percentage, starts_at, ends_at, ttl_secs, priority, push, inbox, template_key, schedule, channels, tags, version, created_at, updated_at, frequency_cap, quiet_hours, variants, push_options";
 const INBOX_COLS: &str =
     "id, key, title, body, image_url, payload, priority, delivered_at, read_at, expires_at";
 
@@ -165,8 +173,8 @@ impl MessageRepo {
 
     pub async fn create(&self, m: &MessageCampaign) -> Result<MessageCampaign> {
         let row: Row = sqlx::query_as(&format!(
-            "INSERT INTO messages (id, key, name, enabled, title, body, image_url, payload, condition, audiences, percentage, starts_at, ends_at, ttl_secs, priority, tags, push, template_key, schedule, channels, inbox)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21) RETURNING {COLS}"
+            "INSERT INTO messages (id, key, name, enabled, title, body, image_url, payload, condition, audiences, percentage, starts_at, ends_at, ttl_secs, priority, tags, push, template_key, schedule, channels, inbox, frequency_cap, quiet_hours, variants, push_options)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25) RETURNING {COLS}"
         ))
         .bind(m.id)
         .bind(&m.key)
@@ -189,6 +197,10 @@ impl MessageRepo {
         .bind(serde_json::to_value(&m.schedule).unwrap_or(Value::Null))
         .bind(&m.channels)
         .bind(m.inbox)
+        .bind(serde_json::to_value(&m.frequency_cap).ok().filter(|v| !v.is_null()))
+        .bind(serde_json::to_value(&m.quiet_hours).ok().filter(|v| !v.is_null()))
+        .bind(serde_json::to_value(&m.variants).unwrap_or(Value::Array(vec![])))
+        .bind(serde_json::to_value(&m.push_options).ok().filter(|v| !v.is_null()))
         .fetch_one(&self.pg)
         .await
         .map_err(|err| match map_sqlx(err) {
@@ -201,7 +213,7 @@ impl MessageRepo {
     pub async fn update(&self, m: &MessageCampaign) -> Result<MessageCampaign> {
         let row: Option<Row> = sqlx::query_as(&format!(
             "UPDATE messages SET name = $2, enabled = $3, title = $4, body = $5, image_url = $6, payload = $7, condition = $8, audiences = $9,
-                                 percentage = $10, starts_at = $11, ends_at = $12, ttl_secs = $13, priority = $14, tags = $15, push = $16, template_key = $17, schedule = $18, channels = $19, inbox = $20,
+                                 percentage = $10, starts_at = $11, ends_at = $12, ttl_secs = $13, priority = $14, tags = $15, push = $16, template_key = $17, schedule = $18, channels = $19, inbox = $20, frequency_cap = $21, quiet_hours = $22, variants = $23, push_options = $24,
                                  version = version + 1, updated_at = now()
              WHERE key = $1 RETURNING {COLS}"
         ))
@@ -225,6 +237,10 @@ impl MessageRepo {
         .bind(serde_json::to_value(&m.schedule).unwrap_or(Value::Null))
         .bind(&m.channels)
         .bind(m.inbox)
+        .bind(serde_json::to_value(&m.frequency_cap).ok().filter(|v| !v.is_null()))
+        .bind(serde_json::to_value(&m.quiet_hours).ok().filter(|v| !v.is_null()))
+        .bind(serde_json::to_value(&m.variants).unwrap_or(Value::Array(vec![])))
+        .bind(serde_json::to_value(&m.push_options).ok().filter(|v| !v.is_null()))
         .fetch_optional(&self.pg)
         .await
         .map_err(map_sqlx)?;
@@ -378,8 +394,8 @@ impl MessageRepo {
         detail: &str,
     ) -> Result<()> {
         sqlx::query(
-            "INSERT INTO message_deliveries (id, message_id, identity_id, occurrence, channel, status, detail)
-             VALUES ($1, $2, $3, $4, $5, $6, $7)",
+            "INSERT INTO message_deliveries (id, message_id, identity_id, occurrence, channel, status, detail, variant)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8)",
         )
         .bind(Uuid::now_v7())
         .bind(message_id)
@@ -388,6 +404,7 @@ impl MessageRepo {
         .bind(channel)
         .bind(status)
         .bind(&detail[..detail.len().min(1000)])
+        .bind("")
         .execute(&self.pg)
         .await
         .map_err(map_sqlx)?;
@@ -456,5 +473,144 @@ impl MessageRepo {
             .await
             .map_err(map_sqlx)?;
         Ok(res.rows_affected())
+    }
+}
+
+/// A delivery deferred by quiet hours, retried by housekeeping at `due_at`.
+#[derive(Debug, Clone, Serialize, FromRow)]
+pub struct Deferral {
+    pub id: Uuid,
+    pub message_id: Uuid,
+    pub identity_id: Uuid,
+    pub occurrence: Option<DateTime<Utc>>,
+    pub due_at: DateTime<Utc>,
+    pub reason: String,
+}
+
+#[derive(Debug, Clone, Serialize, FromRow)]
+pub struct VariantStat {
+    pub variant: String,
+    pub sent: i64,
+    pub read: i64,
+    pub consumed: i64,
+}
+
+impl MessageRepo {
+    /// Inbox deliveries to one player since `since` (all campaigns, or one when `message_id` is set).
+    pub async fn sent_since(
+        &self,
+        identity_id: Uuid,
+        message_id: Option<Uuid>,
+        since: DateTime<Utc>,
+    ) -> Result<i64> {
+        let n: i64 = sqlx::query_scalar(
+            "SELECT count(*)::bigint FROM message_deliveries
+             WHERE identity_id = $1 AND channel = 'inbox' AND status = 'sent' AND at >= $2
+               AND ($3::uuid IS NULL OR message_id = $3)",
+        )
+        .bind(identity_id)
+        .bind(since)
+        .bind(message_id)
+        .fetch_one(&self.pg)
+        .await
+        .map_err(map_sqlx)?;
+        Ok(n)
+    }
+
+    /// Tag the inbox delivery row of a campaign occurrence with the served copy variant.
+    pub async fn set_delivery_variant(
+        &self,
+        message_id: Uuid,
+        identity_id: Uuid,
+        occurrence: Option<DateTime<Utc>>,
+        variant: &str,
+    ) -> Result<()> {
+        sqlx::query(
+            "UPDATE message_deliveries SET variant = $4
+             WHERE message_id = $1 AND identity_id = $2 AND occurrence IS NOT DISTINCT FROM $3 AND channel = 'inbox'",
+        )
+        .bind(message_id)
+        .bind(identity_id)
+        .bind(occurrence)
+        .bind(variant)
+        .execute(&self.pg)
+        .await
+        .map_err(map_sqlx)?;
+        Ok(())
+    }
+
+    /// Sent / read / consumed per copy variant (joined to the inbox by player + campaign key).
+    pub async fn variant_stats(&self, message_id: Uuid, key: &str) -> Result<Vec<VariantStat>> {
+        sqlx::query_as(
+            "SELECT d.variant, count(*)::bigint AS sent,
+                    count(i.read_at)::bigint AS read,
+                    (count(*) - count(i.id))::bigint AS consumed
+             FROM message_deliveries d
+             LEFT JOIN inbox i ON i.identity_id = d.identity_id AND i.key = $2
+                               AND i.delivered_at BETWEEN d.at - interval '5 seconds' AND d.at + interval '5 seconds'
+             WHERE d.message_id = $1 AND d.channel = 'inbox' AND d.status = 'sent'
+             GROUP BY d.variant ORDER BY d.variant",
+        )
+        .bind(message_id)
+        .bind(key)
+        .fetch_all(&self.pg)
+        .await
+        .map_err(map_sqlx)
+    }
+
+    pub async fn defer(
+        &self,
+        message_id: Uuid,
+        identity_id: Uuid,
+        occurrence: Option<DateTime<Utc>>,
+        due_at: DateTime<Utc>,
+        reason: &str,
+    ) -> Result<bool> {
+        let r = sqlx::query(
+            "INSERT INTO message_deferrals (id, message_id, identity_id, occurrence, due_at, reason)
+             VALUES ($1, $2, $3, $4, $5, $6) ON CONFLICT DO NOTHING",
+        )
+        .bind(Uuid::now_v7())
+        .bind(message_id)
+        .bind(identity_id)
+        .bind(occurrence)
+        .bind(due_at)
+        .bind(reason)
+        .execute(&self.pg)
+        .await
+        .map_err(map_sqlx)?;
+        Ok(r.rows_affected() > 0)
+    }
+
+    pub async fn due_deferrals(&self, now: DateTime<Utc>, limit: i64) -> Result<Vec<Deferral>> {
+        sqlx::query_as(
+            "SELECT id, message_id, identity_id, occurrence, due_at, reason FROM message_deferrals
+             WHERE due_at <= $1 ORDER BY due_at LIMIT $2",
+        )
+        .bind(now)
+        .bind(limit)
+        .fetch_all(&self.pg)
+        .await
+        .map_err(map_sqlx)
+    }
+
+    pub async fn deferrals_for(&self, message_id: Uuid) -> Result<Vec<Deferral>> {
+        sqlx::query_as(
+            "SELECT id, message_id, identity_id, occurrence, due_at, reason FROM message_deferrals
+             WHERE message_id = $1 ORDER BY due_at LIMIT 500",
+        )
+        .bind(message_id)
+        .fetch_all(&self.pg)
+        .await
+        .map_err(map_sqlx)
+    }
+
+    pub async fn delete_deferral(&self, id: Uuid) -> Result<()> {
+        sqlx::query("DELETE FROM message_deferrals WHERE id = $1")
+            .bind(id)
+            .execute(&self.pg)
+            .await
+            .map_err(map_sqlx)?;
+        Ok(())
     }
 }

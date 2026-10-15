@@ -645,6 +645,7 @@ impl Zanshin for ZanshinGrpc {
             .await
             .map_err(to_status)?;
         let msg = crate::services::messages::DirectMessage {
+            push_options: None,
             inbox: true,
             template_key: None,
             template_name: None,

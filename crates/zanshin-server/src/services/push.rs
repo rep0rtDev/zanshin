@@ -164,7 +164,8 @@ impl Provider for FcmProvider {
         if !n.image_url.is_empty() {
             notification["image"] = serde_json::Value::String(n.image_url.clone());
         }
-        let body = serde_json::json!({ "message": { "token": token, "notification": notification, "data": data } });
+        let mut body = serde_json::json!({ "message": { "token": token, "notification": notification, "data": data } });
+        apply_fcm_options(&mut body, n);
         let res = self
             .http
             .post(format!(
@@ -242,6 +243,7 @@ impl Provider for ApnsProvider {
     async fn send(&self, token: &str, n: &Notification) -> std::result::Result<(), SendError> {
         let jwt = self.provider_token().await?;
         let mut body = serde_json::json!({ "aps": { "alert": { "title": n.title, "body": n.body }, "sound": "default", "mutable-content": 1 } });
+        apply_apns_options(&mut body, n);
         for (k, v) in &n.data {
             body[k] = v.clone();
         }
@@ -456,5 +458,62 @@ impl PushService {
             }
         }
         sent
+    }
+}
+
+/// Rich push extras → FCM v1 message fields.
+fn apply_fcm_options(body: &mut serde_json::Value, n: &Notification) {
+    let Some(o) = &n.options else { return };
+    let msg = &mut body["message"];
+    let mut android = serde_json::Map::new();
+    if !o.sound.is_empty() {
+        android.insert("sound".into(), serde_json::Value::String(o.sound.clone()));
+    }
+    if !o.channel_id.is_empty() {
+        android.insert(
+            "channel_id".into(),
+            serde_json::Value::String(o.channel_id.clone()),
+        );
+    }
+    if !o.deep_link.is_empty() {
+        android.insert(
+            "click_action".into(),
+            serde_json::Value::String(o.deep_link.clone()),
+        );
+    }
+    if !android.is_empty() {
+        msg["android"]["notification"] = serde_json::Value::Object(android);
+    }
+    if !o.collapse_key.is_empty() {
+        msg["android"]["collapse_key"] = serde_json::Value::String(o.collapse_key.clone());
+    }
+    if !o.actions.is_empty() {
+        msg["data"]["zanshin_actions"] =
+            serde_json::Value::String(serde_json::to_string(&o.actions).unwrap_or_default());
+    }
+    if !o.deep_link.is_empty() {
+        msg["data"]["zanshin_deep_link"] = serde_json::Value::String(o.deep_link.clone());
+    }
+    if let Some(b) = o.badge {
+        msg["apns"]["payload"]["aps"]["badge"] = serde_json::Value::from(b);
+    }
+}
+
+/// Rich push extras → APNs payload (category = first action id, mutable-content for actions/images).
+fn apply_apns_options(body: &mut serde_json::Value, n: &Notification) {
+    let Some(o) = &n.options else { return };
+    if !o.sound.is_empty() {
+        body["aps"]["sound"] = serde_json::Value::String(o.sound.clone());
+    }
+    if let Some(b) = o.badge {
+        body["aps"]["badge"] = serde_json::Value::from(b);
+    }
+    if let Some(first) = o.actions.first() {
+        body["aps"]["category"] = serde_json::Value::String(first.id.clone());
+        body["aps"]["mutable-content"] = serde_json::Value::from(1);
+        body["zanshin_actions"] = serde_json::to_value(&o.actions).unwrap_or_default();
+    }
+    if !o.deep_link.is_empty() {
+        body["zanshin_deep_link"] = serde_json::Value::String(o.deep_link.clone());
     }
 }

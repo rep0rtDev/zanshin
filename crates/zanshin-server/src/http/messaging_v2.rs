@@ -39,6 +39,8 @@ pub fn router() -> Router<AppState> {
         )
         .route("/integrations/{key}/test", post(test_integration))
         .route("/messages/{key}/deliveries", get(deliveries))
+        .route("/messages/{key}/variants", get(message_variants))
+        .route("/messages/{key}/deferrals", get(message_deferrals))
         .route(
             "/identities/{id}/inbox/{msg}",
             axum::routing::delete(admin_delete_inbox),
@@ -301,4 +303,45 @@ async fn admin_delete_inbox(
     let identity = state.identity.get(id).await?;
     state.messages.delete_inbox(&identity, msg).await?;
     Ok(Json(json!({ "deleted": msg })))
+}
+
+/// Sent / read / consumed per copy variant (A/B templates).
+async fn message_variants(
+    State(state): State<AppState>,
+    AdminAuth(_): AdminAuth,
+    Path(key): Path<String>,
+) -> ApiResult<Json<Value>> {
+    let (m, stats) = state.messages.variant_stats(&key).await?;
+    let total: i64 = stats.iter().map(|s| s.sent).sum();
+    let items: Vec<Value> = m
+        .variants
+        .iter()
+        .map(|v| {
+            let s = stats.iter().find(|s| s.variant == v.key);
+            let sent = s.map(|s| s.sent).unwrap_or(0);
+            let read = s.map(|s| s.read).unwrap_or(0);
+            json!({
+                "key": v.key, "weight": v.weight, "title": v.title, "template_key": v.template_key,
+                "sent": sent, "read": read, "consumed": s.map(|s| s.consumed).unwrap_or(0),
+                "read_rate": if sent > 0 { Some(read as f64 / sent as f64) } else { None },
+            })
+        })
+        .collect();
+    let untagged = stats
+        .iter()
+        .filter(|s| s.variant.is_empty())
+        .map(|s| s.sent)
+        .sum::<i64>();
+    Ok(Json(
+        json!({ "message": m.key, "total_sent": total, "untagged": untagged, "items": items }),
+    ))
+}
+
+async fn message_deferrals(
+    State(state): State<AppState>,
+    AdminAuth(_): AdminAuth,
+    Path(key): Path<String>,
+) -> ApiResult<Json<Value>> {
+    let items = state.messages.deferrals(&key).await?;
+    Ok(Json(json!({ "items": items })))
 }
