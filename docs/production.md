@@ -161,6 +161,12 @@ secrets redacted.
   versions during a rollout read the same rows, so a rolling update needs no freeze.
 * Skipping minors is supported (migrations are sequential and idempotent); read `CHANGELOG.md`
   for deprecations first.
+* **Drilled in CI on every push**: `upgrade-drill` seeds a database through the previous
+  release's own binary and API, migrates it forward with the current build and checks flags,
+  audiences, identities and events are still served and `--doctor` is clean; `multi-replica`
+  runs two replicas on one PostgreSQL/Redis, verifies a change made on either is served by the
+  other within a second, and rolls them one at a time while the survivor keeps answering
+  `/readyz` and evaluations.
 
 ## Backups and restore
 
