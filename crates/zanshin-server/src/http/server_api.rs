@@ -28,6 +28,7 @@ use super::{
 pub fn router() -> Router<AppState> {
     Router::new()
         .route("/flags", get(flags))
+        .route("/rules", get(rules))
         .route("/audiences", get(audiences))
         .route(
             "/audiences/{key}/members",
@@ -87,6 +88,33 @@ async fn flags(
     let identity = state.eval.identity_by_external_id(&q.external_id).await?;
     Ok(Json(FlagList {
         flags: state.eval.flags(&identity, &split_names(q.names)).await?,
+    }))
+}
+
+/// Rules bundle for local evaluation in server SDKs: every flag definition plus the dynamic
+/// audiences they may reference. Managed audiences (server-side member lists) are listed by key
+/// only — SDKs treat them as "not a member" and should fall back to remote evaluation when a
+/// flag depends on one.
+async fn rules(
+    State(state): State<AppState>,
+    ServerAuth(_): ServerAuth,
+) -> Json<serde_json::Value> {
+    let flags = state.flags.list().await;
+    let audiences = state.audiences.list().await;
+    let (dynamic, managed): (Vec<_>, Vec<_>) = audiences
+        .iter()
+        .partition(|a| a.kind == zanshin_core::audiences::AudienceKind::Dynamic);
+    Json(serde_json::json!({
+        "generated_at": chrono::Utc::now(),
+        "flags": flags.iter().map(|f| {
+            let mut v = serde_json::to_value(f.as_ref()).unwrap_or_default();
+            v["salt"] = serde_json::Value::String(f.salt.clone());
+            v
+        }).collect::<Vec<_>>(),
+        "audiences": dynamic.iter().map(|a| serde_json::json!({
+            "key": a.key, "condition": a.condition, "percentage": a.percentage, "salt": a.salt, "enabled": a.enabled,
+        })).collect::<Vec<_>>(),
+        "managed_audiences": managed.iter().map(|a| a.key.clone()).collect::<Vec<_>>(),
     }))
 }
 

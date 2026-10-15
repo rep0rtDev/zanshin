@@ -37,3 +37,18 @@ stream.connect();
 Access tokens are refreshed automatically (shared single refresh on concurrent calls); the
 stream reconnects with backoff and re-authenticates after refresh. In Node < 22 pass a WebSocket
 implementation: `z.stream({ webSocket: (u) => new WebSocket(u) })` with the `ws` package.
+
+## Local evaluation and OpenFeature (server side)
+
+```ts
+import { ZanshinClient, LocalEvaluator, flatten, ZanshinProvider } from '@zanshin/sdk';
+const z = new ZanshinClient({ url, apiKey: serverKey });
+const local = new LocalEvaluator(await z.rules());          // GET /server/v1/rules
+local.evaluate('shop', 'player-42', flatten('player-42', { custom: { level: 7 } }));
+
+OpenFeature.setProvider(new ZanshinProvider({ client: z, local: true }));
+await OpenFeature.getClient().getBooleanValue('shop', false, { targetingKey: 'player-42', level: 7 });
+```
+
+Same hashing, operators and reasons as the server; overrides, experiments and live events are not
+applied locally and managed audiences never match (`dependsOnManaged(key)`).

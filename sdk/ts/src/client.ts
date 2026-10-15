@@ -1,3 +1,4 @@
+import type { RulesBundle } from './local.js';
 import {
   EventInput,
   Experiment,
@@ -229,6 +230,20 @@ export class ZanshinClient {
       if (e instanceof ZanshinError && e.isNotFound) return fallback;
       throw e;
     }
+  }
+
+  /** Trusted-backend flag evaluation for a player by external id (server / admin API key). */
+  async serverFlags(externalId: string, names?: string[]): Promise<Flag[]> {
+    const r = await this.request<{ flags: Flag[] }>('GET', '/server/v1/flags', { auth: 'key', query: { external_id: externalId, names: names?.join(',') } });
+    return r.flags;
+  }
+
+  /**
+   * Rules bundle for in-process evaluation (server / admin API key required):
+   * `new LocalEvaluator(await z.rules())`.
+   */
+  rules(): Promise<RulesBundle> {
+    return this.request('GET', '/server/v1/rules', { auth: 'key' });
   }
 
   async audiences(): Promise<string[]> {

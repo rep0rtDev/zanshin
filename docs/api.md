@@ -942,3 +942,11 @@ Configure `admin.scim.token` (or `token_file`), optional `default_archetype` and
 | Method | Path | Permission | Notes |
 |---|---|---|---|
 | POST | `/admin/v1/config/promote` | `data:write` | `{ url, admin_key, project?, mode, kinds?, keys?, dry_run }` — exports this project's bundle and imports it into the target server (`x-zanshin-project` = `project`); returns the target's plan (`plan.kinds.<kind>.{added,changed,removed,unchanged}`, `plan.summary`) |
+
+## Rules bundle (local evaluation)
+
+| Method | Path | Auth | Notes |
+|---|---|---|---|
+| GET | `/server/v1/rules` | server / admin key | `{ generated_at, flags: [full flag definitions], audiences: [{ key, condition, percentage, salt, enabled }] (dynamic only), managed_audiences: [keys] }` — everything a server SDK needs to evaluate flags in-process with the server's exact semantics (xxh3 bucketing over `namespace \0 salt \0 subject`, 10 000 buckets). Managed audiences cannot be evaluated locally: SDKs treat them as "not a member" (`DependsOnManaged` / `dependsOnManaged` tells you when to prefer a remote call). Overrides, experiments and live events are not part of the bundle. |
+
+Go: `zanshin.New(url, key, zanshin.WithLocalEvaluation(time.Minute))` → `client.LocalFlags(ctx, externalID, props, names...)` / `client.LocalFlag(...)`; the bundle is re-fetched after the TTL and whenever the change stream reports a change. TypeScript: `new LocalEvaluator(await z.rules())` → `evaluate(key, subject, flatten(subject, props))`. OpenFeature: `sdk/go/openfeature` and `ZanshinProvider` (TypeScript) wrap either mode; `targetingKey` = player external id.

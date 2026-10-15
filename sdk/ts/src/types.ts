@@ -22,13 +22,16 @@ export interface Session {
   properties: Properties;
 }
 
-export type ReasonKind = 'disabled' | 'default' | 'override' | 'experiment' | 'rule' | 'variant';
+export type ReasonKind = 'disabled' | 'default' | 'override' | 'experiment' | 'rule' | 'variant' | 'live_event' | 'prerequisite';
 
 export interface Reason {
   kind: ReasonKind;
   rule_id?: string;
   variant?: string;
   experiment?: string;
+  live_event?: string;
+  /** `prerequisite`: the flag whose value was not met. */
+  flag?: string;
 }
 
 export interface Flag<T = JsonValue> {
