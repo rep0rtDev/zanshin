@@ -1,6 +1,9 @@
 // Russian console strings, keyed by the English source text (see src/i18n.ts).
 // Identical values are kept so a key is visibly covered.
 export const ru: Record<string, string> = {
+  "campaign {0}": "кампания {0}",
+  "unread": "не прочитано",
+  "read": "прочитано",
   "alert": "алерт",
   "report": "отчёт",
   "delivery": "доставка",

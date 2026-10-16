@@ -225,9 +225,9 @@ function Properties() {
           ))}</div>
         )}
       </div>
-      {section('Default properties', 'default', q.data?.default, false)}
-      {section('Computed properties', 'computed', q.data?.computed, false)}
-      {section('Custom properties', 'custom', q.data?.custom, true)}
+      {section(t('Default properties'), 'default', q.data?.default, false)}
+      {section(t('Computed properties'), 'computed', q.data?.computed, false)}
+      {section(t('Custom properties'), 'custom', q.data?.custom, true)}
     </>
   );
 }

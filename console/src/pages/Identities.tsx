@@ -248,7 +248,7 @@ function InboxTab({ id }: { id: string }) {
         empty={t('Inbox is empty')}
         cols={[
           { h: t('Delivered'), w: '180px', c: (m) => fmtDate(m.delivered_at) },
-          { h: t('Title'), c: (m) => <><strong>{m.title}</strong>{m.key && <div className="hint">campaign {m.key}</div>}</> },
+          { h: t('Title'), c: (m) => <><strong>{m.title}</strong>{m.key && <div className="hint">{tf('campaign {0}', m.key)}</div>}</> },
           { h: t('State'), c: (m) => m.read_at ? <Badge>read</Badge> : <Badge tone="info">unread</Badge> },
           { h: t('Expires'), c: (m) => fmtDate(m.expires_at) },
           { h: '', c: (m) => <button className="btn ghost sm" onClick={() => del(`/identities/${id}/inbox/${m.id}`).then(q.reload)}>{t('Delete')}</button> },

@@ -230,7 +230,7 @@ ol.chain { margin: 10px 0 0; padding-left: 18px; display: grid; gap: 6px; }
 .menu-item{border:0;background:none;text-align:left;padding:7px 10px;border-radius:5px;font:inherit;cursor:pointer;color:var(--fg)}
 .menu-item:hover{background:var(--bg)}.menu-item.danger{color:var(--bad)}.menu-item:disabled{opacity:.5;cursor:default}
 .pager{display:flex;gap:8px;align-items:center;justify-content:flex-end;margin-top:10px}
-.stack{display:flex;flex-direction:column;gap:12px}
+.stack:not(table){display:flex;flex-direction:column;gap:12px}
 .page-head .inline{flex-wrap:wrap}
 .steps{display:flex;gap:4px;list-style:none;padding:0;margin:0 0 12px;counter-reset:s}
 .steps li{counter-increment:s;flex:1;padding:8px 12px;border-radius:6px;border:1px solid var(--line);color:var(--muted);font-size:13px;background:var(--card)}
