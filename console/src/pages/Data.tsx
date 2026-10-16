@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { del, get, post, useLoad } from '../api';
 import { EntityPage, Num, Tags, Text } from '../crud';
 import { ErrorBox, Field, JsonField, Page, Table, fmtDate, fmtNum } from '../ui';
-import { t } from '../i18n';
+import { t, tf } from '../i18n';
 
 type Sink = { id: string; key: string; name: string; kind: 'http' | 's3' | 'bigquery' | 'snowflake' | 'redshift'; config: Record<string, unknown>; format: 'jsonl' | 'csv' | 'parquet'; gzip: boolean; enabled: boolean; events: string[]; interval_secs: number; batch_size: number; cursor_at: string | null; last_run_at: string | null; last_error: string; tags: string[]; version: number; updated_at: string };
 type Run = { id: string; started_at: string; finished_at: string | null; status: string; rows: number; bytes: number; object: string; error: string };
@@ -25,7 +25,7 @@ function SinkRuns({ s }: { s: Sink }) {
     <div className="card">
       <div className="row" style={{ alignItems: 'center' }}>
         <strong>{t('Runs')}</strong>
-        <span className="hint">cursor {s.cursor_at ? fmtDate(s.cursor_at) : 'start'} · last run {s.last_run_at ? fmtDate(s.last_run_at) : '—'}</span>
+        <span className="hint">cursor {s.cursor_at ? fmtDate(s.cursor_at) : 'start'} {t('· last run')} {s.last_run_at ? fmtDate(s.last_run_at) : '—'}</span>
         <button className="btn sm" onClick={() => act('run')}>{t('Run now')}</button>
         <button className="btn ghost sm" onClick={() => act('test')}>{t('Send test')}</button>
         <button className="btn ghost sm" onClick={() => act('reset-cursor')}>{t('Reset cursor')}</button>
@@ -34,8 +34,8 @@ function SinkRuns({ s }: { s: Sink }) {
       <ErrorBox error={err ?? q.error} />
       {msg && <pre className="mono hint" style={{ whiteSpace: 'pre-wrap' }}>{msg}</pre>}
       <Table<Run> rows={q.data?.items} rowKey={(r) => r.id} empty={t('No runs yet')} cols={[
-        { h: 'Started', c: (r) => fmtDate(r.started_at) }, { h: 'Status', c: (r) => <code>{r.status}</code> }, { h: 'Rows', c: (r) => fmtNum(r.rows) },
-        { h: 'Bytes', c: (r) => fmtNum(r.bytes) }, { h: 'Object', c: (r) => <span className="mono">{r.object}</span> }, { h: 'Error', c: (r) => r.error },
+        { h: t('Started'), c: (r) => fmtDate(r.started_at) }, { h: t('Status'), c: (r) => <code>{r.status}</code> }, { h: t('Rows'), c: (r) => fmtNum(r.rows) },
+        { h: t('Bytes'), c: (r) => fmtNum(r.bytes) }, { h: t('Object'), c: (r) => <span className="mono">{r.object}</span> }, { h: t('Error'), c: (r) => r.error },
       ]} />
     </div>
   );
@@ -46,8 +46,8 @@ function Sinks() {
     <EntityPage<Sink>
       title={t('Export sinks')}
       path="/export-sinks"
-      blurb="Ship raw events to S3-compatible storage (JSONL / CSV / Parquet, optionally one object per event), an HTTP endpoint, BigQuery streaming, Snowflake (stage + COPY INTO) or Redshift (S3 + COPY). Rejected events carry `_error`. Each sink keeps its own cursor and run log."
-      cols={[{ h: 'Key', c: (s) => <><strong>{s.key}</strong><div className="hint">{s.name}</div></> }, { h: 'Kind', c: (s) => <code>{s.kind}</code> }, { h: 'Every', c: (s) => `${s.interval_secs}s` }, { h: 'Last run', c: (s) => s.last_run_at ? fmtDate(s.last_run_at) : '—' }, { h: 'State', c: (s) => s.last_error ? <span style={{ color: 'var(--danger)' }}>error</span> : s.enabled ? 'on' : 'off' }]}
+      blurb={t('Ship raw events to S3-compatible storage (JSONL / CSV / Parquet, optionally one object per event), an HTTP endpoint, BigQuery streaming, Snowflake (stage + COPY INTO) or Redshift (S3 + COPY). Rejected events carry `_error`. Each sink keeps its own cursor and run log.')}
+      cols={[{ h: t('Key'), c: (s) => <><strong>{s.key}</strong><div className="hint">{s.name}</div></> }, { h: t('Kind'), c: (s) => <code>{s.kind}</code> }, { h: t('Every'), c: (s) => `${s.interval_secs}s` }, { h: t('Last run'), c: (s) => s.last_run_at ? fmtDate(s.last_run_at) : '—' }, { h: t('State'), c: (s) => s.last_error ? <span style={{ color: 'var(--danger)' }}>error</span> : s.enabled ? 'on' : 'off' }]}
       blank={() => ({ key: '', name: '', kind: 'http', config: {}, format: 'jsonl', gzip: true, enabled: true, events: [], interval_secs: 300, batch_size: 10000, tags: [] })}
       form={(s, set, isNew) => (
         <>
@@ -102,7 +102,7 @@ function ConfigTab() {
     <div className="stack">
       <div className="card">
         <strong>{t('Export')}</strong>
-        <p className="hint">Download the whole configuration ({kinds.data?.kinds.join(', ')}) as one JSON bundle. Volatile fields (ids, versions, timestamps) are stripped so bundles can move between servers.</p>
+        <p className="hint">{tf('Download the whole configuration ({0}) as one JSON bundle. Volatile fields (ids, versions, timestamps) are stripped so bundles can move between servers.', kinds.data?.kinds.join(', ') ?? '')}</p>
         <button className="btn" onClick={download}>{t('Download bundle')}</button>
       </div>
       <div className="card stack">
@@ -122,7 +122,7 @@ function ConfigTab() {
         <ErrorBox error={err} />
         {diff && (
           <div>
-            <div className="hint">+{diff.summary.added} added · ~{diff.summary.changed} changed · −{diff.summary.removed} removed · {diff.summary.unchanged} unchanged</div>
+            <div className="hint">+{diff.summary.added} {t('added · ~')}{diff.summary.changed} {t('changed · −')}{diff.summary.removed} {t('removed ·')} {diff.summary.unchanged} unchanged</div>
             {Object.entries(diff.kinds).filter(([, k]) => k.added.length + k.changed.length + k.removed.length > 0).map(([kind, k]) => (
               <div key={kind} style={{ marginTop: 6 }}><strong>{kind}</strong>
                 <ul className="hint" style={{ margin: '4px 0 0 16px' }}>
@@ -146,7 +146,7 @@ function ConfigTab() {
           <button className="btn ghost" disabled={!target.url || !target.admin_key} onClick={() => promote(true)}>{t('Preview plan')}</button>
           <button className="btn" disabled={!target.url || !target.admin_key} onClick={() => promote(false)}>{t('Promote')}</button>
         </div>
-        <div className="hint">{t('Same thing from CI:') + ' '}<code>zanshinctl config promote --to … --to-key …</code>, or keep configuration in git with <code>zanshinctl config pull / apply / drift</code> and the <code>zanshin-apply</code>{' ' + t('GitHub Action.')}</div>
+        <div className="hint">{t('Same thing from CI:') + ' '}<code>zanshinctl config promote --to … --to-key …</code>{t(', or keep configuration in git with')} <code>zanshinctl config pull / apply / drift</code> {t('and the')} <code>zanshin-apply</code>{' ' + t('GitHub Action.')}</div>
       </div>
     </div>
   );
@@ -165,9 +165,9 @@ function HistoryTab() {
       <div className="row" style={{ alignItems: 'end' }}><Text label={t('Kind')} value={kind} onChange={setKind} mono placeholder="flags" /><Text label={t('Key')} value={key} onChange={setKey} mono /></div>
       <ErrorBox error={err ?? q.error} />
       <Table<Snapshot> rows={q.data?.items} rowKey={(s) => s.id} empty={t('No history yet')} cols={[
-        { h: 'When', c: (s) => fmtDate(s.at) }, { h: 'Kind', c: (s) => <code>{s.kind}</code> }, { h: 'Key', c: (s) => <strong>{s.key}</strong> },
-        { h: 'Change', c: (s) => s.deleted ? <span style={{ color: 'var(--danger)' }}>deleted</span> : `v${s.version}${s.actor ? ` · ${s.actor}` : ''}` },
-        { h: '', c: (s) => <span className="row"><button className="btn ghost sm" onClick={() => setOpen(open === s.id ? null : s.id)}>{open === s.id ? 'Hide' : 'Show'}</button><button className="btn sm" onClick={() => revert(s.id)}>{t('Revert to this')}</button></span> },
+        { h: t('When'), c: (s) => fmtDate(s.at) }, { h: t('Kind'), c: (s) => <code>{s.kind}</code> }, { h: t('Key'), c: (s) => <strong>{s.key}</strong> },
+        { h: t('Change'), c: (s) => s.deleted ? <span style={{ color: 'var(--danger)' }}>deleted</span> : `v${s.version}${s.actor ? ` · ${s.actor}` : ''}` },
+        { h: '', c: (s) => <span className="row"><button className="btn ghost sm" onClick={() => setOpen(open === s.id ? null : s.id)}>{open === s.id ? t('Hide') : t('Show')}</button><button className="btn sm" onClick={() => revert(s.id)}>{t('Revert to this')}</button></span> },
       ]} />
       {open && <pre className="mono hint" style={{ whiteSpace: 'pre-wrap', maxHeight: 320, overflow: 'auto' }}>{JSON.stringify(q.data?.items.find((s) => s.id === open)?.body, null, 2)}</pre>}
     </div>
@@ -203,7 +203,7 @@ function ToolsTab() {
         <div className="row" style={{ alignItems: 'end' }}>
           <Text label={t('Identity id')} value={pid} onChange={setPid} mono />
           <button className="btn ghost" disabled={!pid} onClick={() => show(get(`/data/identities/${pid}/takeout`))}>{t('Takeout (JSON)')}</button>
-          <button className="btn danger" disabled={!pid} onClick={() => confirm('Delete this player and all their events?') && show(del(`/data/identities/${pid}`))}>{t('Delete everything')}</button>
+          <button className="btn danger" disabled={!pid} onClick={() => confirm(t('Delete this player and all their events?')) && show(del(`/data/identities/${pid}`))}>{t('Delete everything')}</button>
         </div>
       </div>
       <div className="card">
@@ -211,7 +211,7 @@ function ToolsTab() {
         <div className="row" style={{ alignItems: 'end' }}>
           <Text label={t('Older than (date)')} value={purge.before} onChange={(before) => setPurge({ ...purge, before })} mono />
           <Text label={t('Only these events (comma-separated, optional)')} value={purge.names} onChange={(names) => setPurge({ ...purge, names })} mono />
-          <button className="btn danger" onClick={() => confirm('Permanently delete matching events?') && show(post('/data/events/purge', { before: new Date(purge.before).toISOString(), names: purge.names.split(',').map((x) => x.trim()).filter(Boolean) }))}>{t('Purge')}</button>
+          <button className="btn danger" onClick={() => confirm(t('Permanently delete matching events?')) && show(post('/data/events/purge', { before: new Date(purge.before).toISOString(), names: purge.names.split(',').map((x) => x.trim()).filter(Boolean) }))}>{t('Purge')}</button>
         </div>
       </div>
       <ErrorBox error={err} />
@@ -223,7 +223,7 @@ function ToolsTab() {
 export default function Data() {
   const [tab, setTab] = useState<'sinks' | 'config' | 'history' | 'tools'>('sinks');
   const tabs: [typeof tab, string][] = [['sinks', 'Export sinks'], ['config', 'Config export / import'], ['history', 'History'], ['tools', 'Data tools']];
-  const chips = <div className="chips" style={{ marginBottom: 12 }}>{tabs.map(([k, l]) => <button key={k} className={'chip' + (k === tab ? ' on' : '')} onClick={() => setTab(k)}>{l}</button>)}</div>;
+  const chips = <div className="chips" style={{ marginBottom: 12 }}>{tabs.map(([k, l]) => <button key={k} className={'chip' + (k === tab ? ' on' : '')} onClick={() => setTab(k)}>{t(l)}</button>)}</div>;
   if (tab === 'sinks') return <>{chips}<Sinks /></>;
   return (
     <Page title={t('Data')}>

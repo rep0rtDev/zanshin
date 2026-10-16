@@ -27,10 +27,10 @@ function EventsPicker({ value, onChange }: { value: string[]; onChange: (v: stri
         {(q.data?.items ?? []).filter((t) => !t.includes('<')).map((t) => <button key={t} type="button" className={'chip' + (value.includes(t) ? ' on' : '')} onClick={() => toggle(t)}>{t}</button>)}
       </div>
       <div className="row" style={{ alignItems: 'end' }}>
-        <Text label={t('Custom pattern')} value={custom} onChange={setCustom} mono placeholder="event.purchase" hint="analytics events arrive as event.<name>" />
+        <Text label={t('Custom pattern')} value={custom} onChange={setCustom} mono placeholder="event.purchase" hint={t('analytics events arrive as event.<name>')} />
         <button className="btn ghost" disabled={!custom} onClick={() => { toggle(custom); setCustom(''); }}>{t('Add')}</button>
       </div>
-      <div className="hint">Subscribed: {value.map((v) => <code key={v} style={{ marginRight: 6 }}>{v}</code>)}</div>
+      <div className="hint">{t('Subscribed:')} {value.map((v) => <code key={v} style={{ marginRight: 6 }}>{v}</code>)}</div>
     </div>
   );
 }
@@ -57,10 +57,10 @@ function Deliveries({ w }: { w: Webhook }) {
         rowKey={(d) => d.id}
         empty={t('No deliveries yet')}
         cols={[
-          { h: 'When', c: (d) => fmtDate(d.created_at) },
-          { h: 'Events', c: (d) => d.event_types.map((t) => <code key={t} style={{ marginRight: 4 }}>{t}</code>) },
-          { h: 'Status', c: (d) => <><Badge tone={TONE[d.status]}>{d.status}</Badge> <span className="hint">{d.attempts}× {d.last_status ? tf('HTTP {0}', d.last_status) : ''}</span></> },
-          { h: 'Detail', c: (d) => <span className="hint">{d.last_error || (d.next_attempt_at && d.status === 'failed' ? tf('retry {0}', fmtDate(d.next_attempt_at)) : '')}</span> },
+          { h: t('When'), c: (d) => fmtDate(d.created_at) },
+          { h: t('Events'), c: (d) => d.event_types.map((t) => <code key={t} style={{ marginRight: 4 }}>{t}</code>) },
+          { h: t('Status'), c: (d) => <><Badge tone={TONE[d.status]}>{d.status}</Badge> <span className="hint">{d.attempts}× {d.last_status ? tf('HTTP {0}', d.last_status) : ''}</span></> },
+          { h: t('Detail'), c: (d) => <span className="hint">{d.last_error || (d.next_attempt_at && d.status === 'failed' ? tf('retry {0}', fmtDate(d.next_attempt_at)) : '')}</span> },
           { h: '', c: (d) => d.status !== 'sent' ? <button className="btn ghost sm" onClick={() => post(`/webhooks/${k}/deliveries/${d.id}/retry`).then(q.reload, setErr)}>{t('Retry')}</button> : null },
         ]}
       />
@@ -73,13 +73,13 @@ export default function Webhooks() {
     <EntityPage<Webhook>
       title={t('Webhooks')}
       path="/webhooks"
-      blurb="HTTP callbacks for things that happen in Zanshin: config changes, player lifecycle, analytics events, message deliveries. Requests are signed (HMAC-SHA256 over timestamp.body), optionally batched, and retried with backoff; every attempt is logged."
+      blurb={t('HTTP callbacks for things that happen in Zanshin: config changes, player lifecycle, analytics events, message deliveries. Requests are signed (HMAC-SHA256 over timestamp.body), optionally batched, and retried with backoff; every attempt is logged.')}
       cols={[
-        { h: 'Key', c: (w) => <><strong>{w.key}</strong><div className="hint">{w.url}</div></> },
-        { h: 'Events', c: (w) => w.events.slice(0, 4).map((e) => <code key={e} style={{ marginRight: 4 }}>{e}</code>) },
-        { h: 'Enabled', c: (w) => w.enabled ? <Badge tone="ok">on</Badge> : <Badge>off</Badge> },
-        { h: 'Batch', c: (w) => w.batch_size > 1 ? `${w.batch_size} / ${w.batch_window_secs}s` : '—' },
-        { h: 'Updated', c: (w) => fmtDate(w.updated_at) },
+        { h: t('Key'), c: (w) => <><strong>{w.key}</strong><div className="hint">{w.url}</div></> },
+        { h: t('Events'), c: (w) => w.events.slice(0, 4).map((e) => <code key={e} style={{ marginRight: 4 }}>{e}</code>) },
+        { h: t('Enabled'), c: (w) => w.enabled ? <Badge tone="ok">on</Badge> : <Badge>off</Badge> },
+        { h: t('Batch'), c: (w) => w.batch_size > 1 ? `${w.batch_size} / ${w.batch_window_secs}s` : '—' },
+        { h: t('Updated'), c: (w) => fmtDate(w.updated_at) },
       ]}
       blank={() => ({ key: '', name: '', url: '', secret: '', events: ['*'], enabled: true, batch_size: 1, batch_window_secs: 0, headers: {}, max_attempts: 5, tags: [] })}
       form={(d, set, isNew) => (
@@ -91,11 +91,11 @@ export default function Webhooks() {
           </div>
           <div className="row">
             <Text label={t('URL')} value={d.url} onChange={(url) => set({ url })} mono placeholder="https://example.com/zanshin" />
-            <Text label={t('Secret')} value={d.secret} onChange={(secret) => set({ secret })} mono hint="HMAC key; masked after saving — leave the mask to keep it" />
+            <Text label={t('Secret')} value={d.secret} onChange={(secret) => set({ secret })} mono hint={t('HMAC key; masked after saving — leave the mask to keep it')} />
           </div>
           <Field label={t('Events')}><EventsPicker value={d.events ?? ['*']} onChange={(events) => set({ events })} /></Field>
           <div className="row">
-            <Num label={t('Batch size')} value={d.batch_size} onChange={(batch_size) => set({ batch_size: batch_size ?? 1 })} min={1} max={500} hint="1 = one request per event" />
+            <Num label={t('Batch size')} value={d.batch_size} onChange={(batch_size) => set({ batch_size: batch_size ?? 1 })} min={1} max={500} hint={t('1 = one request per event')} />
             <Num label={t('Batch window (s)')} value={d.batch_window_secs} onChange={(batch_window_secs) => set({ batch_window_secs: batch_window_secs ?? 0 })} min={0} max={3600} hint={t('flush after this long even if the batch is not full')} />
             <Num label={t('Max attempts')} value={d.max_attempts} onChange={(max_attempts) => set({ max_attempts: max_attempts ?? 5 })} min={1} max={20} hint={t('backoff 10s, 20s, 40s … up to 1h')} />
           </div>

@@ -35,11 +35,11 @@ export default function LiveEvents() {
       blurb={tr('Scheduled content windows — one-shot or recurring (cron, UTC) — with a payload the client reads when the event is active.')}
       sort={(a, b) => new Date(a.starts_at).getTime() - new Date(b.starts_at).getTime()}
       cols={[
-        { h: 'Key', c: (e) => <><strong>{e.key}</strong><div className="hint">{e.name}</div></> },
-        { h: 'Status', c: (e) => { const [t, l] = status(e); return <Badge tone={t}>{l}</Badge>; } },
-        { h: 'Starts', c: (e) => fmtDate(e.starts_at) },
-        { h: 'Schedule', c: (e) => e.recurrence ? <code>{e.recurrence}</code> : e.ends_at ? tf('until {0}', fmtDate(e.ends_at)) : '—' },
-        { h: 'Duration', c: (e) => e.duration_secs ? tf('{0} min', Math.round(e.duration_secs / 60)) : '—' },
+        { h: tr('Key'), c: (e) => <><strong>{e.key}</strong><div className="hint">{e.name}</div></> },
+        { h: tr('Status'), c: (e) => { const [t, l] = status(e); return <Badge tone={t}>{l}</Badge>; } },
+        { h: tr('Starts'), c: (e) => fmtDate(e.starts_at) },
+        { h: tr('Schedule'), c: (e) => e.recurrence ? <code>{e.recurrence}</code> : e.ends_at ? tf('until {0}', fmtDate(e.ends_at)) : '—' },
+        { h: tr('Duration'), c: (e) => e.duration_secs ? tf('{0} min', Math.round(e.duration_secs / 60)) : '—' },
       ]}
       blank={() => ({ key: '', name: '', description: '', enabled: true, condition: null, audiences: [], starts_at: new Date().toISOString(), ends_at: null, duration_secs: 3600, recurrence: null, payload: {}, tags: [] })}
       form={(d, set, isNew) => (
@@ -55,7 +55,7 @@ export default function LiveEvents() {
             <Num label={tr('Duration (seconds)')} value={d.duration_secs} onChange={(duration_secs) => set({ duration_secs: duration_secs ?? null })} min={1} hint={tr('length of each occurrence')} />
           </div>
           <div className="row">
-            <Text label={tr('Recurrence (cron, UTC)')} value={d.recurrence ?? ''} onChange={(v) => set({ recurrence: v || null })} mono placeholder="0 0 18 * * Fri *" hint="7-field cron: sec min hour day month weekday year; empty = one-shot" />
+            <Text label={tr('Recurrence (cron, UTC)')} value={d.recurrence ?? ''} onChange={(v) => set({ recurrence: v || null })} mono placeholder='0 0 18 * * Fri *' hint={tr('7-field cron: sec min hour day month weekday year; empty = one-shot')} />
             <DateTime label={tr('Ends')} value={d.ends_at} onChange={(ends_at) => set({ ends_at })} hint={tr('one-shot: window end · recurring: no occurrences after this')} />
           </div>
           <Field label={tr('Payload (JSON)')} hint={tr('arbitrary data delivered to clients while the event is active')}><JsonField value={d.payload} onChange={(payload) => set({ payload: payload ?? {} })} rows={5} /></Field>
@@ -63,11 +63,11 @@ export default function LiveEvents() {
             <Field label={tr('Participation')} hint={tr('explicit: players call join during a window')}>
               <select value={d.join_mode ?? 'auto'} onChange={(e) => set({ join_mode: e.target.value as 'auto' | 'explicit' })}><option value="auto">{tr('auto (everyone targeted)')}</option><option value="explicit">{tr('explicit join')}</option></select>
             </Field>
-            <Num label={tr('Duration per player (sec)')} value={d.participation_secs ?? null} onChange={(participation_secs) => set({ participation_secs: participation_secs ?? null })} min={1} hint="blank = until the window closes" />
-            <div className="field fixed"><span className="label">{tr('Sticky')}</span><Toggle value={!!d.sticky} onChange={(sticky) => set({ sticky })} label={d.sticky ? 'keep participants across windows' : 'off'} /></div>
+            <Num label={tr('Duration per player (sec)')} value={d.participation_secs ?? null} onChange={(participation_secs) => set({ participation_secs: participation_secs ?? null })} min={1} hint={tr('blank = until the window closes')} />
+            <div className="field fixed"><span className="label">{tr('Sticky')}</span><Toggle value={!!d.sticky} onChange={(sticky) => set({ sticky })} label={d.sticky ? tr('keep participants across windows') : 'off'} /></div>
           </div>
-          <Field label={tr('Flag overrides (JSON)')} hint='{"flag_key": value} applied to participants while active — above rules, below experiments'><JsonField value={d.flag_overrides ?? {}} onChange={(flag_overrides) => set({ flag_overrides: (flag_overrides ?? {}) as Record<string, unknown> })} rows={3} /></Field>
-          <Field label={tr('Variants')} hint="optional: each participant is deterministically assigned one by weight and gets its payload (blank = event payload) and flag overrides on top of the event's; metrics are reported per variant">
+          <Field label={tr('Flag overrides (JSON)')} hint={'{"flag_key": value} applied to participants while active — above rules, below experiments'}><JsonField value={d.flag_overrides ?? {}} onChange={(flag_overrides) => set({ flag_overrides: (flag_overrides ?? {}) as Record<string, unknown> })} rows={3} /></Field>
+          <Field label={tr('Variants')} hint={tr("optional: each participant is deterministically assigned one by weight and gets its payload (blank = event payload) and flag overrides on top of the event's; metrics are reported per variant")}>
             <VariantsPanel value={d.variants ?? []} onChange={(variants) => set({ variants })} />
           </Field>
           <Field label={tr('Monitor metrics')} hint={tr('catalog metrics evaluated over participants, per run and per variant')}><MetricsPicker value={d.metrics ?? []} onChange={(metrics) => set({ metrics })} /></Field>
@@ -94,7 +94,7 @@ function Participants({ ev }: { ev: LiveEvent }) {
       <div className="card">
         <div className="row" style={{ alignItems: 'center' }}>
           <strong>{tr('Timeline')}</strong>
-          {t.data && <span className="hint">{t.data.participants.active} active · {t.data.participants.total} joined in total</span>}
+          {t.data && <span className="hint">{t.data.participants.active} {tr('active ·')} {t.data.participants.total} {tr('joined in total')}</span>}
         </div>
         <ErrorBox error={t.error} />
         <Table<{ start: string; end: string }>
@@ -102,9 +102,9 @@ function Participants({ ev }: { ev: LiveEvent }) {
           rowKey={(o) => o.start}
           empty={tr('No occurrences in the last 30 / next 60 days')}
           cols={[
-            { h: 'Window', c: (o) => <>{fmtDate(o.start)} → {fmtDate(o.end)}</> },
-            { h: 'State', w: '110px', c: (o) => { const s = Date.parse(o.start), e = Date.parse(o.end); return s <= now && now < e ? <Badge tone="ok">live</Badge> : e <= now ? <Badge>past</Badge> : <Badge tone="info">upcoming</Badge>; } },
-            { h: 'Joins that day', w: '130px', c: (o) => t.data?.joins.find((j) => j.day.slice(0, 10) === o.start.slice(0, 10))?.count ?? 0 },
+            { h: tr('Window'), c: (o) => <>{fmtDate(o.start)} → {fmtDate(o.end)}</> },
+            { h: tr('State'), w: '110px', c: (o) => { const s = Date.parse(o.start), e = Date.parse(o.end); return s <= now && now < e ? <Badge tone="ok">live</Badge> : e <= now ? <Badge>past</Badge> : <Badge tone="info">upcoming</Badge>; } },
+            { h: tr('Joins that day'), w: '130px', c: (o) => t.data?.joins.find((j) => j.day.slice(0, 10) === o.start.slice(0, 10))?.count ?? 0 },
           ]}
         />
       </div>
@@ -114,11 +114,11 @@ function Participants({ ev }: { ev: LiveEvent }) {
         <Table<Participant>
           rows={p.data?.items}
           rowKey={(m) => m.identity_id}
-          empty={ev.join_mode === 'explicit' ? 'Nobody has joined yet' : 'No explicit joins (auto events include every targeted player)'}
+          empty={ev.join_mode === 'explicit' ? tr('Nobody has joined yet') : tr('No explicit joins (auto events include every targeted player)')}
           cols={[
-            { h: 'Player', c: (m) => <span className="mono">{m.external_id}</span> },
-            { h: 'Joined', c: (m) => fmtDate(m.joined_at) },
-            { h: 'Left', c: (m) => m.left_at ? fmtDate(m.left_at) : <Badge tone="ok">participating</Badge> },
+            { h: tr('Player'), c: (m) => <span className="mono">{m.external_id}</span> },
+            { h: tr('Joined'), c: (m) => fmtDate(m.joined_at) },
+            { h: tr('Left'), c: (m) => m.left_at ? fmtDate(m.left_at) : <Badge tone="ok">participating</Badge> },
           ]}
         />
       </div>
@@ -179,8 +179,8 @@ function Monitor({ ev }: { ev: LiveEvent }) {
           rowKey={(x) => x.start}
           empty={tr('No run has started yet')}
           cols={[
-            { h: 'Run', w: '70px', c: (x) => <>#{x.run} {x.live && <Badge tone="ok">live</Badge>}</> },
-            { h: 'Window', c: (x) => <>{fmtDate(x.start)} → {fmtDate(x.end)}</> },
+            { h: tr('Run'), w: '70px', c: (x) => <>#{x.run} {x.live && <Badge tone="ok">live</Badge>}</> },
+            { h: tr('Window'), c: (x) => <>{fmtDate(x.start)} → {fmtDate(x.end)}</> },
             ...(ev.metrics ?? []).map((mk) => ({ h: mk, c: (x: Runs['runs'][number]) => { const row = x.metrics.find((y) => y.metric === mk); return row?.variants ? row.variants.map((v) => <div key={v.variant}><span className="hint">{v.variant}: </span>{fmtNum(v.value)}</div>) : <span className="muted">—</span>; } })),
           ]}
         />

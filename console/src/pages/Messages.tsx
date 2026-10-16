@@ -27,7 +27,7 @@ function render(tpl: string, props: Record<string, unknown> = SAMPLE): string {
 function Preview({ title, body, image }: { title?: string; body?: string; image?: string }) {
   return (
     <div className="field">
-      <span className="label">{t('Preview') + ' '}<span className="hint">(sample identity: Kai, iOS, DE, level 12, vip)</span></span>
+      <span className="label">{t('Preview') + ' '}<span className="hint">{t('(sample identity: Kai, iOS, DE, level 12, vip)')}</span></span>
       <div className="preview">
         <div className="t">{render(title ?? '') || <span className="muted">title</span>}</div>
         <div>{render(body ?? '') || <span className="muted">body</span>}</div>
@@ -49,7 +49,7 @@ function CampaignStats({ c }: { c: Campaign }) {
         <Stat label={t('Read')} value={fmtNum(s?.read ?? 0)} sub={s?.delivered ? `${((s.read / s.delivered) * 100).toFixed(1)}%` : undefined} />
         <Stat label={t('Consumed')} value={fmtNum(s?.consumed ?? 0)} sub={s?.delivered ? `${((s.consumed / s.delivered) * 100).toFixed(1)}%` : undefined} />
       </div>
-      <div className="hint" style={{ marginTop: 8 }}>Each identity receives a campaign at most once, on its next inbox fetch while the campaign is live and it matches targeting.{c.push && ' Push copies go out to registered devices on the next sweep (every minute).'}</div>
+      <div className="hint" style={{ marginTop: 8 }}>{t('Each identity receives a campaign at most once, on its next inbox fetch while the campaign is live and it matches targeting.')}{c.push && ' Push copies go out to registered devices on the next sweep (every minute).'}</div>
     </div>
   );
 }
@@ -59,7 +59,7 @@ function TemplatePicker({ value, onChange }: { value: string | null; onChange: (
   return (
     <Field label={t('Template')} hint={t('optional: render title/body/payload from the template in each player\'s locale')}>
       <select value={value ?? ''} onChange={(e) => onChange(e.target.value || null)}>
-        <option value="">— inline title/body —</option>
+        <option value="">{t('— inline title/body —')}</option>
         {(q.data?.items ?? []).map((t) => <option key={t.key} value={t.key}>{t.key}{t.name ? ` — ${t.name}` : ''} ({t.format})</option>)}
       </select>
     </Field>
@@ -79,12 +79,12 @@ function ScheduleEditor({ value, onChange }: { value: Schedule; onChange: (v: Sc
       </Field>
       {value.kind === 'cron' && <>
         <Text label={t('Cron (sec min hour dom mon dow)')} value={value.cron} onChange={(cron) => onChange({ ...value, cron })} mono />
-        <Num label={t('Window (s)')} value={value.window_secs ?? null} onChange={(window_secs) => onChange({ ...value, window_secs: window_secs ?? null })} hint="blank = 24h" />
+        <Num label={t('Window (s)')} value={value.window_secs ?? null} onChange={(window_secs) => onChange({ ...value, window_secs: window_secs ?? null })} hint={t('blank = 24h')} />
       </>}
       {value.kind === 'live_event' && <>
         <Field label={t('Live event')}><select value={value.live_event} onChange={(e) => onChange({ ...value, live_event: e.target.value })}>{events.map((e) => <option key={e.key} value={e.key}>{e.key}</option>)}</select></Field>
         <Field label={t('Anchor')}><select value={value.anchor ?? 'start'} onChange={(e) => onChange({ ...value, anchor: e.target.value as 'start' | 'end' })}><option value="start">{t('event start')}</option><option value="end">{t('event end')}</option></select></Field>
-        <Num label={t('Offset (s)')} value={value.offset_secs ?? 0} onChange={(offset_secs) => onChange({ ...value, offset_secs: offset_secs ?? 0 })} hint="negative = before" />
+        <Num label={t('Offset (s)')} value={value.offset_secs ?? 0} onChange={(offset_secs) => onChange({ ...value, offset_secs: offset_secs ?? 0 })} hint={t('negative = before')} />
       </>}
     </div>
   );
@@ -117,12 +117,12 @@ function Variants({ c }: { c: Campaign }) {
         rowKey={(v) => v.key}
         empty={t('No deliveries yet')}
         cols={[
-          { h: 'Variant', c: (v) => <code>{v.key}</code> },
-          { h: 'Weight', c: (v) => v.weight },
-          { h: 'Title', c: (v) => v.title || (v.template_key ? <span className="hint">template {v.template_key}</span> : <span className="muted">{t('campaign default')}</span>) },
-          { h: 'Sent', c: (v) => v.sent },
-          { h: 'Read', c: (v) => v.read },
-          { h: 'Read rate', c: (v) => (v.read_rate === null ? '—' : `${(v.read_rate * 100).toFixed(1)}%`) },
+          { h: t('Variant'), c: (v) => <code>{v.key}</code> },
+          { h: t('Weight'), c: (v) => v.weight },
+          { h: t('Title'), c: (v) => v.title || (v.template_key ? <span className="hint">template {v.template_key}</span> : <span className="muted">{t('campaign default')}</span>) },
+          { h: t('Sent'), c: (v) => v.sent },
+          { h: t('Read'), c: (v) => v.read },
+          { h: t('Read rate'), c: (v) => (v.read_rate === null ? '—' : `${(v.read_rate * 100).toFixed(1)}%`) },
         ]}
       />
     </div>
@@ -148,11 +148,11 @@ function Deliveries({ c }: { c: Campaign }) {
         rowKey={(d) => d.id}
         empty={t('No deliveries yet')}
         cols={[
-          { h: 'When', c: (d) => fmtDate(d.at) },
-          { h: 'Player', c: (d) => <span className="mono">{d.external_id}</span> },
-          { h: 'Channel', c: (d) => <code>{d.channel}</code> },
-          { h: 'Status', c: (d) => <Badge tone={d.status === 'sent' ? 'ok' : d.status === 'failed' ? 'bad' : 'warn'}>{d.status}</Badge> },
-          { h: 'Detail', c: (d) => <span className="hint">{d.detail}{d.occurrence ? tf(' · occurrence {0}', fmtDate(d.occurrence)) : ''}</span> },
+          { h: t('When'), c: (d) => fmtDate(d.at) },
+          { h: t('Player'), c: (d) => <span className="mono">{d.external_id}</span> },
+          { h: t('Channel'), c: (d) => <code>{d.channel}</code> },
+          { h: t('Status'), c: (d) => <Badge tone={d.status === 'sent' ? 'ok' : d.status === 'failed' ? 'bad' : 'warn'}>{d.status}</Badge> },
+          { h: t('Detail'), c: (d) => <span className="hint">{d.detail}{d.occurrence ? tf(' · occurrence {0}', fmtDate(d.occurrence)) : ''}</span> },
         ]}
       />
     </div>
@@ -179,7 +179,7 @@ export function DirectSend({ identityId, onSent }: { identityId: string; onSent?
         <Field label={t('Payload (JSON)')}><JsonField value={m.payload} onChange={(payload) => setM({ ...m, payload: payload ?? {} })} rows={1} /></Field>
       </div>
       <button className="btn" disabled={!m.title} onClick={send}>{t('Send')}</button>
-      {res && <span className="muted" style={{ marginLeft: 10 }}>delivered · {res}</span>}
+      {res && <span className="muted" style={{ marginLeft: 10 }}>{t('delivered ·')} {res}</span>}
     </div>
   );
 }
@@ -191,12 +191,12 @@ export default function Messages() {
       path="/messages"
       blurb={<>{t("In-app message campaigns delivered to each matching identity's inbox exactly once.")} <code>{'{{default.name}}'}</code>{t('-style placeholders in title/body are rendered per identity.')} {t("Direct one-off messages are sent from an identity's page.")}</>}
       cols={[
-        { h: 'Key', c: (c) => <><strong>{c.key}</strong><div className="hint">{c.title}</div></> },
-        { h: 'Status', c: (c) => c.enabled ? <Badge tone="ok">enabled</Badge> : <Badge>disabled</Badge> },
-        { h: 'Window', c: (c) => c.starts_at || c.ends_at ? `${fmtDate(c.starts_at)} → ${fmtDate(c.ends_at)}` : 'always' },
-        { h: 'Reach', c: (c) => `${c.percentage}%${c.audiences.length ? ' · ' + c.audiences.join(', ') : ''}` },
-        { h: 'Push', c: (c) => c.push ? <Badge tone="info">push</Badge> : <span className="muted">—</span> },
-        { h: 'Priority', c: (c) => c.priority },
+        { h: t('Key'), c: (c) => <><strong>{c.key}</strong><div className="hint">{c.title}</div></> },
+        { h: t('Status'), c: (c) => c.enabled ? <Badge tone="ok">enabled</Badge> : <Badge>disabled</Badge> },
+        { h: t('Window'), c: (c) => c.starts_at || c.ends_at ? `${fmtDate(c.starts_at)} → ${fmtDate(c.ends_at)}` : 'always' },
+        { h: t('Reach'), c: (c) => `${c.percentage}%${c.audiences.length ? ' · ' + c.audiences.join(', ') : ''}` },
+        { h: t('Push'), c: (c) => c.push ? <Badge tone="info">push</Badge> : <span className="muted">—</span> },
+        { h: t('Priority'), c: (c) => c.priority },
       ]}
       blank={() => ({ key: '', template_key: null, schedule: { kind: 'once' }, channels: ['inbox'], name: '', enabled: true, title: '', body: '', image_url: '', payload: {}, condition: null, audiences: [], percentage: 100, starts_at: null, ends_at: null, ttl_secs: null, priority: 0, push: false, tags: [] })}
       form={(d, set, isNew) => (
@@ -207,7 +207,7 @@ export default function Messages() {
             <div className="field fixed"><span className="label">{t('Enabled')}</span><Toggle value={!!d.enabled} onChange={(enabled) => set({ enabled })} label={d.enabled ? 'on' : 'off'} /></div>
           </div>
           <TemplatePicker value={d.template_key ?? null} onChange={(template_key) => set({ template_key })} />
-          <Text label={t('Title')} value={d.title} onChange={(title) => set({ title })} placeholder="Welcome back, {{default.name}}!" hint={d.template_key ? 'fallback only — the template renders title/body' : undefined} />
+          <Text label={t('Title')} value={d.title} onChange={(title) => set({ title })} placeholder='Welcome back, {{default.name}}!' hint={d.template_key ? t('fallback only — the template renders title/body') : undefined} />
           <Field label={t('Body')}><textarea rows={3} value={d.body ?? ''} onChange={(e) => set({ body: e.target.value })} style={{ fontFamily: 'inherit' }} /></Field>
           <div className="row">
             <Text label={t('Image URL')} value={d.image_url} onChange={(image_url) => set({ image_url })} />
@@ -222,16 +222,16 @@ export default function Messages() {
           <div className="row">
             <Num label={t('Reach %')} value={d.percentage} onChange={(percentage) => set({ percentage: percentage ?? 100 })} min={0} max={100} />
             <Num label={t('Priority')} value={d.priority} onChange={(priority) => set({ priority: priority ?? 0 })} hint={t('higher first in inbox')} />
-            <div className="field fixed"><span className="label">{t('Push notification')}</span><Toggle value={!!d.push} onChange={(push) => set({ push })} label={d.push ? 'also push' : 'inbox only'} /></div>
+            <div className="field fixed"><span className="label">{t('Push notification')}</span><Toggle value={!!d.push} onChange={(push) => set({ push })} label={d.push ? t('also push') : t('inbox only')} /></div>
           </div>
-          <Field label={t('Schedule')} hint="once = on the first eligible inbox fetch; cron / live event = once per occurrence, also pushed proactively every minute"><ScheduleEditor value={d.schedule ?? { kind: 'once' }} onChange={(schedule) => set({ schedule })} /></Field>
-          <Field label={t('Channels')} hint="inbox is always the delivery record; integrations are sent in addition"><ChannelsPicker value={d.channels ?? ['inbox']} onChange={(channels) => set({ channels })} /></Field>
+          <Field label={t('Schedule')} hint={t('once = on the first eligible inbox fetch; cron / live event = once per occurrence, also pushed proactively every minute')}><ScheduleEditor value={d.schedule ?? { kind: 'once' }} onChange={(schedule) => set({ schedule })} /></Field>
+          <Field label={t('Channels')} hint={t('inbox is always the delivery record; integrations are sent in addition')}><ChannelsPicker value={d.channels ?? ['inbox']} onChange={(channels) => set({ channels })} /></Field>
           <div className="row">
             <Num label={t('Frequency cap: max')} value={d.frequency_cap?.max ?? null} onChange={(max) => set({ frequency_cap: max ? { max, per_secs: d.frequency_cap?.per_secs ?? 86400 } : null })} min={1} hint={t('deliveries of this campaign per player…')} />
-            <Num label="…per hours" value={d.frequency_cap ? d.frequency_cap.per_secs / 3600 : null} onChange={(h) => set({ frequency_cap: d.frequency_cap ? { ...d.frequency_cap, per_secs: Math.max(1, Math.round((h ?? 24) * 3600)) } : null })} min={1} />
-            <Num label={t('Quiet hours from')} value={d.quiet_hours?.start_hour ?? null} onChange={(start_hour) => set({ quiet_hours: start_hour === null || start_hour === undefined ? null : { start_hour, end_hour: d.quiet_hours?.end_hour ?? 8, timezone_prop: d.quiet_hours?.timezone_prop ?? 'default.timezone' } })} min={0} max={23} hint="local hour; blank = none" />
+            <Num label={t('…per hours')} value={d.frequency_cap ? d.frequency_cap.per_secs / 3600 : null} onChange={(h) => set({ frequency_cap: d.frequency_cap ? { ...d.frequency_cap, per_secs: Math.max(1, Math.round((h ?? 24) * 3600)) } : null })} min={1} />
+            <Num label={t('Quiet hours from')} value={d.quiet_hours?.start_hour ?? null} onChange={(start_hour) => set({ quiet_hours: start_hour === null || start_hour === undefined ? null : { start_hour, end_hour: d.quiet_hours?.end_hour ?? 8, timezone_prop: d.quiet_hours?.timezone_prop ?? 'default.timezone' } })} min={0} max={23} hint={t('local hour; blank = none')} />
             <Num label="…to" value={d.quiet_hours?.end_hour ?? null} onChange={(end_hour) => set({ quiet_hours: d.quiet_hours ? { ...d.quiet_hours, end_hour: end_hour ?? 8 } : null })} min={0} max={23} />
-            <Text label={t('Timezone property')} value={d.quiet_hours?.timezone_prop ?? ''} onChange={(timezone_prop) => set({ quiet_hours: d.quiet_hours ? { ...d.quiet_hours, timezone_prop: timezone_prop || null } : null })} mono hint="default.timezone; UTC when the player has none" />
+            <Text label={t('Timezone property')} value={d.quiet_hours?.timezone_prop ?? ''} onChange={(timezone_prop) => set({ quiet_hours: d.quiet_hours ? { ...d.quiet_hours, timezone_prop: timezone_prop || null } : null })} mono hint={t('default.timezone; UTC when the player has none')} />
           </div>
           <Field label={t('Copy variants (A/B, JSON)')} hint='[{"key":"a","weight":50,"title":"…","body":"…","image_url":"","template_key":null}] — sticky per player, stats on the campaign page'><JsonField value={d.variants ?? []} onChange={(variants) => set({ variants: (variants as Variant[] | null) ?? [] })} rows={2} /></Field>
           <Field label={t('Rich push options (JSON)')} hint='{"sound":"default","badge":1,"channel_id":"promo","collapse_key":"daily","deep_link":"game://shop","actions":[{"id":"open","title":"Open","url":"game://shop"}]}'><JsonField value={d.push_options ?? null} onChange={(push_options) => set({ push_options: (push_options as Record<string, unknown> | null) ?? null })} rows={1} /></Field>

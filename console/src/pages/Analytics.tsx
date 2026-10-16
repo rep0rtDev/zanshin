@@ -70,7 +70,7 @@ export default function Analytics() {
   return (
     <Page title={t('Analytics')} actions={
       <>
-        <div className="tabs" style={{ border: 0, margin: 0 }}>{(['count', 'identities'] as const).map((m) => <button key={m} className={mode === m ? 'active' : ''} onClick={() => setMode(m)}>{m === 'count' ? 'events' : 'unique identities'}</button>)}</div>
+        <div className="tabs" style={{ border: 0, margin: 0 }}>{(['count', 'identities'] as const).map((m) => <button key={m} className={mode === m ? 'active' : ''} onClick={() => setMode(m)}>{m === 'count' ? 'events' : t('unique identities')}</button>)}</div>
         <div className="tabs" style={{ border: 0, margin: 0 }}>{RANGES.map(([l, d]) => <button key={l} className={days === d ? 'active' : ''} onClick={() => setDays(d)}>{l}</button>)}</div>
       </>
     }>
@@ -78,7 +78,7 @@ export default function Analytics() {
       <div className="card">
         <div className="legend">
           {names.map((n, i) => <button key={n} className="chip on" style={{ background: COLORS[i % COLORS.length], borderColor: COLORS[i % COLORS.length], color: i === 0 ? 'var(--bg)' : '#fff' }} onClick={() => toggle(n)} title={t('remove from chart')}>{n} · {fmtNum(totals[i] ?? 0)}</button>)}
-          <span className="hint">per {g} · backend {list.data?.backend ?? '…'} · click rows below to compare up to 4 events</span>
+          <span className="hint">per {g} {t('· backend')} {list.data?.backend ?? '…'} {t('· click rows below to compare up to 4 events')}</span>
         </div>
         {series.data && <Chart series={series.data} mode={mode} />}
       </div>
@@ -88,10 +88,10 @@ export default function Analytics() {
         onRow={(n) => toggle(n.name)}
         empty={t('No events in this range')}
         cols={[
-          { h: 'Event', c: (n) => <code style={{ fontWeight: names.includes(n.name) ? 700 : 400 }}>{names.includes(n.name) && <span style={{ color: COLORS[names.indexOf(n.name) % COLORS.length] }}>● </span>}{n.name}</code> },
-          { h: 'Events', c: (n) => fmtNum(n.count) },
-          { h: 'Identities', c: (n) => fmtNum(n.identities) },
-          { h: 'Per identity', c: (n) => (n.count / Math.max(n.identities, 1)).toFixed(2) },
+          { h: t('Event'), c: (n) => <code style={{ fontWeight: names.includes(n.name) ? 700 : 400 }}>{names.includes(n.name) && <span style={{ color: COLORS[names.indexOf(n.name) % COLORS.length] }}>● </span>}{n.name}</code> },
+          { h: t('Events'), c: (n) => fmtNum(n.count) },
+          { h: t('Identities'), c: (n) => fmtNum(n.identities) },
+          { h: t('Per identity'), c: (n) => (n.count / Math.max(n.identities, 1)).toFixed(2) },
           { h: '', c: (n) => <div className="bar"><i style={{ width: `${(n.count / maxCount) * 100}%` }} /></div> },
         ]}
       />

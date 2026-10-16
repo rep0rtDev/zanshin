@@ -42,7 +42,7 @@ function Health({ h }: { h?: Health }) {
   return (
     <div>
       <Badge tone={tone}>{h.last_status}</Badge> <span className="hint">{fmtDate(h.last_at!)}</span>
-      <div className="hint">{h.sent_count} sent · {h.failed_count} failed{h.last_error ? ` · ${h.last_error}` : ''}</div>
+      <div className="hint">{h.sent_count} {t('sent ·')} {h.failed_count} failed{h.last_error ? ` · ${h.last_error}` : ''}</div>
     </div>
   );
 }
@@ -54,11 +54,11 @@ export default function Integrations() {
       path="/integrations"
       blurb={t('Delivery channels beyond the inbox. Add an integration key to a campaign\'s channels and every delivery is also sent through it and logged per channel. Secrets are masked after saving.')}
       cols={[
-        { h: 'Key', c: (i) => <><strong>{i.key}</strong><div className="hint">{i.name}</div></> },
-        { h: 'Kind', c: (i) => <Badge tone="info">{i.kind}</Badge> },
-        { h: 'Enabled', c: (i) => i.enabled ? <Badge tone="ok">on</Badge> : <Badge>off</Badge> },
-        { h: 'Health', c: (i) => <Health h={i.health} /> },
-        { h: 'Updated', c: (i) => fmtDate(i.updated_at) },
+        { h: t('Key'), c: (i) => <><strong>{i.key}</strong><div className="hint">{i.name}</div></> },
+        { h: t('Kind'), c: (i) => <Badge tone="info">{i.kind}</Badge> },
+        { h: t('Enabled'), c: (i) => i.enabled ? <Badge tone="ok">on</Badge> : <Badge>off</Badge> },
+        { h: t('Health'), c: (i) => <Health h={i.health} /> },
+        { h: t('Updated'), c: (i) => fmtDate(i.updated_at) },
       ]}
       blank={() => ({ key: '', name: '', kind: 'webhook', config: { ...BLANK.webhook }, enabled: true })}
       form={(d, set, isNew) => (

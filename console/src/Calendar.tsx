@@ -1,4 +1,4 @@
-import { intlLocale } from './i18n';
+import { intlLocale, t } from './i18n';
 import { useState } from 'react';
 import { get, qs, useLoad } from './api';
 import { ErrorBox } from './ui';
@@ -37,7 +37,7 @@ export function Calendar({ onPick }: { onPick?: (key: string) => void }) {
         <button className="btn ghost sm" onClick={() => setMonth(new Date(month.getFullYear(), month.getMonth() + 1, 1))}>›</button>
         <button className="btn ghost sm" onClick={() => { const d = new Date(); setMonth(new Date(d.getFullYear(), d.getMonth(), 1)); }}>today</button>
         <span className="spacer" />
-        <span className="hint">{q.data?.occurrences.length ?? 0} occurrences · times shown in your local zone</span>
+        <span className="hint">{q.data?.occurrences.length ?? 0} {t('occurrences · times shown in your local zone')}</span>
       </div>
       <ErrorBox error={q.error} />
       <div className="cal-grid">

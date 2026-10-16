@@ -4,7 +4,7 @@
 name: zanshin
 
 x-zanshin: &zanshin
-  image: ${ZANSHIN_IMAGE:-ghcr.io/rep0rtdev/zanshin:0.3.2}
+  image: ${ZANSHIN_IMAGE:-ghcr.io/rep0rtdev/zanshin:0.3.3}
   restart: unless-stopped
   read_only: true
   tmpfs: [/tmp]
@@ -185,7 +185,7 @@ services:
     networks: [backend]
 
   backup:
-    image: ${ZANSHIN_BACKUP_IMAGE:-ghcr.io/rep0rtdev/zanshin-backup:0.3.2}
+    image: ${ZANSHIN_BACKUP_IMAGE:-ghcr.io/rep0rtdev/zanshin-backup:0.3.3}
     build: ./backup
     restart: unless-stopped
     environment:

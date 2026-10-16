@@ -134,11 +134,11 @@ const Icon = ({ d }: { d: string }) => <svg className="ico" viewBox="0 0 24 24" 
 
 const GROUPS: NavGroup[] = [
   { name: '', items: [['/', 'Overview', I.home]] },
-  { name: 'Targeting', items: [['/flags', 'Feature flags', I.flag], ['/audiences', 'Audiences', I.users], ['/experiments', 'Experiments', I.lab], ['/live-events', 'Live events', I.cal]] },
-  { name: 'Engage', items: [['/messages', 'Messages', I.mail], ['/templates', 'Templates', I.doc], ['/journeys', 'Journeys', I.route], ['/integrations', 'Integrations', I.plug], ['/recipes', 'Recipes', I.lab]] },
-  { name: 'Players', items: [['/identities', 'Identities', I.users], ['/taxonomy', 'Taxonomy', I.tag]] },
-  { name: 'Analytics', items: [['/insights', 'Insights', I.chart], ['/explorer', 'Explorer', I.chart], ['/analytics', 'Events', I.pulse], ['/metrics', 'Metrics', I.gauge]] },
-  { name: 'Platform', items: [['/change-requests', 'Change requests', I.list], ['/webhooks', 'Webhooks', I.hook], ['/notifications', 'Notifications', I.mail], ['/data', 'Data', I.db], ['/api-keys', 'API keys', I.key], ['/users', 'Users', I.users], ['/audit', 'Audit log', I.list], ['/health', 'Health', I.pulse], ['/settings', 'Settings', I.gear]] },
+  { name: t('Targeting'), items: [['/flags', 'Feature flags', I.flag], ['/audiences', 'Audiences', I.users], ['/experiments', 'Experiments', I.lab], ['/live-events', 'Live events', I.cal]] },
+  { name: t('Engage'), items: [['/messages', 'Messages', I.mail], ['/templates', 'Templates', I.doc], ['/journeys', 'Journeys', I.route], ['/integrations', 'Integrations', I.plug], ['/recipes', 'Recipes', I.lab]] },
+  { name: t('Players'), items: [['/identities', 'Identities', I.users], ['/taxonomy', 'Taxonomy', I.tag]] },
+  { name: t('Analytics'), items: [['/insights', 'Insights', I.chart], ['/explorer', 'Explorer', I.chart], ['/analytics', 'Events', I.pulse], ['/metrics', 'Metrics', I.gauge]] },
+  { name: t('Platform'), items: [['/change-requests', 'Change requests', I.list], ['/webhooks', 'Webhooks', I.hook], ['/notifications', 'Notifications', I.mail], ['/data', 'Data', I.db], ['/api-keys', 'API keys', I.key], ['/users', 'Users', I.users], ['/audit', 'Audit log', I.list], ['/health', 'Health', I.pulse], ['/settings', 'Settings', I.gear]] },
 ];
 
 const THEME_KEY = 'zanshin.theme';

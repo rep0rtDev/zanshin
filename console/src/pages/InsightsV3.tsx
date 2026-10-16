@@ -55,7 +55,7 @@ export function StatusBoard() {
     <div className="stack">
       <ErrorBox error={q.error} />
       <div className="stats">
-        <Stat label={tr('Online now')} value={fmtNum(d?.online_now ?? 0)} sub="open play sessions, last 5 min" />
+        <Stat label={tr('Online now')} value={fmtNum(d?.online_now ?? 0)} sub={tr('open play sessions, last 5 min')} />
         <Stat label={tr('DAU today')} value={fmtNum(d?.dau_today ?? 0)} sub={tf('{0} active last hour', fmtNum(d?.active_last_hour ?? 0))} />
         <Stat label={tr('Events / min')} value={fmtNum(Math.round((d?.events_last_hour ?? 0) / 60))} sub={tf('{0} in the last hour', fmtNum(d?.events_last_hour ?? 0))} />
         <Stat label={tr('Errors (24 h)')} value={<span style={{ color: (d?.errors_24h.rejected_events ?? 0) + failures > 0 ? 'var(--bad)' : undefined }}>{fmtNum((d?.errors_24h.rejected_events ?? 0) + failures)}</span>} sub={tf('{0} rejected events · {1} failed deliveries', d?.errors_24h.rejected_events ?? 0, failures)} />
@@ -169,7 +169,7 @@ export function Explore({ filter }: { filter: Filter }) {
         {r.picker}
         <Text label={tr('Event')} value={event} onChange={setEvent} mono />
         <Field label={tr('Group by')}><select value={groupBy} onChange={(e) => setGroupBy(e.target.value)}><option value="">none</option><option value="country">country</option><option value="platform">platform</option><option value="app_version">{tr('app version')}</option><option value="experiment:">{tr('experiment: …')}</option><option value="meta:">{tr('metadata: …')}</option></select></Field>
-        {(groupBy.startsWith('experiment:') || groupBy.startsWith('meta:')) && <Text label={groupBy.startsWith('meta:') ? 'Field' : 'Experiment key'} value={groupBy.split(':')[1] ?? ''} onChange={(v) => setGroupBy(groupBy.split(':')[0] + ':' + v)} mono />}
+        {(groupBy.startsWith('experiment:') || groupBy.startsWith('meta:')) && <Text label={groupBy.startsWith('meta:') ? tr('Field') : tr('Experiment key')} value={groupBy.split(':')[1] ?? ''} onChange={(v) => setGroupBy(groupBy.split(':')[0] + ':' + v)} mono />}
         <Text label={tr('Sum metadata field')} value={sumField} onChange={setSumField} mono />
         <Field label={tr('Granularity')}><select value={gran} onChange={(e) => setGran(e.target.value as typeof gran)}><option value="day">day</option><option value="hour">hour</option></select></Field>
         <Text label={tr('Overlay events')} value={overlay} onChange={setOverlay} mono hint={tr('comma-separated, up to 7 more')} />
@@ -181,7 +181,7 @@ export function Explore({ filter }: { filter: Filter }) {
       {res && <>
         <div className="stats">
           <Stat label={tr('Events')} value={fmtNum(res.total.count)} />
-          <Stat label="Σ value" value={money(res.total.sum)} />
+          <Stat label='Σ value' value={money(res.total.sum)} />
           <Stat label={`Σ ${sumField || 'amount'}`} value={money(res.total.field_sum)} />
           <Stat label={tr('Groups')} value={fmtNum(res.groups.length)} />
         </div>
@@ -196,8 +196,8 @@ export function Explore({ filter }: { filter: Filter }) {
           {top.length > 1 && <div className="row" style={{ gap: 12 }}>{top.map((g, i) => <span key={g} className="hint"><span style={{ display: 'inline-block', width: 10, height: 10, background: colors[i], borderRadius: 2, marginRight: 4 }} />{g || '(empty)'}</span>)}</div>}
         </div>
         <Table rows={res.groups} rowKey={(g) => g.group} cols={[
-          { h: groupBy ? 'Group' : '', c: (g) => <code>{g.group || (groupBy ? '(empty)' : 'all')}</code> }, { h: 'Events', c: (g) => fmtNum(g.count) }, { h: 'Players', c: (g) => fmtNum(g.identities) },
-          { h: 'Σ value', c: (g) => money(g.sum) }, { h: `Σ ${sumField || 'amount'}`, c: (g) => money(g.field_sum) }, { h: 'Share', c: (g) => pct(res.total.count ? g.count / res.total.count : 0) },
+          { h: groupBy ? 'Group' : '', c: (g) => <code>{g.group || (groupBy ? '(empty)' : 'all')}</code> }, { h: tr('Events'), c: (g) => fmtNum(g.count) }, { h: tr('Players'), c: (g) => fmtNum(g.identities) },
+          { h: 'Σ value', c: (g) => money(g.sum) }, { h: `Σ ${sumField || 'amount'}`, c: (g) => money(g.field_sum) }, { h: tr('Share'), c: (g) => pct(res.total.count ? g.count / res.total.count : 0) },
         ]} />
       </>}
     </div>
@@ -219,7 +219,7 @@ function OverlayChart({ series }: { series: { event: string; result: ExploreRes 
         ))}
       </svg>
       <div className="row" style={{ gap: 12, flexWrap: 'wrap' }}>
-        {series.map((s, i) => <span key={s.event} className="hint"><span style={{ display: 'inline-block', width: 10, height: 10, background: colors[i % colors.length], marginRight: 4 }} /><code>{s.event}</code> · {fmtNum(s.result.total.count)} events · {fmtNum(s.result.groups.reduce((a, g) => a + g.identities, 0))} players</span>)}
+        {series.map((s, i) => <span key={s.event} className="hint"><span style={{ display: 'inline-block', width: 10, height: 10, background: colors[i % colors.length], marginRight: 4 }} /><code>{s.event}</code> · {fmtNum(s.result.total.count)} {tr('events ·')} {fmtNum(s.result.groups.reduce((a, g) => a + g.identities, 0))} players</span>)}
       </div>
       <div className="hint">{buckets[0]} → {buckets[buckets.length - 1]}</div>
     </div>
@@ -235,7 +235,7 @@ export function PlayerMap({ filter }: { filter: Filter }) {
   const flag = (cc: string) => (/^[A-Z]{2}$/.test(cc) ? String.fromCodePoint(...[...cc].map((c) => 0x1f1e6 + c.charCodeAt(0) - 65)) : '🌐');
   return (
     <div className="stack">
-      <div className="row" style={{ alignItems: 'center' }}>{r.picker}<span className="hint">{fmtNum(q.data?.total_players ?? 0)} players with events in range</span></div>
+      <div className="row" style={{ alignItems: 'center' }}>{r.picker}<span className="hint">{fmtNum(q.data?.total_players ?? 0)} {tr('players with events in range')}</span></div>
       <ErrorBox error={q.error} />
       <div className="card map-grid">
         {(q.data?.countries ?? []).slice(0, 60).map((c) => (
@@ -246,7 +246,7 @@ export function PlayerMap({ filter }: { filter: Filter }) {
         {q.data && q.data.countries.length === 0 && <div className="hint">{tr("No events in range. Country comes from the identity's default property `country` (set by the SDK or GeoIP).")}</div>}
       </div>
       <Table rows={q.data?.countries} rowKey={(c) => c.country} cols={[
-        { h: 'Country', c: (c) => <>{flag(c.country)} <code>{c.country}</code></> }, { h: 'Players', c: (c) => fmtNum(c.players) }, { h: 'Events', c: (c) => fmtNum(c.events) }, { h: 'Share', c: (c) => pct(c.share) },
+        { h: tr('Country'), c: (c) => <>{flag(c.country)} <code>{c.country}</code></> }, { h: tr('Players'), c: (c) => fmtNum(c.players) }, { h: tr('Events'), c: (c) => fmtNum(c.events) }, { h: tr('Share'), c: (c) => pct(c.share) },
         { h: '', c: (c) => <div style={{ background: 'var(--border)', height: 8, borderRadius: 4, width: 160 }}><div style={{ width: `${(c.players / max) * 100}%`, background: '#1a5fb4', height: '100%', borderRadius: 4 }} /></div> },
       ]} />
     </div>
@@ -274,8 +274,8 @@ export function Playtime({ filter }: { filter: Filter }) {
         <div className="card" style={{ flex: 2 }}>
           <strong>{tr('Sessions per day · avg / median length')}</strong>
           <Table rows={q.data?.series} rowKey={(d) => d.day} cols={[
-            { h: 'Day', c: (d) => <code>{d.day}</code> }, { h: 'Sessions', c: (d) => fmtNum(d.sessions) }, { h: 'Players', c: (d) => fmtNum(d.players) },
-            { h: 'Avg', c: (d) => mins(d.avg_secs) }, { h: 'Median', c: (d) => mins(d.median_secs) }, { h: 'Total', c: (d) => `${(d.total_secs / 3600).toFixed(1)} h` },
+            { h: tr('Day'), c: (d) => <code>{d.day}</code> }, { h: tr('Sessions'), c: (d) => fmtNum(d.sessions) }, { h: tr('Players'), c: (d) => fmtNum(d.players) },
+            { h: tr('Avg'), c: (d) => mins(d.avg_secs) }, { h: tr('Median'), c: (d) => mins(d.median_secs) }, { h: tr('Total'), c: (d) => `${(d.total_secs / 3600).toFixed(1)} h` },
           ]} />
         </div>
         <div className="card" style={{ flex: 1 }}>
@@ -307,15 +307,15 @@ export function Ltv({ filter }: { filter: Filter }) {
       <div className="row" style={{ alignItems: 'end' }}>{r.picker}<Text label={tr('Day offsets')} value={days} onChange={setDays} mono hint={tr('LTV / RoAS at D-n, 0..180')} /></div>
       <ErrorBox error={q.error ?? spend.error ?? err} />
       <div className="stats">
-        <Stat label={tr('Installs')} value={fmtNum(t?.installs ?? 0)} sub="new identities in range" />
+        <Stat label={tr('Installs')} value={fmtNum(t?.installs ?? 0)} sub={tr('new identities in range')} />
         <Stat label={tr('Ad spend')} value={money(t?.spend ?? 0)} sub={tf('CPI {0}', money(t?.cpi ?? 0))} />
         {(q.data?.days ?? []).slice(0, 2).map((d) => <Stat key={d} label={tf('LTV D{0}', d)} value={money(t?.at[`d${d}`]?.ltv)} sub={tf('RoAS {0}', pct(t?.at[`d${d}`]?.roas))} />)}
       </div>
       <div className="card">
         <strong>{tr('Install cohorts')}</strong> <span className="hint">{tr('LTV = cumulative revenue per install · RoAS = revenue / spend')}</span>
         <Table rows={q.data?.cohorts} rowKey={(c) => c.cohort} empty={tr('No installs or spend in this range')} cols={[
-          { h: 'Cohort', c: (c) => <code>{c.cohort}</code> }, { h: 'Installs', c: (c) => <>{fmtNum(c.installs)}{c.reported_installs > 0 && <span className="hint"> / {fmtNum(c.reported_installs)} reported</span>}</> },
-          { h: 'Spend', c: (c) => money(c.spend) }, { h: 'CPI', c: (c) => money(c.cpi) },
+          { h: tr('Cohort'), c: (c) => <code>{c.cohort}</code> }, { h: tr('Installs'), c: (c) => <>{fmtNum(c.installs)}{c.reported_installs > 0 && <span className="hint"> / {fmtNum(c.reported_installs)} reported</span>}</> },
+          { h: tr('Spend'), c: (c) => money(c.spend) }, { h: 'CPI', c: (c) => money(c.cpi) },
           ...(q.data?.days ?? []).map((d) => ({ h: `D${d}`, c: (c: LtvRes['cohorts'][number]) => cell(c.at[`d${d}`], c.spend > 0) })),
         ]} />
       </div>
@@ -323,7 +323,7 @@ export function Ltv({ filter }: { filter: Filter }) {
         <div className="card stack" style={{ flex: 1 }}>
           <strong>{tr('Import ad spend (CSV)')}</strong>
           <span className="hint">{tr('day,platform,country,campaign,spend,installs[,currency] — platform / country may be empty, rows upsert by (day, platform, country, campaign)')}</span>
-          <textarea rows={5} className="mono" value={csv} onChange={(e) => setCsv(e.target.value)} placeholder={'2026-10-01,ios,DE,launch-eu,1250.00,410\n2026-10-01,android,,launch-global,980.50,620'} />
+          <textarea rows={5} className="mono" value={csv} onChange={(e) => setCsv(e.target.value)} placeholder={"2026-10-01,ios,DE,launch-eu,1250.00,410\n2026-10-01,android,,launch-global,980.50,620"} />
           <div><button className="btn" disabled={!csv.trim()} onClick={importCsv}>{tr('Import')}</button></div>
         </div>
         <div className="card stack" style={{ flex: 1 }}>
@@ -342,8 +342,8 @@ export function Ltv({ filter }: { filter: Filter }) {
         </div>
       </div>
       <Table rows={spend.data?.items} rowKey={(s) => `${s.day}${s.platform}${s.country}${s.campaign}`} empty={tr('No ad spend recorded in range')} cols={[
-        { h: 'Day', c: (s) => <code>{s.day}</code> }, { h: 'Platform', c: (s) => s.platform || <span className="hint">any</span> }, { h: 'Country', c: (s) => s.country || <span className="hint">any</span> },
-        { h: 'Campaign', c: (s) => s.campaign }, { h: 'Spend', c: (s) => `${money(s.spend)} ${s.currency}` }, { h: 'Installs', c: (s) => fmtNum(s.installs) },
+        { h: tr('Day'), c: (s) => <code>{s.day}</code> }, { h: tr('Platform'), c: (s) => s.platform || <span className="hint">any</span> }, { h: tr('Country'), c: (s) => s.country || <span className="hint">any</span> },
+        { h: tr('Campaign'), c: (s) => s.campaign }, { h: tr('Spend'), c: (s) => `${money(s.spend)} ${s.currency}` }, { h: tr('Installs'), c: (s) => fmtNum(s.installs) },
       ]} />
     </div>
   );
@@ -359,7 +359,7 @@ export function Errors() {
       <ErrorBox error={q.error} />
       <div className="stats">
         <Stat label={tr('Rejected events')} value={fmtNum(d?.rejected_events.count ?? 0)} sub={<Link to="/taxonomy">{tr('taxonomy debugger')}</Link>} />
-        {d?.failures.map((f) => <Stat key={f.source} label={f.source.replace('_', ' ')} value={<span style={{ color: f.count > 0 ? 'var(--bad)' : undefined }}>{fmtNum(f.count)}</span>} sub="failed in the last 24 h" />)}
+        {d?.failures.map((f) => <Stat key={f.source} label={f.source.replace('_', ' ')} value={<span style={{ color: f.count > 0 ? 'var(--bad)' : undefined }}>{fmtNum(f.count)}</span>} sub={tr('failed in the last 24 h')} />)}
       </div>
       <div className="row" style={{ alignItems: 'stretch' }}>
         <div className="card" style={{ flex: 1 }}>
@@ -369,7 +369,7 @@ export function Errors() {
         </div>
         <div className="card" style={{ flex: 2 }}>
           <strong>{tr('Recent rejections')}</strong>
-          <Table rows={d?.rejected_events.recent} rowKey={(r) => `${r.at}${r.name}${r.reason}`} cols={[{ h: 'When', c: (r) => fmtDate(r.at) }, { h: 'Event', c: (r) => <code>{r.name}</code> }, { h: 'Reason', c: (r) => r.reason }]} />
+          <Table rows={d?.rejected_events.recent} rowKey={(r) => `${r.at}${r.name}${r.reason}`} cols={[{ h: tr('When'), c: (r) => fmtDate(r.at) }, { h: tr('Event'), c: (r) => <code>{r.name}</code> }, { h: tr('Reason'), c: (r) => r.reason }]} />
         </div>
       </div>
     </div>

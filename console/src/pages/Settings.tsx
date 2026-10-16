@@ -20,7 +20,7 @@ function General() {
         <>
           <div className="grid c4">
             <div className="stat"><div className="stat-v">{s.version}</div><div className="stat-l">{t('server version')}</div></div>
-            <div className="stat"><div className="stat-v">{Math.floor(s.uptime_secs / 3600)}h {Math.floor((s.uptime_secs % 3600) / 60)}m</div><div className="stat-l">uptime · since {fmtDate(s.started_at)}</div></div>
+            <div className="stat"><div className="stat-v">{Math.floor(s.uptime_secs / 3600)}h {Math.floor((s.uptime_secs % 3600) / 60)}m</div><div className="stat-l">{t('uptime · since')} {fmtDate(s.started_at)}</div></div>
             <div className="stat"><div className="stat-v">{s.stores.event_store}</div><div className="stat-l">{t('event store')}</div></div>
             <div className="stat"><div className="stat-v">{s.push.provider}</div><div className="stat-l">{t('push provider')}</div></div>
           </div>
@@ -29,13 +29,13 @@ function General() {
             <dl className="kv" style={{ marginTop: 8 }}>
               <dt>{t('PostgreSQL')}</dt><dd><Badge tone={s.stores.postgres ? 'ok' : 'bad'}>{s.stores.postgres ? 'connected' : 'down'}</Badge></dd>
               <dt>{t('Redis')}</dt><dd><Badge tone={s.stores.redis ? 'ok' : 'bad'}>{s.stores.redis ? 'connected' : 'down'}</Badge></dd>
-              <dt>{t('ClickHouse')}</dt><dd><Badge tone={s.stores.clickhouse ? 'ok' : 'muted'}>{s.stores.clickhouse ? 'enabled' : 'not configured (events in PostgreSQL)'}</Badge></dd>
+              <dt>{t('ClickHouse')}</dt><dd><Badge tone={s.stores.clickhouse ? 'ok' : 'muted'}>{s.stores.clickhouse ? 'enabled' : t('not configured (events in PostgreSQL)')}</Badge></dd>
             </dl>
           </div>
           <div className="card">
             <strong>{t('Authentication')}</strong>
             <dl className="kv" style={{ marginTop: 8 }}>
-              <dt>{t('You')}</dt><dd>{me?.name} · <span className={'role role-' + me?.role}>{me?.role}</span> · via {me?.auth}</dd>
+              <dt>{t('You')}</dt><dd>{me?.name} · <span className={'role role-' + me?.role}>{me?.role}</span> {t('· via')} {me?.auth}</dd>
               <dt>{t('Console SSO')}</dt><dd>{s.auth.oidc && <Badge tone="ok">{t('OpenID Connect')}</Badge>} {s.auth.saml && <Badge tone="ok">{t('SAML 2.0')}</Badge>} {s.auth.scim && <Badge tone="info">{t('SCIM provisioning')}</Badge>} {!s.auth.oidc && !s.auth.saml && <Badge>{t('password / admin API keys')}</Badge>}</dd>
               <dt>{t('Player access token')}</dt><dd>{fmtNum(s.auth.access_ttl_secs)} s</dd>
               <dt>{t('Player refresh token')}</dt><dd>{fmtNum(s.auth.refresh_ttl_secs)} s</dd>
@@ -82,7 +82,7 @@ function ConsolePrefs() {
             {tzs.map((t) => <option key={t} value={t}>{t}</option>)}
           </select>
         </Field>
-        <Field label={t('Or type an IANA name')}><input value={cur.timezone} onChange={(e) => setD({ ...cur, timezone: e.target.value })} placeholder="Europe/Berlin" style={{ width: 180 }} /></Field>
+        <Field label={t('Or type an IANA name')}><input value={cur.timezone} onChange={(e) => setD({ ...cur, timezone: e.target.value })} placeholder='Europe/Berlin' style={{ width: 180 }} /></Field>
         <Field label={t('Default analytics range (days)')}><input type="number" min={1} max={365} value={cur.default_range_days ?? ''} onChange={(e) => setD({ ...cur, default_range_days: e.target.value ? Number(e.target.value) : null })} style={{ width: 90 }} /></Field>
         <button className="btn" onClick={save} disabled={!d}>{t('Save')}</button>
       </div>
@@ -116,7 +116,7 @@ function Configuration() {
       <div className="card">
         <div className="row" style={{ alignItems: 'center' }}>
           <strong>{t('Effective configuration')}</strong>
-          <span className="hint">{t('defaults →') + ' '}<code>zanshin.yml</code> → <code>ZANSHIN__*</code> environment; secrets are masked as <code>***</code>. Read-only here — change it in the file / environment and restart.</span>
+          <span className="hint">{t('defaults →') + ' '}<code>zanshin.yml</code> → <code>ZANSHIN__*</code> {t('environment; secrets are masked as')} <code>***</code>{t('. Read-only here — change it in the file / environment and restart.')}</span>
           <div className="spacer" />
           <input placeholder={t('filter keys')} value={filter} onChange={(e) => setFilter(e.target.value)} style={{ maxWidth: 220 }} />
           <button className="btn ghost" onClick={download} disabled={!q.data}>{t('Export JSON')}</button>
@@ -147,7 +147,7 @@ function Players() {
       </Field>
       <Field label={t('Auto-discover event definitions')}><input type="checkbox" checked={cur.auto_discover} onChange={(e) => setD({ ...cur, auto_discover: e.target.checked })} /></Field>
       <Field label={t('Session inactivity timeout (seconds)')} hint={t('A play session ends after this long without events.')}><input type="number" min={30} value={cur.session_inactivity_secs} onChange={(e) => setD({ ...cur, session_inactivity_secs: Number(e.target.value) })} /></Field>
-      <Field label={t('Geo-IP')}><span className="hint">{cur.geoip_enabled ? 'enabled — country / region defaults are filled from the client IP' : 'not configured (taxonomy.geoip_db in server config)'}</span></Field>
+      <Field label={t('Geo-IP')}><span className="hint">{cur.geoip_enabled ? t('enabled — country / region defaults are filled from the client IP') : t('not configured (taxonomy.geoip_db in server config)')}</span></Field>
       <button className="btn" onClick={save} disabled={!d}>{t('Save')}</button>
     </div>
   );
@@ -171,7 +171,7 @@ function Projects() {
   return (
     <div className="card" style={{ maxWidth: 760 }}>
       <ErrorBox error={err ?? q.error} />
-      <p className="hint">{t('Each project is an isolated game / environment inside this deployment: its own configuration, players, events, keys and analytics (own PostgreSQL schema, Redis namespace and ClickHouse database). Console users and SSO are shared. SDKs and `zanshinctl` address a project with the')} <code>x-zanshin-project</code> header; session tokens carry it automatically.</p>
+      <p className="hint">{t('Each project is an isolated game / environment inside this deployment: its own configuration, players, events, keys and analytics (own PostgreSQL schema, Redis namespace and ClickHouse database). Console users and SSO are shared. SDKs and `zanshinctl` address a project with the')} <code>x-zanshin-project</code> {t('header; session tokens carry it automatically.')}</p>
       <table className="table">
         <thead><tr><th>{t('Slug')}</th><th>{t('Name')}</th><th>{t('Status')}</th><th>{t('Created')}</th><th /></tr></thead>
         <tbody>
@@ -181,13 +181,13 @@ function Projects() {
               <td>{p.name}</td>
               <td>{p.archived ? <Badge>archived</Badge> : p.running ? <Badge>running</Badge> : <Badge>stopped</Badge>}</td>
               <td>{fmtDate(p.created_at)}</td>
-              <td>{p.slug !== 'default' && <button className="btn small" onClick={() => archive(p)}>{p.archived ? 'Resume' : 'Archive'}</button>}</td>
+              <td>{p.slug !== 'default' && <button className="btn small" onClick={() => archive(p)}>{p.archived ? t('Resume') : t('Archive')}</button>}</td>
             </tr>
           ))}
         </tbody>
       </table>
       <h3>{t('New project')}</h3>
-      <Field label={t('Slug')} hint="2–32 chars, [a-z0-9_], starts with a letter; becomes the schema / database suffix"><input value={slug} onChange={(e) => setSlug(e.target.value)} placeholder="staging" /></Field>
+      <Field label={t('Slug')} hint={t('2–32 chars, [a-z0-9_], starts with a letter; becomes the schema / database suffix')}><input value={slug} onChange={(e) => setSlug(e.target.value)} placeholder="staging" /></Field>
       <Field label={t('Name')}><input value={name} onChange={(e) => setName(e.target.value)} placeholder={t('Staging')} /></Field>
       <button className="btn" onClick={create} disabled={!slug}>{t('Create project')}</button>
     </div>

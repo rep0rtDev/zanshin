@@ -36,7 +36,7 @@ export default function Health() {
   const q = useLoad(() => get<Overview>('/health'), [tick]);
   const h = q.data;
   const tone = h?.status === 'ok' ? 'ok' : h?.status === 'warn' ? 'warn' : 'bad';
-  const deps: { name: string; c: Comp }[] = h ? [{ name: 'PostgreSQL', c: h.dependencies.postgres }, { name: 'Redis', c: h.dependencies.redis }, ...(h.dependencies.clickhouse ? [{ name: 'ClickHouse', c: h.dependencies.clickhouse }] : [])] : [];
+  const deps: { name: string; c: Comp }[] = h ? [{ name: t('PostgreSQL'), c: h.dependencies.postgres }, { name: t('Redis'), c: h.dependencies.redis }, ...(h.dependencies.clickhouse ? [{ name: t('ClickHouse'), c: h.dependencies.clickhouse }] : [])] : [];
   return (
     <div className="page">
       <div className="page-head">
@@ -52,7 +52,7 @@ export default function Health() {
         <>
           {h.issues.length > 0 && (
             <div className={'card issues ' + tone}>
-              <strong>{h.issues.length === 1 ? '1 issue' : tf('{0} issues', h.issues.length)}</strong>
+              <strong>{h.issues.length === 1 ? t('1 issue') : tf('{0} issues', h.issues.length)}</strong>
               <ul>{h.issues.map((i, n) => <li key={n}>{i}</li>)}</ul>
             </div>
           )}
@@ -71,7 +71,7 @@ export default function Health() {
                 { h: t('Latency'), c: (d) => d.c.latency_ms != null ? `${d.c.latency_ms} ms` : '—' },
                 { h: '', c: (d) => <span className="muted">{d.c.error ?? ''}</span> },
               ]} rows={deps} rowKey={(d) => d.name} />
-              <div className="hint" style={{ marginTop: 8 }}>Postgres pool: {h.dependencies.pool.size} open, {h.dependencies.pool.idle} idle, max {h.dependencies.pool.max}.</div>
+              <div className="hint" style={{ marginTop: 8 }}>{t('Postgres pool:')} {h.dependencies.pool.size} open, {h.dependencies.pool.idle} {t('idle, max')} {h.dependencies.pool.max}.</div>
             </section>
             <section className="card">
               <h2>{t('Webhooks') + ' '}<span className="count">{h.webhooks.enabled}/{h.webhooks.configured} enabled</span></h2>
@@ -81,7 +81,7 @@ export default function Health() {
                 <Stat label={t('sent 24 h')} value={h.webhooks.deliveries.sent_24h} />
                 <Stat label={t('dead 24 h')} value={h.webhooks.deliveries.dead_24h} />
               </div>
-              <div className="hint">{h.webhooks.deliveries.oldest_pending_secs > 0 ? tf('Oldest undelivered: {0}.', dur(h.webhooks.deliveries.oldest_pending_secs)) : 'No backlog.'}</div>
+              <div className="hint">{h.webhooks.deliveries.oldest_pending_secs > 0 ? tf('Oldest undelivered: {0}.', dur(h.webhooks.deliveries.oldest_pending_secs)) : t('No backlog.')}</div>
             </section>
           </div>
           <section className="card">
@@ -137,7 +137,7 @@ export default function Health() {
               { h: t('Last fired'), c: (a) => ago(a.last_fired_at) },
             ]} rows={h.alerts} rowKey={(a) => a.key} empty={t('No metric alerts.')} />
           </section>
-          <div className="hint">Checked {fmtDate(h.checked_at)} · {h.process.production ? 'production' : 'development'} mode · project {h.process.project}</div>
+          <div className="hint">{t('Checked')} {fmtDate(h.checked_at)} · {h.process.production ? 'production' : 'development'} {t('mode · project')} {h.process.project}</div>
         </>
       )}
     </div>

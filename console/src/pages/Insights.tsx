@@ -54,7 +54,7 @@ function GameMetrics({ filter }: { filter: Filter }) {
   const t = q.data?.totals ?? {};
   return (
     <div className="stack">
-      <div className="row" style={{ alignItems: 'center' }}>{r.picker}<span className="hint">backend: {q.data?.backend ?? '…'} · revenue events: {q.data?.revenue_events.join(', ')}</span></div>
+      <div className="row" style={{ alignItems: 'center' }}>{r.picker}<span className="hint">backend: {q.data?.backend ?? '…'} {tr('· revenue events:')} {q.data?.revenue_events.join(', ')}</span></div>
       <ErrorBox error={q.error ?? ann.error} />
       <div className="stats">
         <Stat label={tr('DAU (latest)')} value={fmtNum(t.dau ?? 0)} sub={tf('avg {0}', fmtNum(Math.round(t.dau_avg ?? 0)))} />
@@ -78,7 +78,7 @@ function GameMetrics({ filter }: { filter: Filter }) {
           <button className="btn sm" disabled={!note} onClick={() => post('/analytics/annotations', { title: note }).then(() => { setNote(''); ann.reload(); })}>{tr('Add')}</button>
         </div>
         <Table<Annotation> rows={ann.data?.items} rowKey={(a) => a.id} empty={tr('No changes in this range')} cols={[
-          { h: 'When', c: (a) => fmtDate(a.at) }, { h: 'Kind', c: (a) => <code>{a.kind}</code> }, { h: 'Title', c: (a) => a.title },
+          { h: tr('When'), c: (a) => fmtDate(a.at) }, { h: tr('Kind'), c: (a) => <code>{a.kind}</code> }, { h: tr('Title'), c: (a) => a.title },
           { h: '', c: (a) => <button className="btn ghost sm" onClick={() => del(`/analytics/annotations/${a.id}`).then(ann.reload)}>{tr('Delete')}</button> },
         ]} />
       </div>
@@ -97,10 +97,10 @@ function Retention({ filter }: { filter: Filter }) {
   const q = useLoad(() => get<{ days: number[]; cohorts: Cohort[]; installs: number }>('/analytics/retention' + qs({ from: r.from, days, cumulative, ...filterQs(opFilter) })), [r.from, days, cumulative, opKind, opKey, opVariant, JSON.stringify(filter)]);
   return (
     <div className="stack">
-      <div className="row" style={{ alignItems: 'end' }}>{r.picker}<Text label={tr('Days')} value={days} onChange={setDays} mono hint={tr('comma-separated, 1..90')} /><Field label={tr('Operation')} hint={tr('retention of participants of a live event or experiment')}><select value={opKind} onChange={(e) => setOpKind(e.target.value as typeof opKind)}><option value="">{tr('all players')}</option><option value="live">{tr('live event')}</option><option value="experiment">experiment</option></select></Field>{opKind && <Text label={tr('Key')} value={opKey} onChange={setOpKey} mono />}{opKind && <Text label={tr('Variant')} value={opVariant} onChange={setOpVariant} mono hint="optional" />}<Field label={tr('Model')}><Toggle value={cumulative} onChange={setCumulative} label={cumulative ? 'cumulative — returned by day N' : 'classic — returned on day N'} /></Field><span className="hint">{fmtNum(q.data?.installs ?? 0)} installs in range</span></div>
+      <div className="row" style={{ alignItems: 'end' }}>{r.picker}<Text label={tr('Days')} value={days} onChange={setDays} mono hint={tr('comma-separated, 1..90')} /><Field label={tr('Operation')} hint={tr('retention of participants of a live event or experiment')}><select value={opKind} onChange={(e) => setOpKind(e.target.value as typeof opKind)}><option value="">{tr('all players')}</option><option value="live">{tr('live event')}</option><option value="experiment">experiment</option></select></Field>{opKind && <Text label={tr('Key')} value={opKey} onChange={setOpKey} mono />}{opKind && <Text label={tr('Variant')} value={opVariant} onChange={setOpVariant} mono hint="optional" />}<Field label={tr('Model')}><Toggle value={cumulative} onChange={setCumulative} label={cumulative ? tr('cumulative — returned by day N') : tr('classic — returned on day N')} /></Field><span className="hint">{fmtNum(q.data?.installs ?? 0)} {tr('installs in range')}</span></div>
       <ErrorBox error={q.error} />
       <Table<Cohort> rows={q.data?.cohorts} rowKey={(c) => c.cohort} empty={tr('No sign-ups in this range')} cols={[
-        { h: 'Cohort', c: (c) => <code>{c.cohort}</code> }, { h: 'Players', c: (c) => fmtNum(c.size) },
+        { h: tr('Cohort'), c: (c) => <code>{c.cohort}</code> }, { h: tr('Players'), c: (c) => fmtNum(c.size) },
         ...(q.data?.days ?? []).map((d) => ({ h: `D${d}`, c: (c: Cohort) => { const v = c.retained[`d${d}`]; return v == null ? <span className="hint">—</span> : <span style={{ background: `rgba(26,95,180,${Math.min(1, v.rate + 0.05)})`, color: v.rate > 0.4 ? '#fff' : undefined, padding: '2px 6px', borderRadius: 4 }}>{pct(v.rate)}</span>; } })),
       ]} />
     </div>
@@ -200,7 +200,7 @@ function Funnels({ filter }: { filter: Filter }) {
             <div key={i} className="row" style={{ alignItems: 'center', margin: '6px 0' }}>
               <span style={{ width: 180 }} className="mono">{i + 1}. {s.name}{s.field ? ` [${s.field} ${s.op} ${JSON.stringify(s.value)}]` : ''}</span>
               <div style={{ flex: 1, background: 'var(--border)', height: 18, borderRadius: 4 }}><div style={{ width: `${((s.count ?? 0) / max) * 100}%`, background: '#1a5fb4', height: '100%', borderRadius: 4 }} /></div>
-              <span style={{ width: 220, textAlign: 'right' }}>{fmtNum(s.count ?? 0)} · {pct(s.conversion)} total{i > 0 && <span className="hint"> · {pct(s.step_conversion)} step, −{fmtNum(s.drop ?? 0)}</span>}</span>
+              <span style={{ width: 220, textAlign: 'right' }}>{fmtNum(s.count ?? 0)} · {pct(s.conversion)} total{i > 0 && <span className="hint"> · {pct(s.step_conversion)} {tr('step, −')}{fmtNum(s.drop ?? 0)}</span>}</span>
             </div>
           ))}
           <div className="row" style={{ alignItems: 'end', marginTop: 10 }}>
@@ -253,8 +253,8 @@ function WidgetView({ w }: { w: WidgetData }) {
     case 'number': return <div className="big">{typeof d.value === 'number' ? (Number.isInteger(d.value) ? fmtNum(d.value) : money(d.value)) : String(d.value ?? '—')}</div>;
     case 'timeseries': { const b = (w.data as { bucket: string; count: number }[]); return <Bars series={b.map((x) => ({ day: x.bucket.slice(0, 10), dau: x.count } as unknown as Day))} field="dau" />; }
     case 'funnel': { const steps = d.steps as FunnelStep[]; const max = Math.max(1, Number(d.entered)); return <div>{steps.map((s, i) => <div key={i} className="row" style={{ alignItems: 'center' }}><span className="mono" style={{ width: 120 }}>{s.name}</span><div style={{ flex: 1, background: 'var(--border)', height: 12, borderRadius: 3 }}><div style={{ width: `${((s.count ?? 0) / max) * 100}%`, background: '#1a5fb4', height: '100%', borderRadius: 3 }} /></div><span style={{ width: 90, textAlign: 'right' }}>{fmtNum(s.count ?? 0)} · {pct(s.conversion)}</span></div>)}</div>; }
-    case 'retention': { const cs = d.cohorts as Cohort[]; const days = d.days as number[]; return <Table<Cohort> rows={cs} rowKey={(c) => c.cohort} cols={[{ h: 'Cohort', c: (c) => c.cohort }, { h: 'N', c: (c) => c.size }, ...days.map((dd) => ({ h: `D${dd}`, c: (c: Cohort) => pct(c.retained[`d${dd}`]?.rate) }))]} />; }
-    case 'top_events': return <Table<{ name: string; count: number; identities: number }> rows={w.data as { name: string; count: number; identities: number }[]} rowKey={(r) => r.name} cols={[{ h: 'Event', c: (r) => <code>{r.name}</code> }, { h: 'Count', c: (r) => fmtNum(r.count) }, { h: 'Players', c: (r) => fmtNum(r.identities) }]} />;
+    case 'retention': { const cs = d.cohorts as Cohort[]; const days = d.days as number[]; return <Table<Cohort> rows={cs} rowKey={(c) => c.cohort} cols={[{ h: tr('Cohort'), c: (c) => c.cohort }, { h: 'N', c: (c) => c.size }, ...days.map((dd) => ({ h: `D${dd}`, c: (c: Cohort) => pct(c.retained[`d${dd}`]?.rate) }))]} />; }
+    case 'top_events': return <Table<{ name: string; count: number; identities: number }> rows={w.data as { name: string; count: number; identities: number }[]} rowKey={(r) => r.name} cols={[{ h: tr('Event'), c: (r) => <code>{r.name}</code> }, { h: tr('Count'), c: (r) => fmtNum(r.count) }, { h: tr('Players'), c: (r) => fmtNum(r.identities) }]} />;
     default: return null;
   }
 }
@@ -279,7 +279,7 @@ function Dashboards() {
       title={tr('Dashboards')}
       path="/dashboards"
       blurb={tr('Custom dashboards: numbers, event timeseries, funnels, retention and top-events widgets, evaluated for a time range.')}
-      cols={[{ h: 'Key', c: (d) => <><strong>{d.key}</strong><div className="hint">{d.name}</div></> }, { h: 'Widgets', c: (d) => d.widgets.length }, { h: 'Updated', c: (d) => fmtDate(d.updated_at) }]}
+      cols={[{ h: tr('Key'), c: (d) => <><strong>{d.key}</strong><div className="hint">{d.name}</div></> }, { h: tr('Widgets'), c: (d) => d.widgets.length }, { h: tr('Updated'), c: (d) => fmtDate(d.updated_at) }]}
       blank={() => ({ key: '', name: '', description: '', widgets: [{ id: 'dau', kind: 'number', title: 'DAU', width: 1, config: { metric: 'dau' } }], filters: {}, tags: [] })}
       form={(d, set, isNew) => (
         <>
@@ -303,7 +303,7 @@ export default function Insights() {
   const pick = (t: Tab) => { setTab(t); localStorage.setItem('zanshin.insights.tab', t); };
   const setF = (f: Filter) => { setFilter(f); localStorage.setItem('zanshin.insights.filter', JSON.stringify(f)); };
   const tabs: [Tab, string][] = [['status', 'Status'], ['calendar', 'Calendar'], ['metrics', 'Game metrics'], ['explore', 'Explore'], ['lifetime', 'Lifetime'], ['map', 'Map'], ['playtime', 'Playtime'], ['retention', 'Retention'], ['funnels', 'Funnels'], ['ltv', 'LTV / RoAS'], ['errors', 'Errors'], ['dashboards', 'Dashboards']];
-  const chips = <div className="chips" style={{ marginBottom: 12 }}>{tabs.map(([k, l]) => <button key={k} className={'chip' + (k === tab ? ' on' : '')} onClick={() => pick(k)}>{l}</button>)}</div>;
+  const chips = <div className="chips" style={{ marginBottom: 12 }}>{tabs.map(([k, l]) => <button key={k} className={'chip' + (k === tab ? ' on' : '')} onClick={() => pick(k)}>{tr(l)}</button>)}</div>;
   if (tab === 'dashboards') return <>{chips}<Dashboards /></>;
   return (
     <Page title={tr('Insights')}>

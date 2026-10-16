@@ -22,7 +22,7 @@ export default function Taxonomy() {
   return (
     <Page title={t('Taxonomy')}>
       <p className="muted" style={{ marginTop: -8 }}>{t('Define what your game sends: event names and validators, player properties, JSON schemas for flag values and the labels used to organise everything.')}</p>
-      <nav className="tabs">{TABS.map(([p, l]) => <NavLink key={p} to={p}>{l}</NavLink>)}</nav>
+      <nav className="tabs">{TABS.map(([p, l]) => <NavLink key={p} to={p}>{t(l)}</NavLink>)}</nav>
       <Routes>
         <Route path="events" element={<Events />} />
         <Route path="properties" element={<Properties />} />
@@ -60,10 +60,10 @@ function CurrencyRates() {
     <div className="card stack">
       <div className="row" style={{ alignItems: 'center' }}>
         <strong>{t('Currency → USD rates')}</strong>
-        <span className="hint">{latest.size} currencies · revenue metadata gets <code>amount_usd</code> at ingest · feed {q.data?.remote_configured ? 'configured' : 'not configured (taxonomy.currency_rates_url)'}</span>
+        <span className="hint">{latest.size} {t('currencies · revenue metadata gets')} <code>amount_usd</code> {t('at ingest · feed')} {q.data?.remote_configured ? 'configured' : t('not configured (taxonomy.currency_rates_url)')}</span>
         <div className="spacer" />
         {q.data?.remote_configured && <button className="btn secondary" onClick={refresh}>{t('Refresh from feed')}</button>}
-        <button className="btn secondary" onClick={() => setOpen(!open)}>{open ? 'Hide' : 'Show'}</button>
+        <button className="btn secondary" onClick={() => setOpen(!open)}>{open ? t('Hide') : t('Show')}</button>
       </div>
       <ErrorBox error={error ?? q.error} />
       {open && (
@@ -74,7 +74,7 @@ function CurrencyRates() {
             <button className="btn" onClick={add} disabled={!/^[A-Za-z]{3}$/.test(code) || !(Number(rate) > 0)}>{t('Set today\'s rate')}</button>
           </div>
           <Table<Rate> rows={Array.from(latest.values())} rowKey={(r) => r.code} empty={t('No rates yet — USD amounts are taken as-is')} cols={[
-            { h: 'Code', c: (r) => <code>{r.code}</code> }, { h: 'USD per unit', c: (r) => r.usd_per_unit }, { h: 'Day', c: (r) => r.day }, { h: 'Source', c: (r) => r.source },
+            { h: t('Code'), c: (r) => <code>{r.code}</code> }, { h: t('USD per unit'), c: (r) => r.usd_per_unit }, { h: t('Day'), c: (r) => r.day }, { h: t('Source'), c: (r) => r.source },
           ]} />
         </>
       )}
@@ -108,7 +108,7 @@ function Events() {
           </select>
         </Field>
         <div className="field"><span className="label">{t('Auto-discover')}</span><Badge tone={settings.data?.auto_discover ? 'ok' : 'muted'}>{settings.data?.auto_discover ? 'on' : 'off'}</Badge></div>
-        <div className="field"><span className="label">{t('Geo-IP')}</span><Badge tone={settings.data?.geoip_enabled ? 'ok' : 'muted'}>{settings.data?.geoip_enabled ? 'enabled' : 'not configured'}</Badge></div>
+        <div className="field"><span className="label">{t('Geo-IP')}</span><Badge tone={settings.data?.geoip_enabled ? 'ok' : 'muted'}>{settings.data?.geoip_enabled ? 'enabled' : t('not configured')}</Badge></div>
         <div className="field"><span className="label">{t('Session inactivity')}</span><span>{settings.data ? tf('{0} min', Math.round(settings.data.session_inactivity_secs / 60)) : '…'}</span></div>
         <div className="spacer" />
         <label className="hint" style={{ whiteSpace: 'nowrap' }}><input type="checkbox" checked={showCore} onChange={(e) => setShowCore(e.target.checked)} />{' ' + t('Show core')}</label>
@@ -121,7 +121,7 @@ function Events() {
       <ErrorBox error={error ?? defs.error ?? settings.error} />
       {edit && (
         <div className="card">
-          <h3>{edit.is_core ? tf('Core event {0}', edit.name) : edit.name ? tf('Edit {0}', edit.name) : 'New event definition'}</h3>
+          <h3>{edit.is_core ? tf('Core event {0}', edit.name) : edit.name ? tf('Edit {0}', edit.name) : t('New event definition')}</h3>
           <div className="row">
             <label className="field"><span className="label">{t('Name')}</span><input className="mono" value={edit.name ?? ''} disabled={!!edit.updated_at} onChange={(e) => setEdit({ ...edit, name: e.target.value })} placeholder="levelCompleted" /></label>
             <Field label={t('Value type')} hint={t('number · string · object (JSON) · revenue (metadata.amount + metadata.currency) · any')}>
@@ -153,26 +153,26 @@ function Events() {
         onRow={(d) => setEdit({ ...d })}
         empty={t('No event definitions yet — they appear automatically as your game sends events')}
         cols={[
-          { h: 'Event', c: (d) => <><span className="mono">{d.name}</span> {d.is_core && <Badge tone="info">core</Badge>} {d.discovered && <Badge tone="warn">discovered</Badge>}</> },
-          { h: 'Value', w: '100px', c: (d) => <Badge>{d.value_type}</Badge> },
-          { h: 'Metadata schema', w: '140px', c: (d) => d.metadata_schema ? <Badge tone="ok">validated</Badge> : <span className="muted">—</span> },
-          { h: 'Labels', c: (d) => d.tags.map((t) => <Badge key={t}>{t}</Badge>) },
-          { h: 'Description', c: (d) => <span className="hint">{d.description}</span> },
+          { h: t('Event'), c: (d) => <><span className="mono">{d.name}</span> {d.is_core && <Badge tone="info">core</Badge>} {d.discovered && <Badge tone="warn">discovered</Badge>}</> },
+          { h: t('Value'), w: '100px', c: (d) => <Badge>{d.value_type}</Badge> },
+          { h: t('Metadata schema'), w: '140px', c: (d) => d.metadata_schema ? <Badge tone="ok">validated</Badge> : <span className="muted">—</span> },
+          { h: t('Labels'), c: (d) => d.tags.map((t) => <Badge key={t}>{t}</Badge>) },
+          { h: t('Description'), c: (d) => <span className="hint">{d.description}</span> },
         ]}
       />
       <h3 style={{ marginTop: 24 }}>{t('Rejected & invalid events') + ' '}<span className="hint">(last {rejected.data?.length ?? 0})</span></h3>
-      <p className="muted">{t('Events that violated a definition. In') + ' '}<strong>strict</strong> mode they were dropped; in <strong>warn</strong>{' ' + t('mode they were stored anyway.')}</p>
+      <p className="muted">{t('Events that violated a definition. In') + ' '}<strong>strict</strong> {t('mode they were dropped; in')} <strong>warn</strong>{' ' + t('mode they were stored anyway.')}</p>
       <div className="actions"><button className="btn ghost" onClick={() => rejected.reload()}>{t('Refresh')}</button><Confirm onConfirm={() => run(async () => { await del('/taxonomy/rejected'); rejected.reload(); })}>{t('Clear')}</Confirm></div>
       <Table<Rejected>
         rows={rejected.data}
         rowKey={(r) => `${r.at}-${r.name}-${r.reason}`}
         empty={t('No violations recorded')}
         cols={[
-          { h: 'When', w: '180px', c: (r) => fmtDate(r.at) },
-          { h: 'Event', c: (r) => <span className="mono">{r.name}</span> },
-          { h: 'Player', c: (r) => <span className="mono hint">{r.external_id ?? '—'}</span> },
-          { h: 'Value', c: (r) => <code className="hint trunc">{r.value ?? ''}</code> },
-          { h: 'Reason', c: (r) => <span>{r.reason}</span> },
+          { h: t('When'), w: '180px', c: (r) => fmtDate(r.at) },
+          { h: t('Event'), c: (r) => <span className="mono">{r.name}</span> },
+          { h: t('Player'), c: (r) => <span className="mono hint">{r.external_id ?? '—'}</span> },
+          { h: t('Value'), c: (r) => <code className="hint trunc">{r.value ?? ''}</code> },
+          { h: t('Reason'), c: (r) => <span>{r.reason}</span> },
           { h: '', w: '90px', c: (r) => <Badge tone={r.rejected ? 'bad' : 'warn'}>{r.rejected ? 'dropped' : 'stored'}</Badge> },
         ]}
       />
@@ -197,13 +197,13 @@ function Properties() {
         rowKey={(r) => r.key}
         empty={t('Nothing observed yet')}
         cols={[
-          { h: 'Key', c: (r) => <span className="mono">{ns}.{r.key}</span> },
-          { h: 'Type', w: '100px', c: (r) => <Badge>{r.json_type}</Badge> },
-          { h: 'Players', w: '110px', c: (r) => fmtNum(r.identities) },
-          { h: 'Access', w: '220px', c: (r) => editable
+          { h: t('Key'), c: (r) => <span className="mono">{ns}.{r.key}</span> },
+          { h: t('Type'), w: '100px', c: (r) => <Badge>{r.json_type}</Badge> },
+          { h: t('Players'), w: '110px', c: (r) => fmtNum(r.identities) },
+          { h: t('Access'), w: '220px', c: (r) => editable
             ? <Toggle value={!!cfg.get(r.key)?.read_only} onChange={(v) => toggleRo(r.key, v, cfg.get(r.key)?.description)} label={t('read-only for clients')} />
-            : <span className="muted">{ns === 'computed' ? 'derived from events' : 'set by client / server'}</span> },
-          { h: 'Description', c: (r) => <span className="hint">{cfg.get(r.key)?.description ?? ''}</span> },
+            : <span className="muted">{ns === 'computed' ? t('derived from events') : t('set by client / server')}</span> },
+          { h: t('Description'), c: (r) => <span className="hint">{cfg.get(r.key)?.description ?? ''}</span> },
         ]}
       />
     </>
@@ -221,7 +221,7 @@ function Properties() {
         </div>
         {(q.data?.config ?? []).length > 0 && (
           <div style={{ marginTop: 10 }}>{q.data!.config.map((c) => (
-            <Badge key={c.key} tone={c.read_only ? 'info' : 'muted'}>{c.namespace}.{c.key}{c.read_only ? ' · read-only' : ''} <a href="#" onClick={(e) => { e.preventDefault(); run(async () => { await del(`/taxonomy/properties/${encodeURIComponent(c.key)}`); q.reload(); }); }}>×</a></Badge>
+            <Badge key={c.key} tone={c.read_only ? 'info' : 'muted'}>{c.namespace}.{c.key}{c.read_only ? t(' · read-only') : ''} <a href="#" onClick={(e) => { e.preventDefault(); run(async () => { await del(`/taxonomy/properties/${encodeURIComponent(c.key)}`); q.reload(); }); }}>×</a></Badge>
           ))}</div>
         )}
       </div>
@@ -266,7 +266,7 @@ function Schemas() {
           <div className="row">
             <div className="grow"><Field label={t('JSON Schema (draft 2020-12 / 7)')}><JsonField value={edit.schema} onChange={(v) => setEdit({ ...edit, schema: v })} rows={14} /></Field></div>
             <div className="grow">
-              <Field label={t('Try a value')} hint={verdict ? <Badge tone={verdict === 'valid' ? 'ok' : 'bad'}>{verdict}</Badge> : 'Paste a sample value and validate'}>
+              <Field label={t('Try a value')} hint={verdict ? <Badge tone={verdict === 'valid' ? 'ok' : 'bad'}>{verdict}</Badge> : t('Paste a sample value and validate')}>
                 <JsonField value={sample} onChange={setSample} rows={10} />
               </Field>
               <button className="btn ghost" onClick={test}>{t('Validate sample')}</button>
@@ -285,9 +285,9 @@ function Schemas() {
         onRow={(s) => { setEdit({ ...s }); setVerdict(null); }}
         empty={t('No schemas yet')}
         cols={[
-          { h: 'Name', c: (s) => <strong>{s.name}</strong> },
-          { h: 'Description', c: (s) => <span className="hint">{s.description}</span> },
-          { h: 'Updated', w: '180px', c: (s) => fmtDate(s.updated_at) },
+          { h: t('Name'), c: (s) => <strong>{s.name}</strong> },
+          { h: t('Description'), c: (s) => <span className="hint">{s.description}</span> },
+          { h: t('Updated'), w: '180px', c: (s) => fmtDate(s.updated_at) },
         ]}
       />
     </>
@@ -336,12 +336,12 @@ function Labels() {
         onRow={(l) => setEdit({ ...l })}
         empty={t('No labels yet')}
         cols={[
-          { h: 'Label', c: (l) => <span className="label-chip" style={{ background: l.color || '#64748b' }}>{l.name}</span> },
-          { h: 'Description', c: (l) => <span className="hint">{l.description}</span> },
-          { h: 'Used by', c: (l) => usage[l.id]
+          { h: t('Label'), c: (l) => <span className="label-chip" style={{ background: l.color || '#64748b' }}>{l.name}</span> },
+          { h: t('Description'), c: (l) => <span className="hint">{l.description}</span> },
+          { h: t('Used by'), c: (l) => usage[l.id]
             ? usage[l.id].filter((u) => u.count > 0).map((u) => <Badge key={u.table}>{u.table}: {u.count}</Badge>)
             : <a href="#" onClick={(e) => { e.preventDefault(); e.stopPropagation(); loadUsage(l.id); }}>{t('show usage')}</a> },
-          { h: 'Created', w: '180px', c: (l) => fmtDate(l.created_at) },
+          { h: t('Created'), w: '180px', c: (l) => fmtDate(l.created_at) },
         ]}
       />
     </>

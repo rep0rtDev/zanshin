@@ -6,6 +6,11 @@ Release automation reads the section whose heading contains the tagged version.
 
 ## [Unreleased]
 
+## [0.3.3] — 2026-10-16
+
+### Changed
+- Console (Russian): a full sweep of hardcoded English — every table header, create/action button, select option, hint, placeholder, confirm dialog, toast and inline fragment now goes through `t()`/`tf()` (~560 strings), and status badges translate server values (`enabled`, `live`, `running`, `sent`, `failed`, `pending`, kinds, modes, roles…) automatically. Data stays as-is: keys, ids, cron/CSV/rule examples in placeholders, demo template bodies.
+
 ## [0.3.2] — 2026-10-16
 
 ### Fixed

@@ -30,7 +30,7 @@ export default function Users() {
   return (
     <Page title={t('Console users')} actions={<button className="btn" onClick={() => { setEditing(null); setCreating(true); }}>{t('New user')}</button>}>
       <ErrorBox error={q.error ?? err} />
-      {secret && <div className="card"><strong>{secret.title}</strong> — shown once:<pre className="code" style={{ marginTop: 8 }}>{secret.body}</pre><button className="btn ghost" onClick={() => setSecret(null)}>{t('Done')}</button></div>}
+      {secret && <div className="card"><strong>{secret.title}</strong> {t('— shown once:')}<pre className="code" style={{ marginTop: 8 }}>{secret.body}</pre><button className="btn ghost" onClick={() => setSecret(null)}>{t('Done')}</button></div>}
       {(creating || editing) && (
         <UserForm
           user={editing}
@@ -43,20 +43,20 @@ export default function Users() {
         rowKey={(u) => u.id}
         empty={t('No console users yet — admins sign in with API keys or SSO until you create one.')}
         cols={[
-          { h: 'User', c: (u) => <><strong>{u.name}</strong><div className="hint">{u.email}</div></> },
-          { h: 'Access', c: (u) => <>{u.archetype ? <Badge tone="info">{u.archetype.replace('_', ' ')}</Badge> : <Badge>custom</Badge>}{u.disabled && <Badge tone="bad">disabled</Badge>}</> },
-          { h: 'MFA', c: (u) => u.totp_enabled ? <Badge tone="ok">on · {u.recovery_codes_left} codes</Badge> : <Badge tone="warn">off</Badge> },
-          { h: 'Password', c: (u) => <span className="hint">{u.must_change_password ? 'must change on login' : 'set'}</span> },
-          { h: 'Last login', c: (u) => fmtDate(u.last_login_at) },
-          { h: 'Created', c: (u) => <span className="hint">{fmtDate(u.created_at)}{u.created_by ? ` by ${u.created_by}` : ''}</span> },
+          { h: t('User'), c: (u) => <><strong>{u.name}</strong><div className="hint">{u.email}</div></> },
+          { h: t('Access'), c: (u) => <>{u.archetype ? <Badge tone="info">{u.archetype.replace('_', ' ')}</Badge> : <Badge>custom</Badge>}{u.disabled && <Badge tone="bad">disabled</Badge>}</> },
+          { h: t('MFA'), c: (u) => u.totp_enabled ? <Badge tone="ok">{t('on ·')} {u.recovery_codes_left} codes</Badge> : <Badge tone="warn">off</Badge> },
+          { h: t('Password'), c: (u) => <span className="hint">{u.must_change_password ? t('must change on login') : 'set'}</span> },
+          { h: t('Last login'), c: (u) => fmtDate(u.last_login_at) },
+          { h: t('Created'), c: (u) => <span className="hint">{fmtDate(u.created_at)}{u.created_by ? ` by ${u.created_by}` : ''}</span> },
           { h: '', w: '48px', c: (u) => (
             <Menu items={[
-              { label: 'Edit access', onClick: () => { setCreating(false); setEditing(u); } },
-              { label: 'Password reset link', onClick: () => void resetLink(u) },
+              { label: t('Edit access'), onClick: () => { setCreating(false); setEditing(u); } },
+              { label: t('Password reset link'), onClick: () => void resetLink(u) },
               { label: u.disabled ? 'Enable' : 'Disable', onClick: () => api('PATCH', `/users/${u.id}`, { disabled: !u.disabled }).then(q.reload, setErr) },
-              { label: 'Sign out everywhere', onClick: () => del(`/users/${u.id}/sessions`).then(() => toast(t('Sessions revoked'))).then(q.reload, setErr) },
-              ...(u.totp_enabled ? [{ label: 'Remove MFA', onClick: () => del(`/users/${u.id}/mfa`).then(q.reload, setErr) }] : []),
-              ...(me?.user_id !== u.id ? [{ label: 'Delete', danger: true, onClick: () => del(`/users/${u.id}`).then(q.reload, setErr) }] : []),
+              { label: t('Sign out everywhere'), onClick: () => del(`/users/${u.id}/sessions`).then(() => toast(t('Sessions revoked'))).then(q.reload, setErr) },
+              ...(u.totp_enabled ? [{ label: t('Remove MFA'), onClick: () => del(`/users/${u.id}/mfa`).then(q.reload, setErr) }] : []),
+              ...(me?.user_id !== u.id ? [{ label: t('Delete'), danger: true, onClick: () => del(`/users/${u.id}`).then(q.reload, setErr) }] : []),
             ]} />
           ) },
         ]}
@@ -91,7 +91,7 @@ function UserForm({ user, onClose, onSaved }: { user: User | null; onClose: () =
   };
   return (
     <form className="card stack" onSubmit={submit}>
-      <h3 style={{ margin: 0 }}>{user ? tf('Edit {0}', user.email) : 'New console user'}</h3>
+      <h3 style={{ margin: 0 }}>{user ? tf('Edit {0}', user.email) : t('New console user')}</h3>
       <ErrorBox error={err} />
       <div className="row">
         <Field label={t('Email')}><input type="email" value={email} onChange={(e) => setEmail(e.target.value)} required disabled={!!user} /></Field>
@@ -105,14 +105,14 @@ function UserForm({ user, onClose, onSaved }: { user: User | null; onClose: () =
               <option value="link">{t('hand them a one-time setup link')}</option>
             </select>
           </Field>
-          {mode === 'password' && <Field label={t('Initial password')} hint="min 12 characters; generated for you"><input value={password} onChange={(e) => setPassword(e.target.value)} className="mono" /></Field>}
+          {mode === 'password' && <Field label={t('Initial password')} hint={t('min 12 characters; generated for you')}><input value={password} onChange={(e) => setPassword(e.target.value)} className="mono" /></Field>}
         </div>
       )}
-      <Field label={t('Permissions')} hint="a preset or an explicit resource × action grid; changes sign the user out of active sessions">
+      <Field label={t('Permissions')} hint={t('a preset or an explicit resource × action grid; changes sign the user out of active sessions')}>
         <PermissionEditor archetype={archetype} permissions={permissions} onChange={(a, p) => { setArchetype(a); setPermissions(p); }} />
       </Field>
       <div className="row">
-        <button className="btn" disabled={busy}>{user ? 'Save' : 'Create user'}</button>
+        <button className="btn" disabled={busy}>{user ? t('Save') : t('Create user')}</button>
         <button type="button" className="btn ghost" onClick={onClose}>{t('Cancel')}</button>
       </div>
     </form>
