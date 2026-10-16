@@ -72,3 +72,15 @@ test('Russian locale has no half-translated templates', async ({ page }) => {
     expect(text, `${path} mixes English template with Russian words`).not.toMatch(/\bNo [^\n]* yet\b|\bSearch [^\n]*…|\bNew [а-яё]/i);
   }
 });
+
+test('Taxonomy tabs navigate to absolute paths', async ({ page }) => {
+  await login(page);
+  await page.goto('/console/taxonomy');
+  await page.locator('.tabs a', { hasText: 'Properties' }).click();
+  await expect(page).toHaveURL(/\/console\/taxonomy\/properties$/);
+  await page.locator('.tabs a', { hasText: 'Labels' }).click();
+  await expect(page).toHaveURL(/\/console\/taxonomy\/labels$/);
+  await page.locator('.tabs a', { hasText: 'Events' }).click();
+  await expect(page).toHaveURL(/\/console\/taxonomy\/events$/);
+  expect(await page.locator('.crumbs').innerText()).not.toMatch(/events.*events/);
+});

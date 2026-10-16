@@ -22,7 +22,7 @@ export default function Taxonomy() {
   return (
     <Page title={t('Taxonomy')}>
       <p className="muted" style={{ marginTop: -8 }}>{t('Define what your game sends: event names and validators, player properties, JSON schemas for flag values and the labels used to organise everything.')}</p>
-      <nav className="tabs">{TABS.map(([p, l]) => <NavLink key={p} to={p}>{t(l)}</NavLink>)}</nav>
+      <nav className="tabs">{TABS.map(([p, l]) => <NavLink key={p} to={'/taxonomy/' + p}>{t(l)}</NavLink>)}</nav>
       <Routes>
         <Route path="events" element={<Events />} />
         <Route path="properties" element={<Properties />} />

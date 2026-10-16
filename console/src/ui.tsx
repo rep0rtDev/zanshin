@@ -16,7 +16,8 @@ export function Page({ title, actions, children }: { title: ReactNode; actions?:
 
 export function ErrorBox({ error }: { error: Error | null | undefined }) {
   if (!error) return null;
-  return <div className="error">{error.message}</div>;
+  const status = (error as { status?: number }).status;
+  return <div className="error">{error.message || (status ? tf('Request failed ({0})', status) : t('Request failed'))}</div>;
 }
 
 export function Badge({ children, tone = 'muted' }: { children: ReactNode; tone?: 'ok' | 'warn' | 'bad' | 'muted' | 'info' }) {

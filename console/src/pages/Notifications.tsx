@@ -63,7 +63,7 @@ export default function Notifications() {
           </div>
           <Field label={t('Topics')}><TopicsPicker value={c.topics ?? []} onChange={(topics) => set({ topics })} /></Field>
           <Field label={t('Only config changes of these kinds (empty = all)')}>
-            <div className="chips">{KINDS.map((k) => <button key={k} type="button" className={'chip' + ((c.kinds ?? []).includes(k) ? ' on' : '')} onClick={() => set({ kinds: (c.kinds ?? []).includes(k) ? (c.kinds ?? []).filter((x) => x !== k) : [...(c.kinds ?? []), k] })}>{k}</button>)}</div>
+            <div className="chips">{KINDS.map((k) => <button key={k} type="button" className={'chip' + ((c.kinds ?? []).includes(k) ? ' on' : '')} onClick={() => set({ kinds: (c.kinds ?? []).includes(k) ? (c.kinds ?? []).filter((x) => x !== k) : [...(c.kinds ?? []), k] })}>{t(k)}</button>)}</div>
           </Field>
           {c.kind === 'webhook' && <Field label={t('Extra headers (JSON object)')}><JsonField value={c.headers ?? {}} onChange={(headers) => set({ headers: headers as Record<string, unknown> })} rows={2} /></Field>}
           <Tags value={c.tags ?? []} onChange={(tags) => set({ tags })} />

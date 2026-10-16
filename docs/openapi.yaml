@@ -2,7 +2,7 @@
 openapi: 3.0.3
 info:
   title: Zanshin API
-  version: 0.3.4
+  version: 0.3.5
   description: 'Self-hosted LiveOps platform: client API (`/v1`, per-player sessions), server API (`/server/v1`, trusted backends
     such as Nakama) and admin API (`/admin/v1`, console and automation). Client and server endpoints are fully typed here;
     admin endpoints are listed with their permission model — field-level documentation lives in docs/api.md.'
