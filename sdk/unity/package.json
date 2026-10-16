@@ -1,6 +1,6 @@
 {
   "name": "dev.rep0rt.zanshin",
-  "version": "0.3.1",
+  "version": "0.3.2",
   "displayName": "Zanshin",
   "description": "Zanshin LiveOps client: identity, feature flags, experiments, live events, inbox, push tokens, analytics events, live change stream.",
   "unity": "2021.3",

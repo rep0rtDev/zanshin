@@ -33,7 +33,7 @@ import Recipes from './pages/Recipes';
 import ApiKeys from './pages/ApiKeys';
 import Audit from './pages/Audit';
 import Health from './pages/Health';
-import { LOCALES, locale, setLocale, t, type Locale } from './i18n';
+import { LOCALES, locale, setLocale, t, type Locale, tf } from './i18n';
 
 function Login({ onDone, cfg }: { onDone: () => void; cfg: AuthConfig }) {
   const params = new URLSearchParams(window.location.search);
@@ -218,7 +218,7 @@ export default function App() {
   useEffect(() => {
     const h = () => { auth.clear(); setMe(null); };
     window.addEventListener('zanshin:unauthorized', h);
-    const f = (e: Event) => { const m = String((e as CustomEvent).detail ?? ''); const req = m.match(/permission required: ([a-z_]+:[a-z]+)/); toast(req ? `No access — needs ${req[1]}` : m || 'Forbidden', 'bad'); };
+    const f = (e: Event) => { const m = String((e as CustomEvent).detail ?? ''); const req = m.match(/permission required: ([a-z_]+:[a-z]+)/); toast(req ? tf('No access — needs {0}', req[1]) : m || 'Forbidden', 'bad'); };
     window.addEventListener('zanshin:forbidden', f);
     const k = (e: KeyboardEvent) => { if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') { e.preventDefault(); setPalette((p) => !p); } };
     window.addEventListener('keydown', k);

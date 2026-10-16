@@ -4,7 +4,7 @@ import { EntityPage, Text, Num, Tags } from '../crud';
 import { ConditionEditor } from '../RuleBuilder';
 import type { Cond } from '../RuleBuilder';
 import { Badge, Confirm, ErrorBox, Field, JsonField, Table, Toggle, fmtDate, fmtNum } from '../ui';
-import { t } from '../i18n';
+import { t, tf } from '../i18n';
 
 type Audience = {
   key: string; name: string; description: string; condition: Cond; percentage: number; enabled: boolean; tags: string[]; version: number; updated_at: string;
@@ -55,11 +55,11 @@ function Members({ aud }: { aud: Audience }) {
       <div className="card">
         <div className="row" style={{ alignItems: 'center' }}>
           <strong>{t('Members')}</strong> <Badge tone="info">{fmtNum(aud.member_count)}</Badge>
-          <span className="hint">{aud.last_computed_at ? `computed ${fmtDate(aud.last_computed_at)}` : aud.recompute === 'live' ? 'mirrored from live evaluation' : 'never computed'}</span>
+          <span className="hint">{aud.last_computed_at ? tf('computed {0}', fmtDate(aud.last_computed_at)) : aud.recompute === 'live' ? 'mirrored from live evaluation' : 'never computed'}</span>
           <div className="spacer" />
           {aud.kind === 'dynamic' && <button className="btn ghost" onClick={() => run(() => post(`/audiences/${k}/recompute`), 'recomputed')}>{t('Recompute now')}</button>}
           {sys.data?.console?.audience_delete_all_enabled && (
-            <button className="btn danger" title={t('Development servers only (admin.audience_delete_all_enabled)')} onClick={() => confirm(`Permanently delete ALL ${aud.member_count} identities in "${aud.key}" and their events?`) && run(() => del(`/audiences/${k}/members/all`), 'all identities deleted')}>{t('Delete all identities')}</button>
+            <button className="btn danger" title={t('Development servers only (admin.audience_delete_all_enabled)')} onClick={() => confirm(tf('Permanently delete ALL {0} identities in "{1}" and their events?', aud.member_count, aud.key)) && run(() => del(`/audiences/${k}/members/all`), 'all identities deleted')}>{t('Delete all identities')}</button>
           )}
         </div>
         <ErrorBox error={err} />
@@ -111,7 +111,7 @@ function Members({ aud }: { aud: Audience }) {
             <div style={{ marginTop: 6 }}>{usage.data?.length ? usage.data.map((u) => <Badge key={u.kind + u.key}>{u.kind}: {u.key}</Badge>) : <span className="muted">{t('Not referenced by any flag, experiment, live event or campaign')}</span>}</div>
           </div>
           <Field label={t('Copy as')}><input className="mono" value={copyKey} onChange={(e) => setCopyKey(e.target.value)} /></Field>
-          <Confirm onConfirm={() => run(() => post(`/audiences/${k}/copy`, { key: copyKey }), `copied to ${copyKey} (disabled)`)}>{t('Copy audience')}</Confirm>
+          <Confirm onConfirm={() => run(() => post(`/audiences/${k}/copy`, { key: copyKey }), tf('copied to {0} (disabled)', copyKey))}>{t('Copy audience')}</Confirm>
         </div>
       </div>
     </>
@@ -130,10 +130,10 @@ function Check({ aud }: { aud: Audience }) {
     try {
       const id = await get<{ id: string }>(`/identities/by-external-id/${encodeURIComponent(ext)}`);
       const r = await get<{ member: boolean }>(`/audiences/${encodeURIComponent(aud.key)}/evaluate/${id.id}`);
-      setOut(`${ext} is ${r.member ? '' : 'NOT '}a member`); setErr(null);
+      setOut(tf(r.member ? '{0} is a member' : '{0} is NOT a member', ext)); setErr(null);
     } catch (e) { setErr(e as Error); }
   };
-  const dry = () => post<{ member: boolean }>(`/audiences/${encodeURIComponent(aud.key)}/evaluate`, { properties: props }).then((r) => { setOut(`hypothetical identity is ${r.member ? '' : 'NOT '}a member`); setErr(null); }, setErr);
+  const dry = () => post<{ member: boolean }>(`/audiences/${encodeURIComponent(aud.key)}/evaluate`, { properties: props }).then((r) => { setOut(t(r.member ? 'hypothetical identity is a member' : 'hypothetical identity is NOT a member')); setErr(null); }, setErr);
   return (
     <div className="card">
       <strong>{t('Membership check')}</strong>

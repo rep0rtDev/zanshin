@@ -5,7 +5,7 @@ import { DateTime, EntityPage, Num, Tags, Text } from '../crud';
 import { AudiencePicker, ConditionEditor } from '../RuleBuilder';
 import type { Cond } from '../RuleBuilder';
 import { Badge, ErrorBox, Field, JsonField, Table, Toggle, fmtDate, fmtNum } from '../ui';
-import { t as tr } from '../i18n';
+import { t as tr, tf } from '../i18n';
 
 type Trigger = { kind: 'manual' } | { kind: 'event'; name: string } | { kind: 'identity_created' } | { kind: 'audience_enter'; audience: string } | { kind: 'live_event_start'; live_event: string };
 type Step = { id: string; kind: string } & Record<string, unknown>;
@@ -64,19 +64,19 @@ function blankStep(kind: string, i: number): Step {
 function summary(s: Step): string {
   const v = (k: string) => String(s[k] ?? '');
   switch (s.kind) {
-    case 'message': return v('template_key') ? `template ${v('template_key')}` : v('title') || 'inbox message';
+    case 'message': return v('template_key') ? tf('template {0}', v('template_key')) : v('title') || tr('inbox message');
     case 'track': return v('name') || 'event';
     case 'flag_override': return `${v('flag')} = ${JSON.stringify(s.value)}`;
     case 'experiment_assign': return `${v('experiment')} → ${v('variant')}`;
-    case 'live_event': return `${v('live_event')} for ${fmtDur(s.duration_secs as number)}`;
+    case 'live_event': return tf('{0} for {1}', v('live_event'), fmtDur(s.duration_secs as number));
     case 'integration': return v('integration');
     case 'wait': return fmtDur(s.secs as number);
-    case 'wait_until': return `${String(s.hour).padStart(2, '0')}:${String(s.minute ?? 0).padStart(2, '0')} local`;
+    case 'wait_until': return tf('{0}:{1} local', String(s.hour).padStart(2, '0'), String(s.minute ?? 0).padStart(2, '0'));
     case 'time_window': return s.at ? fmtDate(s.at as string) : `${v('cron')} (${v('timezone') || 'UTC'})`;
-    case 'branch': return `then → ${v('then') || '?'}, else → ${v('else') || 'next'}`;
+    case 'branch': return tf('then → {0}, else → {1}', v('then') || '?', v('else') || tr('next'));
     case 'goto': return `→ ${v('step')}`;
     case 'split': return ((s.branches as { step: string; weight: number }[]) ?? []).map((b) => `${b.step || '?'} ${b.weight}`).join(' / ');
-    case 'revert': return `undo ${v('step')}`;
+    case 'revert': return tf('undo {0}', v('step'));
     case 'enter_journey': return v('journey');
     default: return 'player leaves';
   }
@@ -146,7 +146,7 @@ function StepEditor({ step, steps, onChange }: { step: Step; steps: Step[]; onCh
       return <>
         {branches.map((b, i) => (
           <div className="row" key={i} style={{ alignItems: 'end' }}>
-            <Field label={`Branch ${i + 1} → step`}><select value={b.step} onChange={(e) => upd(i, { step: e.target.value })}><option value="">— pick —</option>{steps.filter((x) => x.id !== step.id).map((x) => <option key={x.id} value={x.id}>{x.id}</option>)}</select></Field>
+            <Field label={tf('Branch {0} → step', i + 1)}><select value={b.step} onChange={(e) => upd(i, { step: e.target.value })}><option value="">— pick —</option>{steps.filter((x) => x.id !== step.id).map((x) => <option key={x.id} value={x.id}>{x.id}</option>)}</select></Field>
             <Num label={tr('Weight')} value={b.weight} onChange={(weight) => upd(i, { weight: weight ?? 0 })} min={0} hint={`${Math.round((b.weight / total) * 100)}%`} />
             {branches.length > 2 && <button className="btn ghost sm" onClick={() => set({ branches: branches.filter((_, k) => k !== i) })}>{tr('Remove')}</button>}
           </div>
@@ -206,7 +206,7 @@ function Canvas({ steps, stats, selected, onSelect }: { steps: Step[]; stats?: S
             <text x={14} y={22} fontSize={12.5} fontWeight={600} fill="var(--fg)">{i + 1}. {(KINDS[s.kind] ?? s.kind).replace(/ \(.*\)$/, '')}</text>
             <text x={14} y={41} fontSize={11.5} fill="var(--muted)">{summary(s).length > 52 ? summary(s).slice(0, 51) + '…' : summary(s)}</text>
             <text x={W - 10} y={22} fontSize={11} fill="var(--muted)" textAnchor="end" fontFamily="ui-monospace, monospace">{s.id.length > 18 ? s.id.slice(0, 17) + '…' : s.id}</text>
-            {st && (st.passed > 0 || st.active > 0) && <text x={W - 10} y={41} fontSize={11} fill="var(--fg)" textAnchor="end">{fmtNum(st.passed)} passed{st.active ? ` · ${fmtNum(st.active)} waiting` : ''}</text>}
+            {st && (st.passed > 0 || st.active > 0) && <text x={W - 10} y={41} fontSize={11} fill="var(--fg)" textAnchor="end">{fmtNum(st.passed)} passed{st.active ? tf(' · {0} waiting', fmtNum(st.active)) : ''}</text>}
           </g>
         );
       })}
@@ -291,7 +291,7 @@ function Runs({ j }: { j: Journey }) {
           { h: 'Player', c: (r) => <Link to={`/identities/${r.identity_id}`} className="mono">{r.external_id}</Link> },
           { h: 'Status', c: (r) => <><Badge tone={TONE[r.status]}>{r.status}</Badge> <span className="hint">step {r.step + 1}</span></> },
           { h: 'Entered', c: (r) => fmtDate(r.entered_at) },
-          { h: 'Detail', c: (r) => <span className="hint">{r.error || (r.status === 'active' && r.wake_at ? `wakes ${fmtDate(r.wake_at)}` : r.status === 'done' ? `finished in ${fmtDur((new Date(r.updated_at).getTime() - new Date(r.entered_at).getTime()) / 1000)}` : '')}</span> },
+          { h: 'Detail', c: (r) => <span className="hint">{r.error || (r.status === 'active' && r.wake_at ? tf('wakes {0}', fmtDate(r.wake_at)) : r.status === 'done' ? tf('finished in {0}', fmtDur((new Date(r.updated_at).getTime() - new Date(r.entered_at).getTime()) / 1000)) : '')}</span> },
           { h: '', c: (r) => r.status === 'active' ? <button className="btn ghost sm" onClick={() => post(`/journeys/${k}/runs/${r.id}/exit`).then(q.reload, setErr)}>{tr('Exit')}</button> : null },
         ]}
       />

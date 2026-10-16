@@ -5,7 +5,7 @@ import { EntityPage, Text, Tags } from '../crud';
 import { RulesEditor, TypedValue } from '../RuleBuilder';
 import type { Rule } from '../RuleBuilder';
 import { Badge, Confirm, ErrorBox, Field, JsonField, Table, Toggle, fmtDate } from '../ui';
-import { t } from '../i18n';
+import { t, tf } from '../i18n';
 
 type Prerequisite = { flag: string; value?: unknown };
 type Schedule = { id: string; at: string; patch: unknown; status: string; created_by: string; note: string; error: string; applied_at?: string | null };
@@ -116,7 +116,7 @@ function Explain({ flag }: { flag: Flag }) {
             {layer('identity override', out.identity_override != null, out.identity_override != null ? J(out.identity_override) : <span className="muted">none</span>)}
             {layer('experiment', !!out.experiment, out.experiment ? <>{out.experiment.experiment} / {out.experiment.variant} → {J(out.experiment.value)}</> : <span className="muted">{t('not enrolled')}</span>)}
             {layer('live event', !!out.live_event, out.live_event ? <>{out.live_event.live_event} → {J(out.live_event.value)}</> : <span className="muted">{t('no active event overrides this flag')}</span>)}
-            {out.rules.map((r) => layer(`rule ${r.name || r.id}`, r.condition_matches && r.audiences_match && r.in_rollout, <>{r.condition_matches ? 'condition ✓' : 'condition ✗'} · {r.audiences_match ? 'audiences ✓' : 'audiences ✗'} · {r.in_rollout ? 'rollout ✓' : 'rollout ✗'} → {J(r.value)}</>))}
+            {out.rules.map((r) => layer(tf('rule {0}', r.name || r.id), r.condition_matches && r.audiences_match && r.in_rollout, <>{r.condition_matches ? 'condition ✓' : 'condition ✗'} · {r.audiences_match ? 'audiences ✓' : 'audiences ✗'} · {r.in_rollout ? 'rollout ✓' : 'rollout ✗'} → {J(r.value)}</>))}
             {layer('default', true, J(out.default_value))}
           </ol>
         </>

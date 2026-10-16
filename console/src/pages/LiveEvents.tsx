@@ -6,7 +6,7 @@ import { Badge, ErrorBox, Field, JsonField, Table, Toggle, fmtDate, fmtNum } fro
 import { MetricsPicker } from './Experiments';
 import { Calendar } from '../Calendar';
 import { useNavigate } from 'react-router-dom';
-import { t as tr } from '../i18n';
+import { t as tr, tf } from '../i18n';
 
 type LiveEvent = {
   key: string; name: string; description: string; enabled: boolean; condition: Cond | null; audiences: string[];
@@ -38,8 +38,8 @@ export default function LiveEvents() {
         { h: 'Key', c: (e) => <><strong>{e.key}</strong><div className="hint">{e.name}</div></> },
         { h: 'Status', c: (e) => { const [t, l] = status(e); return <Badge tone={t}>{l}</Badge>; } },
         { h: 'Starts', c: (e) => fmtDate(e.starts_at) },
-        { h: 'Schedule', c: (e) => e.recurrence ? <code>{e.recurrence}</code> : e.ends_at ? `until ${fmtDate(e.ends_at)}` : '—' },
-        { h: 'Duration', c: (e) => e.duration_secs ? `${Math.round(e.duration_secs / 60)} min` : '—' },
+        { h: 'Schedule', c: (e) => e.recurrence ? <code>{e.recurrence}</code> : e.ends_at ? tf('until {0}', fmtDate(e.ends_at)) : '—' },
+        { h: 'Duration', c: (e) => e.duration_secs ? tf('{0} min', Math.round(e.duration_secs / 60)) : '—' },
       ]}
       blank={() => ({ key: '', name: '', description: '', enabled: true, condition: null, audiences: [], starts_at: new Date().toISOString(), ends_at: null, duration_secs: 3600, recurrence: null, payload: {}, tags: [] })}
       form={(d, set, isNew) => (

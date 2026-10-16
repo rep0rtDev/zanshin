@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { get, useLoad } from '../api';
 import { Badge, ErrorBox, Stat, Table, fmtDate } from '../ui';
-import { t } from '../i18n';
+import { t, tf } from '../i18n';
 
 type Comp = { ok: boolean; latency_ms?: number; error?: string | null };
 type Job = { name: string; interval_secs: number; stale: boolean; last_started_at?: string | null; last_finished_at?: string | null; last_seen_at?: string | null; last_ms: number; runs: number; skipped: number; last_error?: string | null };
@@ -52,15 +52,15 @@ export default function Health() {
         <>
           {h.issues.length > 0 && (
             <div className={'card issues ' + tone}>
-              <strong>{h.issues.length === 1 ? '1 issue' : `${h.issues.length} issues`}</strong>
+              <strong>{h.issues.length === 1 ? '1 issue' : tf('{0} issues', h.issues.length)}</strong>
               <ul>{h.issues.map((i, n) => <li key={n}>{i}</li>)}</ul>
             </div>
           )}
           <div className="grid c4 stats">
             <Stat label="uptime" value={dur(h.process.uptime_seconds)} sub={`v${h.process.version} · ${h.process.node_id.slice(0, 8)}${h.process.draining ? ' · draining' : ''}`} />
-            <Stat label={t('ingest queue')} value={`${h.ingest.queue_depth} / ${h.ingest.queue_capacity}`} sub={`${h.ingest.sink} · ${h.ingest.dropped_total} dropped`} />
-            <Stat label={t('events (5 m / 1 h)')} value={`${h.ingest.events_5m} / ${h.ingest.events_1h}`} sub={`${h.ingest.identities_1h} players in the last hour`} />
-            <Stat label={t('live streams')} value={h.streams.websocket + h.streams.server_sdk} sub={`${h.streams.websocket} console · ${h.streams.server_sdk} server SDK`} />
+            <Stat label={t('ingest queue')} value={`${h.ingest.queue_depth} / ${h.ingest.queue_capacity}`} sub={tf('{0} · {1} dropped', h.ingest.sink, h.ingest.dropped_total)} />
+            <Stat label={t('events (5 m / 1 h)')} value={`${h.ingest.events_5m} / ${h.ingest.events_1h}`} sub={tf('{0} players in the last hour', h.ingest.identities_1h)} />
+            <Stat label={t('live streams')} value={h.streams.websocket + h.streams.server_sdk} sub={tf('{0} console · {1} server SDK', h.streams.websocket, h.streams.server_sdk)} />
           </div>
           <div className="grid c2">
             <section className="card">
@@ -81,7 +81,7 @@ export default function Health() {
                 <Stat label={t('sent 24 h')} value={h.webhooks.deliveries.sent_24h} />
                 <Stat label={t('dead 24 h')} value={h.webhooks.deliveries.dead_24h} />
               </div>
-              <div className="hint">{h.webhooks.deliveries.oldest_pending_secs > 0 ? `Oldest undelivered: ${dur(h.webhooks.deliveries.oldest_pending_secs)}.` : 'No backlog.'}</div>
+              <div className="hint">{h.webhooks.deliveries.oldest_pending_secs > 0 ? tf('Oldest undelivered: {0}.', dur(h.webhooks.deliveries.oldest_pending_secs)) : 'No backlog.'}</div>
             </section>
           </div>
           <section className="card">

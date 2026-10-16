@@ -6,7 +6,7 @@ import { useCanEdit } from './me';
 import { toast } from './toast';
 import { Badge, Confirm, Empty, ErrorBox, Menu, Page, Pager, Table, fmtDate } from './ui';
 import type { Col } from './ui';
-import { locale, t } from './i18n';
+import { locale, t, tf } from './i18n';
 
 export type Keyed = { key: string; version?: number; updated_at?: string; name?: string; description?: string; tags?: string[]; status?: string; enabled?: boolean };
 
@@ -96,28 +96,28 @@ function List<T extends Keyed>({ title, path, blurb, cols, sort, above, copy, st
   }, [all, search, tag, status, sortBy, sort, statusOf, searchText]);
   const pages = Math.max(1, Math.ceil(rows.length / size));
   const slice = rows.slice(page * size, page * size + size);
-  const remove = async (r: T) => { try { await del(`${path}/${encodeURIComponent(r.key)}`); toast(`Deleted ${r.key}`); q.reload(); } catch (e) { toast((e as Error).message, 'bad'); } };
+  const remove = async (r: T) => { try { await del(`${path}/${encodeURIComponent(r.key)}`); toast(tf('Deleted {0}', r.key)); q.reload(); } catch (e) { toast((e as Error).message, 'bad'); } };
   const duplicate = async (r: T) => {
-    const key = prompt(`New key for a copy of ${r.key}`, `${r.key}-copy`);
+    const key = prompt(tf('New key for a copy of {0}', r.key), `${r.key}-copy`);
     if (!key) return;
     try {
       if (copy) await post(`${path}/${encodeURIComponent(r.key)}/copy`, { key });
       else { const src = asItem<T>(await get<unknown>(`${path}/${encodeURIComponent(r.key)}`)); await post(path, { ...strip(src as Record<string, unknown>), key, name: src.name ? `${src.name} (copy)` : undefined }); }
-      toast(`Created ${key}`); nav(encodeURIComponent(key));
+      toast(tf('Created {0}', key)); nav(encodeURIComponent(key));
     } catch (e) { toast((e as Error).message, 'bad'); }
   };
-  const menuCol: Col<T> = { h: '', w: '44px', c: (r) => canEdit ? <Menu items={[{ label: 'Open', onClick: () => nav(encodeURIComponent(r.key)) }, { label: 'Duplicate', onClick: () => duplicate(r) }, { label: 'Delete', danger: true, onClick: () => { if (confirm(`Delete ${r.key}?`)) void remove(r); } }]} /> : null };
+  const menuCol: Col<T> = { h: '', w: '44px', c: (r) => canEdit ? <Menu items={[{ label: 'Open', onClick: () => nav(encodeURIComponent(r.key)) }, { label: 'Duplicate', onClick: () => duplicate(r) }, { label: 'Delete', danger: true, onClick: () => { if (confirm(tf('Delete {0}?', r.key))) void remove(r); } }]} /> : null };
   const updatedCol: Col<T> = { h: 'Updated', w: '150px', c: (r) => <span className="hint" style={{ whiteSpace: 'nowrap' }}>{r.updated_at ? fmtDate(r.updated_at) : ''}</span> };
   const showUpdated = all.some((x) => x.updated_at) && !cols.some((c) => c.h === 'Updated');
   const filtered = !!(search || tag || status);
   return (
-    <Page title={<span>{title}{q.data && <span className="count">{rows.length}{filtered ? ` / ${all.length}` : ''}</span>}</span>} actions={canEdit && <button className="btn" onClick={() => nav('new')}>{locale === 'en' ? `New ${title.replace(/s$/, '').toLowerCase()}` : t('Create')}</button>}>
+    <Page title={<span>{title}{q.data && <span className="count">{rows.length}{filtered ? ` / ${all.length}` : ''}</span>}</span>} actions={canEdit && <button className="btn" onClick={() => nav('new')}>{locale === 'en' ? tf('New {0}', title.replace(/s$/, '').toLowerCase()) : t('Create')}</button>}>
       {blurb && <p className="muted" style={{ marginTop: -8 }}>{blurb}</p>}
       {above}
       <ErrorBox error={q.error} />
       {(all.length > 0 || filtered) && (
         <div className="toolbar">
-          <input className="search" placeholder={locale === 'en' ? `Search ${title.toLowerCase()}…` : t('Search…')} value={search} onChange={(e) => setSearch(e.target.value)} />
+          <input className="search" placeholder={locale === 'en' ? tf('Search {0}…', title.toLowerCase()) : t('Search…')} value={search} onChange={(e) => setSearch(e.target.value)} />
           {statuses.length > 1 && <div className="chips">{statuses.map((s) => <button key={s} className={'chip' + (status === s ? ' on' : '')} onClick={() => setStatus(status === s ? null : s)}>{s}</button>)}</div>}
           {tags.length > 0 && <div className="chips">{tags.slice(0, 12).map((t) => <button key={t} className={'chip' + (tag === t ? ' on' : '')} onClick={() => setTag(tag === t ? null : t)}>#{t}</button>)}</div>}
           <div className="spacer" />
@@ -125,7 +125,7 @@ function List<T extends Keyed>({ title, path, blurb, cols, sort, above, copy, st
         </div>
       )}
       {q.data && all.length === 0 ? (
-        <Empty title={`No ${title.toLowerCase()} yet`} hint={blurb ? undefined : 'Create the first one to get started.'} action={canEdit && <button className="btn" onClick={() => nav('new')}>Create {title.replace(/s$/, '').toLowerCase()}</button>} />
+        <Empty title={tf('No {0} yet', title.toLowerCase())} hint={blurb ? undefined : t('Create the first one to get started.')} action={canEdit && <button className="btn" onClick={() => nav('new')}>Create {title.replace(/s$/, '').toLowerCase()}</button>} />
       ) : q.data && rows.length === 0 ? (
         <Empty title={t('Nothing matches')} action={<button className="btn ghost" onClick={() => { setSearch(''); setTag(null); setStatus(null); }}>{t('Clear filters')}</button>} />
       ) : (
@@ -200,7 +200,7 @@ function Detail<T extends Keyed>({ title, path, blank, form, extra, tabs = [], t
       const body = toBody ? toBody(draft, !!isNew) : strip(draft as Record<string, unknown>);
       const r = isNew ? await post<T>(path, body) : await put<T>(`${path}/${encodeURIComponent(key!)}`, body);
       setErr(null); setDirty(false);
-      toast(isNew ? `Created ${r.key ?? draft.key}` : 'Saved');
+      toast(isNew ? tf('Created {0}', r.key ?? draft.key) : 'Saved');
       if (isNew) nav(`../${encodeURIComponent(r.key ?? (draft.key as string))}`, { replace: true, relative: 'path' });
       else { setItem(r); setDraft(r); }
     } catch (e) { setErr(e as Error); } finally { setBusy(false); }
@@ -211,7 +211,7 @@ function Detail<T extends Keyed>({ title, path, blank, form, extra, tabs = [], t
     return () => window.removeEventListener('keydown', h);
   });
   const remove = async () => {
-    try { await del(`${path}/${encodeURIComponent(key!)}`); toast(`Deleted ${key}`); nav('..', { relative: 'path' }); } catch (e) { setErr(e as Error); }
+    try { await del(`${path}/${encodeURIComponent(key!)}`); toast(tf('Deleted {0}', key)); nav('..', { relative: 'path' }); } catch (e) { setErr(e as Error); }
   };
   const back = () => { if (!dirty || confirm('Discard unsaved changes?')) nav(isNew ? '..' : '..', { relative: 'path' }); };
   const allTabs: Tab<T>[] = [

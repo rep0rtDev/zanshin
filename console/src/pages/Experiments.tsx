@@ -4,7 +4,7 @@ import { DateTime, EntityPage, Num, Tags, Text } from '../crud';
 import { AudiencePicker, ConditionEditor, VariantsEditor } from '../RuleBuilder';
 import type { Cond } from '../RuleBuilder';
 import { Badge, Confirm, ErrorBox, Field, KeyPicker, Table, fmtDate, fmtNum } from '../ui';
-import { t } from '../i18n';
+import { t, tf } from '../i18n';
 
 type Variant = { key: string; name: string; value: unknown; weight: number };
 type Guardrail = { metric: string; max_drop: number; min_identities: number };
@@ -104,7 +104,7 @@ function Participants({ exp }: { exp: Experiment }) {
     <div className="card">
       <div className="row" style={{ alignItems: 'center' }}>
         <strong>{t('Participants')}</strong>
-        {q.data && <span className="hint">{fmtNum(q.data.total)} assigned{exp.max_participants ? ` of ${fmtNum(exp.max_participants)} max` : ''}</span>}
+        {q.data && <span className="hint">{fmtNum(q.data.total)} assigned{exp.max_participants ? tf(' of {0} max', fmtNum(exp.max_participants)) : ''}</span>}
         <button className="btn ghost" onClick={() => download(`/experiments/${k}/participants.csv`, `${exp.key}-participants.csv`).catch(() => undefined)}>{t('CSV')}</button>
       </div>
       <ErrorBox error={q.error ?? s.error} />
@@ -182,7 +182,7 @@ function SequentialSummary({ metrics, control }: { metrics: CatalogMetric[]; con
   return (
     <div className="hint" style={{ marginBottom: 8 }}>
       Always-valid (sequential) test — safe to read at any time:{' '}
-      {rows.map((r) => <span key={r.metric + r.variant} style={{ marginRight: 10 }}><code>{r.metric}</code> {r.variant}: <Badge tone={r.s.significant ? 'ok' : 'muted'}>p = {r.s.p_value < 0.001 ? r.s.p_value.toExponential(1) : r.s.p_value.toFixed(3)}{r.s.lift !== undefined ? ` · lift ${(r.s.lift * 100).toFixed(1)}%` : ''}</Badge></span>)}
+      {rows.map((r) => <span key={r.metric + r.variant} style={{ marginRight: 10 }}><code>{r.metric}</code> {r.variant}: <Badge tone={r.s.significant ? 'ok' : 'muted'}>p = {r.s.p_value < 0.001 ? r.s.p_value.toExponential(1) : r.s.p_value.toFixed(3)}{r.s.lift !== undefined ? tf(' · lift {0}%', (r.s.lift * 100).toFixed(1)) : ''}</Badge></span>)}
     </div>
   );
 }
@@ -253,7 +253,7 @@ function ResultsPanel({ exp }: { exp: Experiment }) {
       </div>
       {r && (
         <>
-          <div className="hint" style={{ marginBottom: 8 }}>{fmtNum(r.total_assigned)} identities assigned{r.metric ? ` · metric "${r.metric}"` : ''}
+          <div className="hint" style={{ marginBottom: 8 }}>{fmtNum(r.total_assigned)} identities assigned{r.metric ? tf(' · metric "{0}"', r.metric) : ''}
             {r.srm && <> · sample ratio {r.srm.suspicious ? <Badge tone="bad">mismatch (p = {r.srm.p_value.toExponential(1)}) — assignment is skewed, do not trust these results</Badge> : <Badge tone="ok">ok (p = {r.srm.p_value.toFixed(2)})</Badge>}</>}
             <button className="btn ghost sm" style={{ marginLeft: 8 }} onClick={() => download(`/experiments/${encodeURIComponent(exp.key)}/results.csv`, `${exp.key}-results.csv`)}>{t('Download CSV')}</button>
           </div>

@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { del, get, post, useLoad } from '../api';
 import { Badge, Confirm, ErrorBox, Field, Page, Table, fmtDate } from '../ui';
 import { PermissionEditor, type Permissions } from '../permissions';
-import { t } from '../i18n';
+import { t, tf } from '../i18n';
 
 type Key = { id: string; name: string; kind: string; prefix: string; created_at: string; last_used_at: string | null; revoked_at: string | null; read_only: boolean; role: 'admin' | 'editor' | 'viewer'; expires_at: string | null; rate_limit_per_minute: number | null; permissions: Permissions | null; rotated_from: string | null; rotated_to: string | null };
 
@@ -56,7 +56,7 @@ export default function ApiKeys() {
         cols={[
           { h: 'Name', c: (k) => <strong>{k.name}</strong> },
           { h: 'Kind', c: (k) => <><Badge tone={k.kind === 'admin' ? 'bad' : k.kind === 'server' ? 'info' : 'muted'}>{k.kind}</Badge>{k.kind === 'admin' && (k.permissions ? <Badge>{t('custom perms')}</Badge> : k.role !== 'admin' && <Badge>{k.role}</Badge>)}</> },
-          { h: 'Limits', c: (k) => <span className="hint">{k.rate_limit_per_minute ? `${k.rate_limit_per_minute}/min` : 'default'}{k.expires_at ? ` · expires ${fmtDate(k.expires_at)}` : ''}</span> },
+          { h: 'Limits', c: (k) => <span className="hint">{k.rate_limit_per_minute ? `${k.rate_limit_per_minute}/min` : 'default'}{k.expires_at ? tf(' · expires {0}', fmtDate(k.expires_at)) : ''}</span> },
           { h: "Prefix", c: (k) => <span className="mono">{k.prefix}…</span> },
           { h: 'Created', c: (k) => fmtDate(k.created_at) },
           { h: 'Last used', c: (k) => fmtDate(k.last_used_at) },

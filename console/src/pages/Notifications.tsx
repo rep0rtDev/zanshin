@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { get, post, useLoad } from '../api';
 import { EntityPage, Tags, Text } from '../crud';
 import { Badge, ErrorBox, Field, JsonField, fmtDate } from '../ui';
-import { t } from '../i18n';
+import { t, tf } from '../i18n';
 
 type Channel = {
   id: string; key: string; name: string; kind: 'slack' | 'discord' | 'webhook'; url: string; topics: string[]; kinds: string[]; enabled: boolean;
@@ -29,12 +29,12 @@ function TestSend({ c }: { c: Channel }) {
     <div className="card">
       <div className="row" style={{ alignItems: 'center' }}>
         <strong>{t('Delivery')}</strong>
-        <span className="hint">{c.last_sent_at ? `last sent ${fmtDate(c.last_sent_at)}` : 'never sent'}{c.last_status ? ` · HTTP ${c.last_status}` : ''}</span>
+        <span className="hint">{c.last_sent_at ? tf('last sent {0}', fmtDate(c.last_sent_at)) : 'never sent'}{c.last_status ? tf(' · HTTP {0}', c.last_status) : ''}</span>
         {c.last_error && <Badge tone="bad">{c.last_error}</Badge>}
         <button className="btn sm" style={{ marginLeft: 'auto' }} onClick={() => post<{ ok: boolean; status: number | null; error: string }>(`/notification-channels/${encodeURIComponent(c.key)}/test`).then((r) => { setRes(r); setErr(null); }, setErr)}>{t('Send test message')}</button>
       </div>
       <ErrorBox error={err} />
-      {res && <div style={{ marginTop: 8 }}><Badge tone={res.ok ? 'ok' : 'bad'}>{res.ok ? 'delivered' : 'failed'}</Badge> <span className="hint">{res.status ? `HTTP ${res.status}` : ''} {res.error}</span></div>}
+      {res && <div style={{ marginTop: 8 }}><Badge tone={res.ok ? 'ok' : 'bad'}>{res.ok ? 'delivered' : 'failed'}</Badge> <span className="hint">{res.status ? tf('HTTP {0}', res.status) : ''} {res.error}</span></div>}
     </div>
   );
 }
