@@ -66,7 +66,7 @@ function Sinks() {
           {s.kind === 'bigquery' && <Field label={t('Service account JSON')}><JsonField value={((s.config ?? {}).service_account as object) ?? {}} onChange={(service_account) => set({ config: { ...(s.config ?? {}), service_account } })} rows={4} /></Field>}
           {s.kind === 'http' && <Field label={t('Extra headers (JSON object)')}><JsonField value={((s.config ?? {}).headers as object) ?? {}} onChange={(headers) => set({ config: { ...(s.config ?? {}), headers } })} rows={2} /></Field>}
           <div className="row">
-            <Text label="Events (comma-separated, empty = all)" value={(s.events ?? []).join(',')} onChange={(v) => set({ events: v.split(',').map((x) => x.trim()).filter(Boolean) })} mono />
+            <Text label={t('Events (comma-separated, empty = all)')} value={(s.events ?? []).join(',')} onChange={(v) => set({ events: v.split(',').map((x) => x.trim()).filter(Boolean) })} mono />
             <Num label={t('Interval (s)')} value={s.interval_secs ?? 300} onChange={(v) => set({ interval_secs: v ?? 300 })} min={30} />
             <Num label={t('Batch size')} value={s.batch_size ?? 10000} onChange={(v) => set({ batch_size: v ?? 10000 })} min={1} max={100000} />
           </div>

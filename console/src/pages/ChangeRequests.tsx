@@ -23,7 +23,7 @@ export default function ChangeRequests() {
   const tone = (s: string) => s === 'applied' ? 'ok' : s === 'approved' ? 'info' : s === 'rejected' ? 'bad' : s === 'open' ? 'warn' : undefined;
   return (
     <div className="page">
-      <div className="page-head"><h1>{t('Change requests')}</h1><p className="blurb">Propose a configuration change, get it approved by someone else (four-eyes), then apply it. Works for every config kind; the applied patch goes through the same path as config import, so it shows up in the audit log and history.</p></div>
+      <div className="page-head"><h1>{t('Change requests')}</h1><p className="blurb">{t('Propose a configuration change, get it approved by someone else (four-eyes), then apply it. Works for every config kind; the applied patch goes through the same path as config import, so it shows up in the audit log and history.')}</p></div>
       <ErrorBox error={err ?? q.error} />
       <div className="card">
         <div className="row" style={{ alignItems: 'center' }}>

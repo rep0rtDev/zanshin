@@ -189,7 +189,7 @@ export default function Messages() {
     <EntityPage<Campaign>
       title={t('Messages')}
       path="/messages"
-      blurb={<>In-app message campaigns delivered to each matching identity's inbox exactly once. <code>{'{{default.name}}'}</code>-style placeholders in title/body are rendered per identity. Direct one-off messages are sent from an identity's page.</>}
+      blurb={<>{t("In-app message campaigns delivered to each matching identity's inbox exactly once.")} <code>{'{{default.name}}'}</code>{t('-style placeholders in title/body are rendered per identity.')} {t("Direct one-off messages are sent from an identity's page.")}</>}
       cols={[
         { h: 'Key', c: (c) => <><strong>{c.key}</strong><div className="hint">{c.title}</div></> },
         { h: 'Status', c: (c) => c.enabled ? <Badge tone="ok">enabled</Badge> : <Badge>disabled</Badge> },

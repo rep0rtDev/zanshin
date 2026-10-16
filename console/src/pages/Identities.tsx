@@ -131,7 +131,7 @@ function Props({ i, onSaved }: { i: Identity; onSaved: (n: Identity) => void }) 
       </div>
       <div className="card">
         <strong>{t('Computed properties')}</strong>
-        <div className="hint" style={{ marginBottom: 8 }}>Derived from events by the server; read-only, usable in targeting as <code>computed.*</code>.</div>
+        <div className="hint" style={{ marginBottom: 8 }}>{t('Derived from events by the server; read-only, usable in targeting as')} <code>computed.*</code>.</div>
         <pre className="code">{JSON.stringify(i.properties.computed, null, 2)}</pre>
       </div>
     </div>

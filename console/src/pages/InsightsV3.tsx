@@ -243,7 +243,7 @@ export function PlayerMap({ filter }: { filter: Filter }) {
             <div className="map-flag">{flag(c.country)}</div><div className="map-cc">{c.country}</div><div className="map-n">{fmtNum(c.players)}</div><div className="map-pct">{pct(c.share)}</div>
           </div>
         ))}
-        {q.data && q.data.countries.length === 0 && <div className="hint">No events in range. Country comes from the identity's default property `country` (set by the SDK or GeoIP).</div>}
+        {q.data && q.data.countries.length === 0 && <div className="hint">{tr("No events in range. Country comes from the identity's default property `country` (set by the SDK or GeoIP).")}</div>}
       </div>
       <Table rows={q.data?.countries} rowKey={(c) => c.country} cols={[
         { h: 'Country', c: (c) => <>{flag(c.country)} <code>{c.country}</code></> }, { h: 'Players', c: (c) => fmtNum(c.players) }, { h: 'Events', c: (c) => fmtNum(c.events) }, { h: 'Share', c: (c) => pct(c.share) },
@@ -312,7 +312,7 @@ export function Ltv({ filter }: { filter: Filter }) {
         {(q.data?.days ?? []).slice(0, 2).map((d) => <Stat key={d} label={`LTV D${d}`} value={money(t?.at[`d${d}`]?.ltv)} sub={`RoAS ${pct(t?.at[`d${d}`]?.roas)}`} />)}
       </div>
       <div className="card">
-        <strong>{tr('Install cohorts')}</strong> <span className="hint">LTV = cumulative revenue per install · RoAS = revenue / spend</span>
+        <strong>{tr('Install cohorts')}</strong> <span className="hint">{tr('LTV = cumulative revenue per install · RoAS = revenue / spend')}</span>
         <Table rows={q.data?.cohorts} rowKey={(c) => c.cohort} empty={tr('No installs or spend in this range')} cols={[
           { h: 'Cohort', c: (c) => <code>{c.cohort}</code> }, { h: 'Installs', c: (c) => <>{fmtNum(c.installs)}{c.reported_installs > 0 && <span className="hint"> / {fmtNum(c.reported_installs)} reported</span>}</> },
           { h: 'Spend', c: (c) => money(c.spend) }, { h: 'CPI', c: (c) => money(c.cpi) },

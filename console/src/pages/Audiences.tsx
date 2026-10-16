@@ -21,7 +21,7 @@ function ExpressionEditor({ value, onChange }: { value: Cond; onChange: (c: Cond
   const toExpr = () => post<{ expression: string }>('/audiences/expression', { condition: value }).then((r) => { setText(r.expression); setMode('expr'); setErr(null); }, setErr);
   const apply = () => post<{ condition: Cond }>('/audiences/expression', { expression: text }).then((r) => { onChange(r.condition); setMode('builder'); setErr(null); }, setErr);
   return (
-    <Field label={<>Condition <a href="#" className="hint" onClick={(e) => { e.preventDefault(); mode === 'builder' ? toExpr() : setMode('builder'); }}>{mode === 'builder' ? 'edit as expression' : 'back to builder'}</a></>} hint={t('who belongs to this audience')}>
+    <Field label={<>{t('Condition')} <a href="#" className="hint" onClick={(e) => { e.preventDefault(); mode === 'builder' ? toExpr() : setMode('builder'); }}>{mode === 'builder' ? 'edit as expression' : 'back to builder'}</a></>} hint={t('who belongs to this audience')}>
       <ErrorBox error={err} />
       {mode === 'builder'
         ? <ConditionEditor value={value} onChange={(condition) => onChange(condition ?? { all: [] })} />
@@ -73,7 +73,7 @@ function Members({ aud }: { aud: Audience }) {
               <option value="exclude">exclude</option>
             </select>
           </Field>
-          {mode === 'exclude' && <Field label="For hours (blank = forever)"><input value={hours} onChange={(e) => setHours(e.target.value)} style={{ width: 90 }} /></Field>}
+          {mode === 'exclude' && <Field label={t('For hours (blank = forever)')}><input value={hours} onChange={(e) => setHours(e.target.value)} style={{ width: 90 }} /></Field>}
           {mode !== 'managed' && <Field label={t('Reason')}><input value={reason} onChange={(e) => setReason(e.target.value)} /></Field>}
           <button className="btn" disabled={!ext} onClick={add}>{t('Apply')}</button>
         </div>
