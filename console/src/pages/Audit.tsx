@@ -35,13 +35,13 @@ export default function Audit() {
         onRow={(e) => setOpen(open === e.id ? null : e.id)}
         empty={t('No admin mutations recorded yet')}
         cols={[
-          { h: 'When', w: '190px', c: (e) => <span style={{ whiteSpace: 'nowrap' }}>{fmtDate(e.at)}</span> },
-          { h: 'Actor', c: (e) => <><strong>{e.actor_name}</strong> <Badge tone={e.actor_kind === 'admin' ? 'info' : 'muted'}>{e.actor_kind}</Badge></> },
-          { h: 'Call', c: (e) => <span className="mono"><Badge>{e.method}</Badge> {e.path}</span> },
-          { h: 'Status', w: '80px', c: (e) => <Badge tone={tone(e.status)}>{e.status}</Badge> },
-          { h: '', w: '70px', c: (e) => (e.status < 300 && e.method !== 'GET' && /^\/admin\/v1\/(flags|audiences|experiments|live-events|messages|webhooks|journeys|dashboards|templates|integrations|metrics|export-sinks)/.test(e.path) ? <button className="btn ghost sm" onClick={() => post(`/audit/${e.id}/undo`, {}).then(() => alert('Reverted'), (err: Error) => alert(err.message))}>{t('Undo')}</button> : null) },
-          { h: 'IP', w: '130px', c: (e) => <span className="mono hint">{e.ip ?? '—'}</span> },
-          { h: 'Body', c: (e) => e.body == null ? <span className="muted">—</span> : open === e.id ? <pre className="code">{JSON.stringify(e.body, null, 2)}</pre> : <code className="hint trunc" title={t('click row to expand')}>{JSON.stringify(e.body)}</code> },
+          { h: t('When'), w: '190px', c: (e) => <span style={{ whiteSpace: 'nowrap' }}>{fmtDate(e.at)}</span> },
+          { h: t('Actor'), c: (e) => <><strong>{e.actor_name}</strong> <Badge tone={e.actor_kind === 'admin' ? 'info' : 'muted'}>{e.actor_kind}</Badge></> },
+          { h: t('Call'), c: (e) => <span className="mono"><Badge>{e.method}</Badge> {e.path}</span> },
+          { h: t('Status'), w: '80px', c: (e) => <Badge tone={tone(e.status)}>{e.status}</Badge> },
+          { h: '', w: '70px', c: (e) => (e.status < 300 && e.method !== 'GET' && /^\/admin\/v1\/(flags|audiences|experiments|live-events|messages|webhooks|journeys|dashboards|templates|integrations|metrics|export-sinks)/.test(e.path) ? <button className="btn ghost sm" onClick={() => post(`/audit/${e.id}/undo`, {}).then(() => alert(t('Reverted')), (err: Error) => alert(err.message))}>{t('Undo')}</button> : null) },
+          { h: t('IP'), w: '130px', c: (e) => <span className="mono hint">{e.ip ?? '—'}</span> },
+          { h: t('Body'), c: (e) => e.body == null ? <span className="muted">—</span> : open === e.id ? <pre className="code">{JSON.stringify(e.body, null, 2)}</pre> : <code className="hint trunc" title={t('click row to expand')}>{JSON.stringify(e.body)}</code> },
         ]}
       />
       <div className="actions" style={{ marginTop: 12 }}>

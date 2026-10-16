@@ -47,7 +47,7 @@ function CmpRow({ c, onChange, onRemove }: { c: Cmp; onChange: (c: Cmp) => void;
     <div className="rb-row">
       <input className="mono" list="rb-props" value={c.prop} placeholder="default.country" onChange={(e) => onChange({ ...c, prop: e.target.value })} style={{ flex: 2 }} />
       <select value={c.op} onChange={(e) => { const op = e.target.value; const a = ARITY[op]; onChange({ prop: c.prop, op, value: a === 'none' ? undefined : a === 'many' ? (Array.isArray(c.value) ? c.value : []) : Array.isArray(c.value) ? (c.value as unknown[])[0] : c.value }); }} style={{ flex: 1.3 }}>
-        {OPS.map(([k, l]) => <option key={k} value={k}>{l}</option>)}
+        {OPS.map(([k, l]) => <option key={k} value={k}>{t(l)}</option>)}
       </select>
       {arity === 'one' && <input className="mono" value={showScalar(c.value)} placeholder='value — 42, true, "text"' onChange={(e) => onChange({ ...c, value: parseScalar(e.target.value) })} style={{ flex: 2 }} />}
       {arity === 'many' && <input className="mono" value={many} placeholder={t('DE, FR, AT')} onChange={(e) => { setMany(e.target.value); onChange({ ...c, value: e.target.value.split(',').map((s) => s.trim()).filter(Boolean).map(parseScalar) }); }} style={{ flex: 2 }} />}
@@ -84,9 +84,9 @@ function Node({ c, onChange, onRemove, root }: { c: Cond; onChange: (c: Cond) =>
           </select>
           {list.length === 0 && <span className="hint">{t('no conditions — matches everyone')}</span>}
           <span className="spacer" />
-          <button type="button" className="btn ghost sm" onClick={() => set([...list, { prop: '', op: 'eq', value: '' }])}>+ condition</button>
-          <button type="button" className="btn ghost sm" onClick={() => set([...list, { all: [] }])}>+ group</button>
-          <button type="button" className="btn ghost sm" onClick={() => set([...list, { not: { prop: '', op: 'eq', value: '' } }])}>+ not</button>
+          <button type="button" className="btn ghost sm" onClick={() => set([...list, { prop: '', op: 'eq', value: '' }])}>{t('+ condition')}</button>
+          <button type="button" className="btn ghost sm" onClick={() => set([...list, { all: [] }])}>{t('+ group')}</button>
+          <button type="button" className="btn ghost sm" onClick={() => set([...list, { not: { prop: '', op: 'eq', value: '' } }])}>{t('+ not')}</button>
           {onRemove && <button type="button" className="btn ghost sm" onClick={onRemove}>×</button>}
         </div>
         {list.map((k, i) => (
@@ -116,7 +116,7 @@ function ExpressionMode({ value, onChange, onBack }: { value: Cond | null | unde
     <>
       <textarea className="mono" rows={4} value={text} onChange={(e) => setText(e.target.value)} placeholder={EXPR_PLACEHOLDER} />
       <div className="hint" style={{ marginTop: 4 }}>
-        <code>and</code> / <code>or</code> / <code>not</code>, parentheses; operators <code>== != &lt; &lt;= &gt; &gt;= in not_in contains starts_with ends_with matches exists semver_gte within_last older_than</code>; durations <code>30s 15m 2h 7d 4w</code>.
+        <code>and</code> / <code>or</code> / <code>not</code>{t(', parentheses; operators')} <code>== != &lt; &lt;= &gt; &gt;= in not_in contains starts_with ends_with matches exists semver_gte within_last older_than</code>{t('; durations')} <code>30s 15m 2h 7d 4w</code>.
       </div>
       {err && <div className="error" style={{ marginTop: 6 }}>{err.message}</div>}
       <div className="actions"><button className="btn sm" type="button" onClick={apply}>{t('Apply expression')}</button></div>
@@ -139,11 +139,11 @@ export function ConditionEditor({ value, onChange, optional }: { value: Cond | n
       {mode === 'expr' ? (
         <ExpressionMode value={value} onChange={onChange} onBack={() => setMode('visual')} />
       ) : mode === 'json' ? (
-        <JsonField value={empty ? undefined : value} onChange={(v) => onChange((v as Cond) ?? null)} rows={6} placeholder='{"all": []}' />
+        <JsonField value={empty ? undefined : value} onChange={(v) => onChange((v as Cond) ?? null)} rows={6} placeholder={'{"all": []}'} />
       ) : empty ? (
         <div className="rb-empty">
-          <span className="muted">Everyone{optional ? '' : ' (no condition)'}</span>
-          <button type="button" className="btn ghost sm" onClick={() => onChange({ all: [{ prop: '', op: 'eq', value: '' }] })}>+ add condition</button>
+          <span className="muted">{t('Everyone')}{optional ? '' : t(' (no condition)')}</span>
+          <button type="button" className="btn ghost sm" onClick={() => onChange({ all: [{ prop: '', op: 'eq', value: '' }] })}>{t('+ add condition')}</button>
         </div>
       ) : (
         <Node c={value as Cond} onChange={onChange} root />
@@ -190,7 +190,7 @@ export function VariantsEditor({ type, value, onChange, withName }: { type: Valu
           <button type="button" className="btn ghost sm" onClick={() => onChange(value.filter((_, j) => j !== i))}>×</button>
         </div>
       ))}
-      <button type="button" className="btn ghost sm" onClick={() => onChange([...value, { key: `v${value.length + 1}`, value: type === 'bool' ? true : type === 'number' ? 0 : type === 'string' ? '' : {}, weight: 1 }])}>+ variant</button>
+      <button type="button" className="btn ghost sm" onClick={() => onChange([...value, { key: `v${value.length + 1}`, value: type === 'bool' ? true : type === 'number' ? 0 : type === 'string' ? '' : {}, weight: 1 }])}>{t('+ variant')}</button>
     </div>
   );
 }
@@ -220,7 +220,7 @@ export function RulesEditor({ type, value, onChange }: { type: ValueType; value:
             </div>
             <Label>{t('Condition')}</Label>
             <ConditionEditor value={r.condition ?? { all: [] }} onChange={(c) => set(i, { condition: c ?? { all: [] } })} />
-            <Label>{t('Audiences') + ' '}<span className="hint">(identity must belong to all selected)</span></Label>
+            <Label>{t('Audiences') + ' '}<span className="hint">{t('(identity must belong to all selected)')}</span></Label>
             <AudiencePicker value={audiences} onChange={(audiences) => set(i, { audiences })} />
             <div className="row" style={{ marginTop: 10 }}>
               <label className="field" style={{ flex: 1 }}>
@@ -241,7 +241,7 @@ export function RulesEditor({ type, value, onChange }: { type: ValueType; value:
           </div>
         );
       })}
-      <button type="button" className="btn ghost" onClick={() => onChange([...value, { id: newId(), name: '', condition: { all: [] }, audiences: [], percentage: 100, value: type === 'bool' ? true : type === 'number' ? 0 : type === 'string' ? '' : {}, variants: [] }])}>+ add rule</button>
+      <button type="button" className="btn ghost" onClick={() => onChange([...value, { id: newId(), name: '', condition: { all: [] }, audiences: [], percentage: 100, value: type === 'bool' ? true : type === 'number' ? 0 : type === 'string' ? '' : {}, variants: [] }])}>{t('+ add rule')}</button>
     </div>
   );
 }

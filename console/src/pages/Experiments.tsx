@@ -76,19 +76,19 @@ function Ops({ exp, reload }: { exp: Experiment; reload: () => void }) {
       </div>
       <ErrorBox error={err} />
       <div className="row" style={{ marginTop: 10, alignItems: 'end' }}>
-        <button className="btn ghost" onClick={() => run(post(`/experiments/${k}/${exp.locked ? 'unlock' : 'lock'}`))}>{exp.locked ? 'Unlock' : 'Lock'}</button>
+        <button className="btn ghost" onClick={() => run(post(`/experiments/${k}/${exp.locked ? 'unlock' : 'lock'}`))}>{exp.locked ? t('Unlock') : t('Lock')}</button>
         <Field label={t('Copy as')}><input value={copyKey} onChange={(e) => setCopyKey(e.target.value)} className="mono" /></Field>
         <button className="btn ghost" disabled={!copyKey} onClick={() => run(post(`/experiments/${k}/copy`, { key: copyKey, as_phase: false }))}>{t('Copy')}</button>
         <button className="btn ghost" disabled={!copyKey} onClick={() => run(post(`/experiments/${k}/copy`, { key: copyKey, as_phase: true }))}>{t('Next phase')}</button>
       </div>
       {exp.status !== 'draft' && exp.status !== 'stopped' && (
         <div className="row" style={{ marginTop: 10, alignItems: 'end' }}>
-          <Field label={t('Winner')}><select value={winner} onChange={(e) => setWinner(e.target.value)}><option value="">— none —</option>{exp.variants.map((v) => <option key={v.key} value={v.key}>{v.key}</option>)}</select></Field>
+          <Field label={t('Winner')}><select value={winner} onChange={(e) => setWinner(e.target.value)}><option value="">{t('— none —')}</option>{exp.variants.map((v) => <option key={v.key} value={v.key}>{v.key}</option>)}</select></Field>
           <Field label={t('Reason')}><input value={reason} onChange={(e) => setReason(e.target.value)} placeholder={t('b wins on D7 retention')} /></Field>
-          <Confirm danger onConfirm={() => run(post(`/experiments/${k}/interrupt`, { reason, winner: winner || null, apply_to_flag: !!exp.flag_key && !!winner }))}>{exp.flag_key && winner ? 'Interrupt & roll winner to flag' : 'Interrupt'}</Confirm>
+          <Confirm danger onConfirm={() => run(post(`/experiments/${k}/interrupt`, { reason, winner: winner || null, apply_to_flag: !!exp.flag_key && !!winner }))}>{exp.flag_key && winner ? t('Interrupt & roll winner to flag') : t('Interrupt')}</Confirm>
         </div>
       )}
-      {exp.interrupt_reason && <div className="hint" style={{ marginTop: 8 }}>Interrupted: {exp.interrupt_reason}</div>}
+      {exp.interrupt_reason && <div className="hint" style={{ marginTop: 8 }}>{t('Interrupted:')} {exp.interrupt_reason}</div>}
     </div>
   );
 }
@@ -119,10 +119,10 @@ function Participants({ exp }: { exp: Experiment }) {
         rowKey={(p) => p.identity_id}
         empty={t('Nobody assigned yet')}
         cols={[
-          { h: 'Player', c: (p) => <span className="mono">{p.external_id}</span> },
-          { h: 'Variant', c: (p) => <code>{p.variant}</code> },
-          { h: 'Assigned', c: (p) => fmtDate(p.assigned_at) },
-          { h: 'Exposed', c: (p) => p.exposed_at ? `${fmtDate(p.exposed_at)} (${p.exposures}×)` : <span className="muted">{t('not yet')}</span> },
+          { h: t('Player'), c: (p) => <span className="mono">{p.external_id}</span> },
+          { h: t('Variant'), c: (p) => <code>{p.variant}</code> },
+          { h: t('Assigned'), c: (p) => fmtDate(p.assigned_at) },
+          { h: t('Exposed'), c: (p) => p.exposed_at ? `${fmtDate(p.exposed_at)} (${p.exposures}×)` : <span className="muted">{t('not yet')}</span> },
         ]}
       />
     </div>
@@ -155,7 +155,7 @@ function GuardrailsEditor({ value, onChange }: { value: Guardrail[]; onChange: (
           <button type="button" className="btn ghost sm" onClick={() => onChange(value.filter((_, j) => j !== i))}>remove</button>
         </div>
       ))}
-      <div><button type="button" className="btn ghost sm" onClick={() => onChange([...value, { metric: '', max_drop: 0.05, min_identities: 100 }])}>+ add guardrail</button></div>
+      <div><button type="button" className="btn ghost sm" onClick={() => onChange([...value, { metric: '', max_drop: 0.05, min_identities: 100 }])}>{t('+ add guardrail')}</button></div>
     </div>
   );
 }
@@ -171,7 +171,7 @@ function BanditEditor({ value, onChange }: { value: Bandit | null; onChange: (v:
         <Num label={t('Explore until N assigned')} value={value.min_assigned} onChange={(v) => onChange({ ...value, min_assigned: v ?? 0 })} min={0} />
         <button type="button" className="btn ghost sm" onClick={() => onChange(null)}>disable</button>
       </div>
-      {value.last_run_at && <div className="hint">last re-weighted {fmtDate(value.last_run_at)} · P(best): {(value.last_probabilities ?? []).map((p) => (p * 100).toFixed(0) + '%').join(' / ')}</div>}
+      {value.last_run_at && <div className="hint">{t('last re-weighted')} {fmtDate(value.last_run_at)} {t('· P(best):')} {(value.last_probabilities ?? []).map((p) => (p * 100).toFixed(0) + '%').join(' / ')}</div>}
     </div>
   );
 }
@@ -181,7 +181,7 @@ function SequentialSummary({ metrics, control }: { metrics: CatalogMetric[]; con
   if (rows.length === 0) return null;
   return (
     <div className="hint" style={{ marginBottom: 8 }}>
-      Always-valid (sequential) test — safe to read at any time:{' '}
+      {t('Always-valid (sequential) test — safe to read at any time:')}{' '}
       {rows.map((r) => <span key={r.metric + r.variant} style={{ marginRight: 10 }}><code>{r.metric}</code> {r.variant}: <Badge tone={r.s.significant ? 'ok' : 'muted'}>p = {r.s.p_value < 0.001 ? r.s.p_value.toExponential(1) : r.s.p_value.toFixed(3)}{r.s.lift !== undefined ? tf(' · lift {0}%', (r.s.lift * 100).toFixed(1)) : ''}</Badge></span>)}
     </div>
   );
@@ -220,9 +220,9 @@ export function HoldoutsCard() {
         rowKey={(h) => h.key}
         empty={t('No holdout groups yet.')}
         cols={[
-          { h: 'Key', c: (h) => <><strong>{h.key}</strong><div className="hint">{h.name}</div></> },
-          { h: 'Held out', c: (h) => `${h.percentage}%` },
-          { h: 'Status', c: (h) => <Badge tone={h.enabled ? 'ok' : 'muted'}>{h.enabled ? 'enabled' : 'disabled'}</Badge> },
+          { h: t('Key'), c: (h) => <><strong>{h.key}</strong><div className="hint">{h.name}</div></> },
+          { h: t('Held out'), c: (h) => `${h.percentage}%` },
+          { h: t('Status'), c: (h) => <Badge tone={h.enabled ? 'ok' : 'muted'}>{h.enabled ? 'enabled' : 'disabled'}</Badge> },
           { h: '', c: (h) => <div className="actions"><button className="btn ghost sm" onClick={() => run(put(`/holdouts/${encodeURIComponent(h.key)}`, { enabled: !h.enabled }))}>{h.enabled ? 'disable' : 'enable'}</button><Confirm danger onConfirm={() => run(del(`/holdouts/${encodeURIComponent(h.key)}`))}>{t('Delete')}</Confirm></div> },
         ]}
       />
@@ -253,8 +253,8 @@ function ResultsPanel({ exp }: { exp: Experiment }) {
       </div>
       {r && (
         <>
-          <div className="hint" style={{ marginBottom: 8 }}>{fmtNum(r.total_assigned)} identities assigned{r.metric ? tf(' · metric "{0}"', r.metric) : ''}
-            {r.srm && <> · sample ratio {r.srm.suspicious ? <Badge tone="bad">mismatch (p = {r.srm.p_value.toExponential(1)}) — assignment is skewed, do not trust these results</Badge> : <Badge tone="ok">ok (p = {r.srm.p_value.toFixed(2)})</Badge>}</>}
+          <div className="hint" style={{ marginBottom: 8 }}>{fmtNum(r.total_assigned)} {t('identities assigned')}{r.metric ? tf(' · metric "{0}"', r.metric) : ''}
+            {r.srm && <> {t('· sample ratio')} {r.srm.suspicious ? <Badge tone="bad">{t('mismatch (p =')} {r.srm.p_value.toExponential(1)}{t(') — assignment is skewed, do not trust these results')}</Badge> : <Badge tone="ok">{t('ok (p =')} {r.srm.p_value.toFixed(2)})</Badge>}</>}
             <button className="btn ghost sm" style={{ marginLeft: 8 }} onClick={() => download(`/experiments/${encodeURIComponent(exp.key)}/results.csv`, `${exp.key}-results.csv`)}>{t('Download CSV')}</button>
           </div>
           <SequentialSummary metrics={r.metrics ?? []} control={r.control} />
@@ -269,7 +269,7 @@ function ResultsPanel({ exp }: { exp: Experiment }) {
 
               <thead><tr><th>{t('Metric')}</th><th>{t('Kind')}</th>{r.variants.map((v) => <th key={v.variant}>{v.variant}{r.control === v.variant ? ' (control)' : ''}</th>)}</tr></thead>
 
-              <tbody>{r.metrics.map((m) => <tr key={m.metric}><td><strong>{m.metric}</strong><div className="hint">{m.error ?? `${m.aggregation}`}</div></td><td>{m.kind && <Badge tone={m.kind === 'goal' ? 'ok' : 'info'}>{m.kind}</Badge>}</td>{r.variants.map((v) => { const x = m.variants?.find((y) => y.variant === v.variant); return <td key={v.variant}>{x ? <>{fmtNum(x.value)}{x.lift != null && <span className={'hint ' + (x.lift >= 0 ? 'up' : 'down')}> {x.lift >= 0 ? '+' : ''}{(x.lift * 100).toFixed(1)}%</span>}{x.stats && <div className="hint">{(x.stats.ci_low * 100).toFixed(1)}–{(x.stats.ci_high * 100).toFixed(1)}%{x.stats.prob_beats_control != null && <> · P(beats control) <strong>{(x.stats.prob_beats_control * 100).toFixed(0)}%</strong></>}</div>}</> : '—'}</td>; })}</tr>)}</tbody>
+              <tbody>{r.metrics.map((m) => <tr key={m.metric}><td><strong>{m.metric}</strong><div className="hint">{m.error ?? `${m.aggregation}`}</div></td><td>{m.kind && <Badge tone={m.kind === 'goal' ? 'ok' : 'info'}>{m.kind}</Badge>}</td>{r.variants.map((v) => { const x = m.variants?.find((y) => y.variant === v.variant); return <td key={v.variant}>{x ? <>{fmtNum(x.value)}{x.lift != null && <span className={'hint ' + (x.lift >= 0 ? 'up' : 'down')}> {x.lift >= 0 ? '+' : ''}{(x.lift * 100).toFixed(1)}%</span>}{x.stats && <div className="hint">{(x.stats.ci_low * 100).toFixed(1)}–{(x.stats.ci_high * 100).toFixed(1)}%{x.stats.prob_beats_control != null && <> {t('· P(beats control)')} <strong>{(x.stats.prob_beats_control * 100).toFixed(0)}%</strong></>}</div>}</> : '—'}</td>; })}</tr>)}</tbody>
 
             </table>
 
@@ -310,16 +310,16 @@ export default function Experiments() {
       blurb={t('A/B tests with deterministic sticky assignment. Events are tagged with the active variant, so any event name can be used as a conversion metric.')}
       above={<HoldoutsCard />}
       cols={[
-        { h: 'Key', c: (e) => <><strong>{e.key}</strong><div className="hint">{e.name}</div></> },
-        { h: 'Status', c: (e) => <Badge tone={TONE[e.status]}>{e.status}</Badge> },
-        { h: 'Variants', c: (e) => e.variants.map((v) => v.key).join(' / ') },
-        { h: 'Traffic', c: (e) => `${e.percentage}%` },
-        { h: 'Flag', c: (e) => e.flag_key ? <code>{e.flag_key}</code> : <span className="muted">—</span> },
-        { h: 'Updated', c: (e) => fmtDate(e.updated_at) },
+        { h: t('Key'), c: (e) => <><strong>{e.key}</strong><div className="hint">{e.name}</div></> },
+        { h: t('Status'), c: (e) => <Badge tone={TONE[e.status]}>{e.status}</Badge> },
+        { h: t('Variants'), c: (e) => e.variants.map((v) => v.key).join(' / ') },
+        { h: t('Traffic'), c: (e) => `${e.percentage}%` },
+        { h: t('Flag'), c: (e) => e.flag_key ? <code>{e.flag_key}</code> : <span className="muted">—</span> },
+        { h: t('Updated'), c: (e) => fmtDate(e.updated_at) },
       ]}
       sort={(a, b) => (a.status === 'running' ? -1 : 1) - (b.status === 'running' ? -1 : 1) || a.key.localeCompare(b.key)}
       blank={() => ({ key: '', name: '', description: '', hypothesis: '', condition: null, audiences: [], percentage: 100, control: 'control', flag_key: null, starts_at: null, ends_at: null, tags: [], split_key: 'identity', max_participants: null, enrol_until: null, metrics: [],
-        variants: [{ key: 'control', name: 'Control', value: false, weight: 50 }, { key: 'treatment', name: 'Treatment', value: true, weight: 50 }] })}
+        variants: [{ key: 'control', name: t('Control'), value: false, weight: 50 }, { key: 'treatment', name: t('Treatment'), value: true, weight: 50 }] })}
       form={(d, set, isNew) => (
         <>
           <div className="row">
@@ -328,7 +328,7 @@ export default function Experiments() {
           </div>
           <Text label={t('Hypothesis')} value={d.hypothesis} onChange={(hypothesis) => set({ hypothesis })} placeholder={t('Showing the offer on day 2 increases D7 retention by 3%')} />
           <Text label={t('Description')} value={d.description} onChange={(description) => set({ description })} />
-          <Field label={t('Variants')} hint="weights are relative; value is what the SDK receives (and what the linked flag resolves to)">
+          <Field label={t('Variants')} hint={t('weights are relative; value is what the SDK receives (and what the linked flag resolves to)')}>
             <VariantsEditor type="json" withName value={(d.variants ?? []) as Variant[]} onChange={(variants) => set({ variants: variants as Variant[] })} />
           </Field>
           <div className="row">
@@ -344,17 +344,17 @@ export default function Experiments() {
             <DateTime label={t('Enrolment deadline')} value={d.enrol_until ?? null} onChange={(enrol_until) => set({ enrol_until })} />
           </div>
           <div className="row">
-            <Num label={t('Max participants')} value={d.max_participants ?? null} onChange={(max_participants) => set({ max_participants: max_participants ?? null })} min={1} hint="blank = unlimited" />
-            <Text label={t('Split key')} value={d.split_key ?? 'identity'} onChange={(split_key) => set({ split_key })} mono hint="identity, or property:<path> e.g. property:custom.clan_id" />
+            <Num label={t('Max participants')} value={d.max_participants ?? null} onChange={(max_participants) => set({ max_participants: max_participants ?? null })} min={1} hint={t('blank = unlimited')} />
+            <Text label={t('Split key')} value={d.split_key ?? 'identity'} onChange={(split_key) => set({ split_key })} mono hint={t('identity, or property:<path> e.g. property:custom.clan_id')} />
           </div>
           <div className="row">
-            <Text label={t('Layer')} value={d.layer ?? ''} onChange={(v) => set({ layer: v || null })} mono hint="experiments in one layer are mutually exclusive; their traffic % must sum to ≤ 100" />
+            <Text label={t('Layer')} value={d.layer ?? ''} onChange={(v) => set({ layer: v || null })} mono hint={t('experiments in one layer are mutually exclusive; their traffic % must sum to ≤ 100')} />
             <HoldoutSelect value={d.holdout ?? null} onChange={(holdout) => set({ holdout })} />
           </div>
           <Field label={t('Guardrail metrics')} hint={t('auto-pause when a variant drops below control by more than the limit (checked every minute)')}>
             <GuardrailsEditor value={d.guardrails ?? []} onChange={(guardrails) => set({ guardrails })} />
           </Field>
-          <Field label={t('Bandit allocation')} hint="Thompson sampling re-weights variants towards the one most likely to be best on a conversion metric; assigned players stay sticky">
+          <Field label={t('Bandit allocation')} hint={t('Thompson sampling re-weights variants towards the one most likely to be best on a conversion metric; assigned players stay sticky')}>
             <BanditEditor value={d.bandit ?? null} onChange={(bandit) => set({ bandit })} />
           </Field>
           <Field label={t('Metrics')} hint={t('goal / monitor metrics from the catalog, evaluated per variant in results')}><MetricsPicker value={d.metrics ?? []} onChange={(metrics) => set({ metrics })} /></Field>
@@ -374,7 +374,7 @@ function Phases({ exp }: { exp: Experiment }) {
   if (items.length < 2 && !exp.phase_of) return null;
   return (
     <div className="card">
-      <strong>{t('Phases')}</strong> <span className="hint">one family: a QA phase on a test audience, then the live phase — copy “as phase” to add the next one; edits to a template apply to the next phase, not the running one</span>
+      <strong>{t('Phases')}</strong> <span className="hint">{t('one family: a QA phase on a test audience, then the live phase — copy “as phase” to add the next one; edits to a template apply to the next phase, not the running one')}</span>
       <ErrorBox error={q.error} />
       <Table<Phase>
         rows={items}
@@ -382,11 +382,11 @@ function Phases({ exp }: { exp: Experiment }) {
         empty="—"
         cols={[
           { h: '#', w: '50px', c: (p) => p.phase },
-          { h: 'Experiment', c: (p) => p.key === exp.key ? <strong>{p.key}</strong> : <a href={`/console/experiments/${encodeURIComponent(p.key)}`}>{p.key}</a> },
-          { h: 'Status', c: (p) => <Badge tone={TONE[p.status]}>{p.status}</Badge> },
-          { h: 'Audiences', c: (p) => p.audiences.length ? p.audiences.join(', ') : <span className="muted">everyone</span> },
-          { h: 'Window', c: (p) => <>{p.starts_at ? fmtDate(p.starts_at) : '—'} → {p.ends_at ? fmtDate(p.ends_at) : '—'}</> },
-          { h: 'Winner', c: (p) => p.winner ?? <span className="muted">—</span> },
+          { h: t('Experiment'), c: (p) => p.key === exp.key ? <strong>{p.key}</strong> : <a href={`/console/experiments/${encodeURIComponent(p.key)}`}>{p.key}</a> },
+          { h: t('Status'), c: (p) => <Badge tone={TONE[p.status]}>{p.status}</Badge> },
+          { h: t('Audiences'), c: (p) => p.audiences.length ? p.audiences.join(', ') : <span className="muted">everyone</span> },
+          { h: t('Window'), c: (p) => <>{p.starts_at ? fmtDate(p.starts_at) : '—'} → {p.ends_at ? fmtDate(p.ends_at) : '—'}</> },
+          { h: t('Winner'), c: (p) => p.winner ?? <span className="muted">—</span> },
         ]}
       />
     </div>

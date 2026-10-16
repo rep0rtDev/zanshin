@@ -48,7 +48,7 @@ export default function Account({ onChanged }: { onChanged: () => void }) {
       <ErrorBox error={err} />
       <div className="card stack">
         <label className="field fixed"><span className="label">{t('Language')}</span><select value={locale} onChange={(e) => { const l = e.target.value as Locale; (isUser ? put('/me/locale', { locale: l }) : Promise.resolve()).finally(() => setLocale(l)); }}>{LOCALES.map(([k, n]) => <option key={k} value={k}>{n}</option>)}</select></label>
-        <div><strong>{me.name}</strong> <Badge tone="info">{me.auth === 'user' ? 'password login' : me.auth === 'oidc' ? 'single sign-on' : me.auth === 'bootstrap' ? 'bootstrap key' : 'API key'}</Badge> {me.mfa_enabled && <Badge tone="ok">{t('MFA on')}</Badge>}</div>
+        <div><strong>{me.name}</strong> <Badge tone="info">{me.auth === 'user' ? t('password login') : me.auth === 'oidc' ? t('single sign-on') : me.auth === 'bootstrap' ? t('bootstrap key') : t('API key')}</Badge> {me.mfa_enabled && <Badge tone="ok">{t('MFA on')}</Badge>}</div>
         {cat && <PermissionMatrix value={me.permissions} onChange={() => undefined} resources={cat.resources} actions={cat.actions} disabled />}
       </div>
       {isUser && (
@@ -97,10 +97,10 @@ export default function Account({ onChanged }: { onChanged: () => void }) {
               rows={sessions.data}
               rowKey={(s) => s.id}
               cols={[
-                { h: 'Started', c: (s) => fmtDate(s.created_at) },
-                { h: 'Last seen', c: (s) => fmtDate(s.last_seen_at) },
-                { h: 'Expires', c: (s) => fmtDate(s.expires_at) },
-                { h: 'From', c: (s) => <span className="hint">{s.ip ?? '—'} · {s.user_agent?.slice(0, 60) ?? '—'}</span> },
+                { h: t('Started'), c: (s) => fmtDate(s.created_at) },
+                { h: t('Last seen'), c: (s) => fmtDate(s.last_seen_at) },
+                { h: t('Expires'), c: (s) => fmtDate(s.expires_at) },
+                { h: t('From'), c: (s) => <span className="hint">{s.ip ?? '—'} · {s.user_agent?.slice(0, 60) ?? '—'}</span> },
                 { h: '', w: '100px', c: (s) => <button className="btn ghost" onClick={() => del(`/me/sessions/${s.id}`).then(sessions.reload, setErr)}>{t('Revoke')}</button> },
               ]}
             />

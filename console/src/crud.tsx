@@ -106,8 +106,8 @@ function List<T extends Keyed>({ title, path, blurb, cols, sort, above, copy, st
       toast(tf('Created {0}', key)); nav(encodeURIComponent(key));
     } catch (e) { toast((e as Error).message, 'bad'); }
   };
-  const menuCol: Col<T> = { h: '', w: '44px', c: (r) => canEdit ? <Menu items={[{ label: 'Open', onClick: () => nav(encodeURIComponent(r.key)) }, { label: 'Duplicate', onClick: () => duplicate(r) }, { label: 'Delete', danger: true, onClick: () => { if (confirm(tf('Delete {0}?', r.key))) void remove(r); } }]} /> : null };
-  const updatedCol: Col<T> = { h: 'Updated', w: '150px', c: (r) => <span className="hint" style={{ whiteSpace: 'nowrap' }}>{r.updated_at ? fmtDate(r.updated_at) : ''}</span> };
+  const menuCol: Col<T> = { h: '', w: '44px', c: (r) => canEdit ? <Menu items={[{ label: t('Open'), onClick: () => nav(encodeURIComponent(r.key)) }, { label: t('Duplicate'), onClick: () => duplicate(r) }, { label: t('Delete'), danger: true, onClick: () => { if (confirm(tf('Delete {0}?', r.key))) void remove(r); } }]} /> : null };
+  const updatedCol: Col<T> = { h: t('Updated'), w: '150px', c: (r) => <span className="hint" style={{ whiteSpace: 'nowrap' }}>{r.updated_at ? fmtDate(r.updated_at) : ''}</span> };
   const showUpdated = all.some((x) => x.updated_at) && !cols.some((c) => c.h === 'Updated');
   const filtered = !!(search || tag || status);
   return (
@@ -125,7 +125,7 @@ function List<T extends Keyed>({ title, path, blurb, cols, sort, above, copy, st
         </div>
       )}
       {q.data && all.length === 0 ? (
-        <Empty title={tf('No {0} yet', title.toLowerCase())} hint={blurb ? undefined : t('Create the first one to get started.')} action={canEdit && <button className="btn" onClick={() => nav('new')}>Create {title.replace(/s$/, '').toLowerCase()}</button>} />
+        <Empty title={tf('No {0} yet', title.toLowerCase())} hint={blurb ? undefined : t('Create the first one to get started.')} action={canEdit && <button className="btn" onClick={() => nav('new')}>{t('Create')} {title.replace(/s$/, '').toLowerCase()}</button>} />
       ) : q.data && rows.length === 0 ? (
         <Empty title={t('Nothing matches')} action={<button className="btn ghost" onClick={() => { setSearch(''); setTag(null); setStatus(null); }}>{t('Clear filters')}</button>} />
       ) : (
@@ -148,8 +148,8 @@ function HistoryTab({ kind, k, reload }: { kind: string; k: string; reload: () =
     <>
       <ErrorBox error={q.error} />
       <Table<Snapshot> rows={q.data?.items} rowKey={(s) => s.id} empty={t('No recorded changes yet')} cols={[
-        { h: 'When', c: (s) => fmtDate(s.at) }, { h: 'Change', c: (s) => s.deleted ? <Badge tone="bad">deleted</Badge> : <span>v{s.version}</span> }, { h: 'By', c: (s) => <span className="hint">{s.actor}</span> },
-        { h: '', c: (s) => <span className="inline"><button className="btn ghost sm" onClick={() => setOpen(open === s.id ? null : s.id)}>{open === s.id ? 'Hide' : 'Show'}</button>{canEdit && <button className="btn ghost sm" onClick={() => revert(s.id)}>{t('Revert')}</button>}</span> },
+        { h: t('When'), c: (s) => fmtDate(s.at) }, { h: t('Change'), c: (s) => s.deleted ? <Badge tone="bad">deleted</Badge> : <span>v{s.version}</span> }, { h: t('By'), c: (s) => <span className="hint">{s.actor}</span> },
+        { h: '', c: (s) => <span className="inline"><button className="btn ghost sm" onClick={() => setOpen(open === s.id ? null : s.id)}>{open === s.id ? t('Hide') : t('Show')}</button>{canEdit && <button className="btn ghost sm" onClick={() => revert(s.id)}>{t('Revert')}</button>}</span> },
       ]} />
       {open && <pre className="code" style={{ marginTop: 10, maxHeight: 360 }}>{JSON.stringify(q.data?.items.find((s) => s.id === open)?.body, null, 2)}</pre>}
     </>
@@ -162,8 +162,8 @@ function ActivityTab({ path, k }: { path: string; k: string }) {
     <>
       <ErrorBox error={q.error} />
       <Table<AuditEntry> rows={q.data?.items} rowKey={(e) => e.id} empty={t('No admin activity recorded')} cols={[
-        { h: 'When', c: (e) => fmtDate(e.at) }, { h: 'Actor', c: (e) => e.actor }, { h: 'Action', c: (e) => <span className="mono">{e.method} {e.path.replace('/admin/v1', '')}</span> },
-        { h: 'Status', c: (e) => <Badge tone={e.status < 300 ? 'ok' : e.status < 500 ? 'warn' : 'bad'}>{e.status}</Badge> },
+        { h: t('When'), c: (e) => fmtDate(e.at) }, { h: t('Actor'), c: (e) => e.actor }, { h: t('Action'), c: (e) => <span className="mono">{e.method} {e.path.replace('/admin/v1', '')}</span> },
+        { h: t('Status'), c: (e) => <Badge tone={e.status < 300 ? 'ok' : e.status < 500 ? 'warn' : 'bad'}>{e.status}</Badge> },
       ]} />
     </>
   );
@@ -213,14 +213,14 @@ function Detail<T extends Keyed>({ title, path, blank, form, extra, tabs = [], t
   const remove = async () => {
     try { await del(`${path}/${encodeURIComponent(key!)}`); toast(tf('Deleted {0}', key)); nav('..', { relative: 'path' }); } catch (e) { setErr(e as Error); }
   };
-  const back = () => { if (!dirty || confirm('Discard unsaved changes?')) nav(isNew ? '..' : '..', { relative: 'path' }); };
+  const back = () => { if (!dirty || confirm(t('Discard unsaved changes?'))) nav(isNew ? '..' : '..', { relative: 'path' }); };
   const allTabs: Tab<T>[] = [
-    { id: 'settings', label: 'Settings', render: () => <div className="card">{form(draft!, set, !!isNew)}</div> },
-    ...(extra ? [{ id: 'overview', label: 'Overview', render: extra } as Tab<T>] : []),
+    { id: 'settings', label: t('Settings'), render: () => <div className="card">{form(draft!, set, !!isNew)}</div> },
+    ...(extra ? [{ id: 'overview', label: t('Overview'), render: extra } as Tab<T>] : []),
     ...tabs,
     ...(!isNew ? [
-      { id: 'history', label: 'History', render: (it: T, r: () => void) => <HistoryTab kind={historyKind ?? kindOf(path)} k={it.key} reload={r} /> },
-      { id: 'activity', label: 'Activity', render: (it: T) => <ActivityTab path={path} k={it.key} /> },
+      { id: 'history', label: t('History'), render: (it: T, r: () => void) => <HistoryTab kind={historyKind ?? kindOf(path)} k={it.key} reload={r} /> },
+      { id: 'activity', label: t('Activity'), render: (it: T) => <ActivityTab path={path} k={it.key} /> },
     ] : []),
   ];
   const st = item ? statusOf(item) : undefined;
@@ -232,7 +232,7 @@ function Detail<T extends Keyed>({ title, path, blank, form, extra, tabs = [], t
         <>
           {dirty && <span className="hint">{t('Unsaved changes')}</span>}
           {!isNew && canEdit && <Confirm danger onConfirm={remove}>{t('Delete')}</Confirm>}
-          {canEdit && !(isNew && wizard) && <button className="btn" disabled={busy || !draft || (!isNew && !dirty)} onClick={save} title="⌘S">{isNew ? 'Create' : 'Save'}</button>}
+          {canEdit && !(isNew && wizard) && <button className="btn" disabled={busy || !draft || (!isNew && !dirty)} onClick={save} title="⌘S">{isNew ? t('Create') : t('Save')}</button>}
         </>
       }
     >
@@ -247,7 +247,7 @@ function Detail<T extends Keyed>({ title, path, blank, form, extra, tabs = [], t
               <div className="wizard">
                 <ol className="steps">{[...wizard.map((w) => w.label), t('Review')].map((l, i) => <li key={l} className={i === step ? 'on' : i < step ? 'done' : ''} onClick={() => i < step && setStep(i)}>{l}</li>)}</ol>
                 <div className="card">
-                  {step < wizard.length ? wizard[step].render(draft, set) : <><p className="hint">{t('Everything below will be created as') + ' '}<strong>{draft.key || '(no key)'}</strong>.</p><pre className="code" style={{ maxHeight: 360 }}>{JSON.stringify(toBody ? toBody(draft, true) : strip(draft as Record<string, unknown>), null, 2)}</pre></>}
+                  {step < wizard.length ? wizard[step].render(draft, set) : <><p className="hint">{t('Everything below will be created as') + ' '}<strong>{draft.key || t('(no key)')}</strong>.</p><pre className="code" style={{ maxHeight: 360 }}>{JSON.stringify(toBody ? toBody(draft, true) : strip(draft as Record<string, unknown>), null, 2)}</pre></>}
                   <div className="inline" style={{ marginTop: 14, justifyContent: 'space-between', width: '100%' }}>
                     <button className="btn ghost" disabled={step === 0} onClick={() => setStep(step - 1)}>{t('Back')}</button>
                     {step < wizard.length ? <button className="btn" disabled={step === 0 && !draft.key} onClick={() => setStep(step + 1)}>{t('Next')}</button> : <button className="btn" disabled={busy} onClick={save}>{t('Create')}</button>}
@@ -258,7 +258,7 @@ function Detail<T extends Keyed>({ title, path, blank, form, extra, tabs = [], t
           </fieldset>
         </>
       )}
-      {item && <div className="hint">version {item.version} · updated {item.updated_at ? fmtDate(item.updated_at) : ''}</div>}
+      {item && <div className="hint">version {item.version} {t('· updated')} {item.updated_at ? fmtDate(item.updated_at) : ''}</div>}
     </Page>
   );
 }
@@ -297,8 +297,7 @@ export const Tags = ({ value, onChange }: { value: string[] | undefined; onChang
 
 export const CONDITION_HINT = (
   <>
-    Rule language: <code>{'{"all":[…]}'}</code>, <code>{'{"any":[…]}'}</code>, <code>{'{"not":{…}}'}</code> or a comparison{' '}
-    <code>{'{"prop":"country","op":"in","value":["DE","FR"]}'}</code>. Ops: eq neq gt gte lt lte in not_in contains not_contains starts_with ends_with matches exists not_exists semver_eq semver_gt semver_gte semver_lt semver_lte.
-    Props: <code>default.*</code>, <code>custom.*</code>, <code>computed.*</code>. <code>{'{"all":[]}'}</code> matches everyone; leave the field empty for no condition where it is optional.
+    {t('Rule language:')} <code>{'{"all":[…]}'}</code>, <code>{'{"any":[…]}'}</code>, <code>{'{"not":{…}}'}</code> {t('or a comparison')}{' '}
+    <code>{'{"prop":"country","op":"in","value":["DE","FR"]}'}</code>{t('. Ops: eq neq gt gte lt lte in not_in contains not_contains starts_with ends_with matches exists not_exists semver_eq semver_gt semver_gte semver_lt semver_lte. Props:')} <code>default.*</code>, <code>custom.*</code>, <code>computed.*</code>. <code>{'{"all":[]}'}</code> {t('matches everyone; leave the field empty for no condition where it is optional.')}
   </>
 );

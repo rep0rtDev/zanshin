@@ -22,7 +22,7 @@ function TranslationsEditor({ value, defaultLocale, onChange }: { value: Record<
             {l === defaultLocale && <Badge>default</Badge>}
             <button className="btn ghost sm" style={{ marginLeft: 'auto' }} onClick={() => { const v = { ...value }; delete v[l]; onChange(v); }}>{tr('Remove')}</button>
           </div>
-          <Text label={tr('Title')} value={value[l].title} onChange={(title) => onChange({ ...value, [l]: { ...value[l], title } })} placeholder="Welcome back, {{default.name}}!" />
+          <Text label={tr('Title')} value={value[l].title} onChange={(title) => onChange({ ...value, [l]: { ...value[l], title } })} placeholder='Welcome back, {{default.name}}!' />
           <Field label={tr('Body')}><textarea rows={3} value={value[l].body} onChange={(e) => onChange({ ...value, [l]: { ...value[l], body: e.target.value } })} style={{ fontFamily: 'inherit' }} /></Field>
         </div>
       ))}
@@ -64,14 +64,14 @@ function Preview({ t }: { t: Template }) {
           <div className="hint">{new TextEncoder().encode(out.rendered.body).length} bytes</div>
         </div>
       )}
-      {sent && <div className="hint" style={{ marginTop: 6 }}>Sent to inbox ({sent})</div>}
+      {sent && <div className="hint" style={{ marginTop: 6 }}>{tr('Sent to inbox (')}{sent})</div>}
     </div>
   );
 }
 
 function UsedBy({ t }: { t: Template }) {
   const q = useLoad(() => get<{ used_by: string[] }>(`/templates/${encodeURIComponent(t.key)}`), [t.key]);
-  return <div className="card"><strong>{tr('Used by')}</strong><div className="hint" style={{ marginTop: 6 }}>{q.data ? (q.data.used_by.length ? q.data.used_by.map((k) => <code key={k} style={{ marginRight: 8 }}>{k}</code>) : 'No campaign uses this template yet') : '…'}</div></div>;
+  return <div className="card"><strong>{tr('Used by')}</strong><div className="hint" style={{ marginTop: 6 }}>{q.data ? (q.data.used_by.length ? q.data.used_by.map((k) => <code key={k} style={{ marginRight: 8 }}>{k}</code>) : tr('No campaign uses this template yet')) : '…'}</div></div>;
 }
 
 export default function Templates() {
@@ -81,10 +81,10 @@ export default function Templates() {
       path="/templates"
       blurb={tr('Reusable message copy in plaintext, HTML or JSON with one translation per locale. Campaigns that reference a template render it in each player\'s locale (exact → language → default).')}
       cols={[
-        { h: 'Key', c: (t) => <><strong>{t.key}</strong><div className="hint">{t.name}</div></> },
-        { h: 'Format', c: (t) => <Badge tone="info">{t.format}</Badge> },
-        { h: 'Locales', c: (t) => Object.keys(t.translations).map((l) => <code key={l} style={{ marginRight: 6 }}>{l}</code>) },
-        { h: 'Updated', c: (t) => fmtDate(t.updated_at) },
+        { h: tr('Key'), c: (t) => <><strong>{t.key}</strong><div className="hint">{t.name}</div></> },
+        { h: tr('Format'), c: (t) => <Badge tone="info">{t.format}</Badge> },
+        { h: tr('Locales'), c: (t) => Object.keys(t.translations).map((l) => <code key={l} style={{ marginRight: 6 }}>{l}</code>) },
+        { h: tr('Updated'), c: (t) => fmtDate(t.updated_at) },
       ]}
       blank={() => ({ key: '', name: '', description: '', format: 'plaintext', default_locale: 'en', translations: { en: { title: '', body: '' } }, image_url: '', payload: null, tags: [] })}
       form={(d, set, isNew) => (
@@ -99,7 +99,7 @@ export default function Templates() {
             <Text label={tr('Default locale')} value={d.default_locale} onChange={(default_locale) => set({ default_locale })} mono />
             <Text label={tr('Image URL')} value={d.image_url} onChange={(image_url) => set({ image_url })} />
           </div>
-          <Field label={tr('Translations')} hint="{{prop.path}} placeholders are substituted per player"><TranslationsEditor value={d.translations ?? {}} defaultLocale={d.default_locale ?? 'en'} onChange={(translations) => set({ translations })} /></Field>
+          <Field label={tr('Translations')} hint={tr('{{prop.path}} placeholders are substituted per player')}><TranslationsEditor value={d.translations ?? {}} defaultLocale={d.default_locale ?? 'en'} onChange={(translations) => set({ translations })} /></Field>
           <Field label={tr('Payload (JSON)')} hint={tr('used when the campaign has no payload of its own')}><JsonField value={d.payload} onChange={(payload) => set({ payload: payload ?? null })} rows={2} /></Field>
           <Tags value={d.tags} onChange={(tags) => set({ tags })} />
         </>

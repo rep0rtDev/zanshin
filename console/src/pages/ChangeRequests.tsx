@@ -32,9 +32,9 @@ export default function ChangeRequests() {
         </div>
         <Table<CR> rows={q.data?.items ?? []} rowKey={(r) => r.id} empty={t('No change requests.')}
           cols={[
-            { h: 'Change', c: (r) => <><strong>{r.title || `${r.kind}/${r.key}`}</strong><div className="hint"><code>{r.kind}</code> · <code>{r.key}</code> · by {r.author} · {fmtDate(r.created_at)}</div>{r.description && <div className="hint">{r.description}</div>}</> },
-            { h: 'Patch', c: (r) => <code style={{ whiteSpace: 'pre-wrap' }}>{JSON.stringify(r.body)}</code> },
-            { h: 'Status', c: (r) => <><Badge tone={tone(r.status)}>{r.status}</Badge><div className="hint">{r.approvals.length}/{r.required_approvals} approvals{r.approvals.map((a) => <div key={a.by}>{a.by} · {fmtDate(a.at)}{a.comment ? ` — ${a.comment}` : ''}</div>)}{r.error && <div>{r.error}</div>}</div></> },
+            { h: t('Change'), c: (r) => <><strong>{r.title || `${r.kind}/${r.key}`}</strong><div className="hint"><code>{r.kind}</code> · <code>{r.key}</code> {t('· by')} {r.author} · {fmtDate(r.created_at)}</div>{r.description && <div className="hint">{r.description}</div>}</> },
+            { h: t('Patch'), c: (r) => <code style={{ whiteSpace: 'pre-wrap' }}>{JSON.stringify(r.body)}</code> },
+            { h: t('Status'), c: (r) => <><Badge tone={tone(r.status)}>{r.status}</Badge><div className="hint">{r.approvals.length}/{r.required_approvals} approvals{r.approvals.map((a) => <div key={a.by}>{a.by} · {fmtDate(a.at)}{a.comment ? ` — ${a.comment}` : ''}</div>)}{r.error && <div>{r.error}</div>}</div></> },
             { h: '', c: (r) => (
               <div className="actions">
                 {r.status === 'open' && <button className="btn sm" onClick={() => act(r.id, 'approve')}>{t('Approve')}</button>}

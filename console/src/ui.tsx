@@ -20,7 +20,7 @@ export function ErrorBox({ error }: { error: Error | null | undefined }) {
 }
 
 export function Badge({ children, tone = 'muted' }: { children: ReactNode; tone?: 'ok' | 'warn' | 'bad' | 'muted' | 'info' }) {
-  return <span className={'badge ' + tone}>{children}</span>;
+  return <span className={'badge ' + tone}>{typeof children === 'string' ? t(children) : children}</span>;
 }
 
 export function Field({ label, hint, children }: { label: ReactNode; hint?: ReactNode; children: ReactNode }) {
@@ -155,8 +155,8 @@ export function Pager({ page, pages, size, onPage, onSize, total }: { page: numb
   if (total <= 25) return null;
   return (
     <div className="pager">
-      <span className="hint">{fmtNum(total)} total</span>
-      <select value={size} onChange={(e) => onSize(Number(e.target.value))} style={{ width: 'auto' }}>{[25, 50, 100].map((n) => <option key={n} value={n}>{n} / page</option>)}</select>
+      <span className="hint">{tf('{0} total', fmtNum(total))}</span>
+      <select value={size} onChange={(e) => onSize(Number(e.target.value))} style={{ width: 'auto' }}>{[25, 50, 100].map((n) => <option key={n} value={n}>{tf('{0} / page', n)}</option>)}</select>
       <button className="btn ghost sm" disabled={page <= 0} onClick={() => onPage(page - 1)}>‹</button>
       <span className="hint">{page + 1} / {pages}</span>
       <button className="btn ghost sm" disabled={page >= pages - 1} onClick={() => onPage(page + 1)}>›</button>
@@ -177,7 +177,7 @@ export function KeyPicker({ value, onChange, options, placeholder = t('Search…
     return () => document.removeEventListener('mousedown', h);
   }, [open]);
   if (!options) return <span className="hint">{t('Loading…')}</span>;
-  if (!options.length && !value.length) return <span className="hint">{empty ?? 'Nothing to pick from yet'}</span>;
+  if (!options.length && !value.length) return <span className="hint">{empty ?? t('Nothing to pick from yet')}</span>;
   const s = q.trim().toLowerCase();
   const rest = options.filter((o) => !value.includes(o.key) && (!s || `${o.key} ${o.name ?? ''}`.toLowerCase().includes(s))).slice(0, 8);
   const add = (k: string) => { onChange([...value, k]); setQ(''); };
@@ -207,7 +207,7 @@ export function KeyPicker({ value, onChange, options, placeholder = t('Search…
       </div>
       {open && (
         <div className="picker-pop">
-          {rest.length === 0 ? <div className="hint" style={{ padding: '6px 10px' }}>{s ? 'No matches' : 'All selected'}</div> : rest.map((o) => (
+          {rest.length === 0 ? <div className="hint" style={{ padding: '6px 10px' }}>{s ? t('No matches') : t('All selected')}</div> : rest.map((o) => (
             <button key={o.key} type="button" className="menu-item" onMouseDown={(e) => e.preventDefault()} onClick={() => add(o.key)}>
               <span className="mono">{o.key}</span>{o.name && o.name !== o.key && <span className="hint" style={{ marginLeft: 8 }}>{o.name}</span>}{o.hint && <span className="hint" style={{ marginLeft: 8 }}>{o.hint}</span>}
             </button>

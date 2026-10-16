@@ -55,7 +55,7 @@ export function Palette({ pages, open, onClose }: { pages: PaletteItem[]; open: 
             </div>
           ))}
         </div>
-        <div className="palette-foot hint">↑↓ navigate · ↵ open · esc close</div>
+        <div className="palette-foot hint">{t('↑↓ navigate · ↵ open · esc close')}</div>
       </div>
     </div>
   );

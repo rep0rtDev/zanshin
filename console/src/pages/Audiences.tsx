@@ -21,7 +21,7 @@ function ExpressionEditor({ value, onChange }: { value: Cond; onChange: (c: Cond
   const toExpr = () => post<{ expression: string }>('/audiences/expression', { condition: value }).then((r) => { setText(r.expression); setMode('expr'); setErr(null); }, setErr);
   const apply = () => post<{ condition: Cond }>('/audiences/expression', { expression: text }).then((r) => { onChange(r.condition); setMode('builder'); setErr(null); }, setErr);
   return (
-    <Field label={<>{t('Condition')} <a href="#" className="hint" onClick={(e) => { e.preventDefault(); mode === 'builder' ? toExpr() : setMode('builder'); }}>{mode === 'builder' ? 'edit as expression' : 'back to builder'}</a></>} hint={t('who belongs to this audience')}>
+    <Field label={<>{t('Condition')} <a href="#" className="hint" onClick={(e) => { e.preventDefault(); mode === 'builder' ? toExpr() : setMode('builder'); }}>{mode === 'builder' ? t('edit as expression') : t('back to builder')}</a></>} hint={t('who belongs to this audience')}>
       <ErrorBox error={err} />
       {mode === 'builder'
         ? <ConditionEditor value={value} onChange={(condition) => onChange(condition ?? { all: [] })} />
@@ -55,7 +55,7 @@ function Members({ aud }: { aud: Audience }) {
       <div className="card">
         <div className="row" style={{ alignItems: 'center' }}>
           <strong>{t('Members')}</strong> <Badge tone="info">{fmtNum(aud.member_count)}</Badge>
-          <span className="hint">{aud.last_computed_at ? tf('computed {0}', fmtDate(aud.last_computed_at)) : aud.recompute === 'live' ? 'mirrored from live evaluation' : 'never computed'}</span>
+          <span className="hint">{aud.last_computed_at ? tf('computed {0}', fmtDate(aud.last_computed_at)) : aud.recompute === 'live' ? t('mirrored from live evaluation') : t('never computed')}</span>
           <div className="spacer" />
           {aud.kind === 'dynamic' && <button className="btn ghost" onClick={() => run(() => post(`/audiences/${k}/recompute`), 'recomputed')}>{t('Recompute now')}</button>}
           {sys.data?.console?.audience_delete_all_enabled && (
@@ -65,7 +65,7 @@ function Members({ aud }: { aud: Audience }) {
         <ErrorBox error={err} />
         {msg && <div className="hint">{msg}</div>}
         <div className="row" style={{ alignItems: 'end', marginTop: 10 }}>
-          <Field label={mode === 'managed' ? 'External ids (comma / space separated)' : 'External id'}><input value={ext} onChange={(e) => setExt(e.target.value)} placeholder="player-123" /></Field>
+          <Field label={mode === 'managed' ? t('External ids (comma / space separated)') : t('External id')}><input value={ext} onChange={(e) => setExt(e.target.value)} placeholder="player-123" /></Field>
           <Field label={t('Action')}>
             <select value={mode} onChange={(e) => setMode(e.target.value as typeof mode)}>
               {aud.kind === 'managed' && <option value="managed">{t('add as managed members')}</option>}
@@ -80,11 +80,11 @@ function Members({ aud }: { aud: Audience }) {
         <Table<Member>
           rows={q.data?.items}
           rowKey={(m) => m.identity_id}
-          empty={aud.recompute === 'scheduled' ? 'No stored members — run a recompute' : 'No members recorded yet'}
+          empty={aud.recompute === 'scheduled' ? t('No stored members — run a recompute') : t('No members recorded yet')}
           cols={[
-            { h: 'Player', c: (m) => <span className="mono">{m.external_id}</span> },
-            { h: 'Joined', c: (m) => fmtDate(m.joined_at) },
-            { h: 'Source', w: '110px', c: (m) => <Badge tone={m.source === 'include' ? 'info' : 'muted'}>{m.source}</Badge> },
+            { h: t('Player'), c: (m) => <span className="mono">{m.external_id}</span> },
+            { h: t('Joined'), c: (m) => fmtDate(m.joined_at) },
+            { h: t('Source'), w: '110px', c: (m) => <Badge tone={m.source === 'include' ? 'info' : 'muted'}>{m.source}</Badge> },
             { h: '', w: '90px', c: (m) => aud.kind === 'managed' ? <a href="#" onClick={(e) => { e.preventDefault(); run(() => fetchRemove(k, m.external_id), 'member removed'); }}>remove</a> : null },
           ]}
         />
@@ -96,10 +96,10 @@ function Members({ aud }: { aud: Audience }) {
           rowKey={(l) => l.identity_id}
           empty={t('No manual entries')}
           cols={[
-            { h: 'Player', c: (l) => <span className="mono">{l.external_id}</span> },
-            { h: 'Mode', w: '100px', c: (l) => <Badge tone={l.mode === 'include' ? 'ok' : 'bad'}>{l.mode}</Badge> },
-            { h: 'Until', c: (l) => l.until ? fmtDate(l.until) : <span className="muted">permanent</span> },
-            { h: 'Reason', c: (l) => <span className="hint">{l.reason}</span> },
+            { h: t('Player'), c: (l) => <span className="mono">{l.external_id}</span> },
+            { h: t('Mode'), w: '100px', c: (l) => <Badge tone={l.mode === 'include' ? 'ok' : 'bad'}>{l.mode}</Badge> },
+            { h: t('Until'), c: (l) => l.until ? fmtDate(l.until) : <span className="muted">permanent</span> },
+            { h: t('Reason'), c: (l) => <span className="hint">{l.reason}</span> },
             { h: '', w: '90px', c: (l) => <a href="#" onClick={(e) => { e.preventDefault(); run(() => fetchUnset(k, l.external_id), 'entry removed'); }}>remove</a> },
           ]}
         />
@@ -142,7 +142,7 @@ function Check({ aud }: { aud: Audience }) {
         <Field label={t('External id')}><input value={ext} onChange={(e) => setExt(e.target.value)} placeholder="player-123" /></Field>
         <div className="field fixed"><span className="label">&nbsp;</span><button className="btn ghost" disabled={!ext} onClick={byId}>{t('Check')}</button></div>
       </div>
-      <Field label="…or hypothetical properties"><JsonField value={props} onChange={setProps} rows={4} /></Field>
+      <Field label={t('…or hypothetical properties')}><JsonField value={props} onChange={setProps} rows={4} /></Field>
       <button className="btn ghost" onClick={dry}>{t('Dry run')}</button>
       {out && <div style={{ marginTop: 10 }}><Badge tone={out.includes('NOT') ? 'bad' : 'ok'}>{out}</Badge></div>}
     </div>
@@ -156,12 +156,12 @@ export default function Audiences() {
       path="/audiences"
       blurb={t('Reusable segments defined by rules over identity properties. Reference them from flags, experiments, live events and campaigns.')}
       cols={[
-        { h: 'Key', c: (a) => <><strong>{a.key}</strong><div className="hint">{a.name}</div></> },
-        { h: 'Type', c: (a) => <>{a.kind === 'managed' ? <Badge tone="info">managed</Badge> : <Badge>{a.recompute === 'scheduled' ? 'scheduled' : 'live'}</Badge>} {a.copied_from && <span className="hint">copy of {a.copied_from}</span>}</> },
-        { h: 'Members', c: (a) => fmtNum(a.member_count) },
-        { h: 'Sampling', c: (a) => `${a.percentage}%` },
-        { h: 'Status', c: (a) => a.enabled ? <Badge tone="ok">enabled</Badge> : <Badge>disabled</Badge> },
-        { h: 'Updated', c: (a) => fmtDate(a.updated_at) },
+        { h: t('Key'), c: (a) => <><strong>{a.key}</strong><div className="hint">{a.name}</div></> },
+        { h: t('Type'), c: (a) => <>{a.kind === 'managed' ? <Badge tone="info">managed</Badge> : <Badge>{a.recompute === 'scheduled' ? 'scheduled' : 'live'}</Badge>} {a.copied_from && <span className="hint">{t('copy of')} {a.copied_from}</span>}</> },
+        { h: t('Members'), c: (a) => fmtNum(a.member_count) },
+        { h: t('Sampling'), c: (a) => `${a.percentage}%` },
+        { h: t('Status'), c: (a) => a.enabled ? <Badge tone="ok">enabled</Badge> : <Badge>disabled</Badge> },
+        { h: t('Updated'), c: (a) => fmtDate(a.updated_at) },
       ]}
       blank={() => ({ key: '', name: '', description: '', condition: { all: [] }, percentage: 100, enabled: true, tags: [], kind: 'dynamic', recompute: 'live', schedule_cron: '', source: '', member_count: 0, last_computed_at: null })}
       form={(d, set, isNew) => (

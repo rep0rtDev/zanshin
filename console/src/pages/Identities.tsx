@@ -38,11 +38,11 @@ function List() {
         rowKey={(i) => i.id}
         onRow={(i) => nav(i.id)}
         cols={[
-          { h: 'External id', c: (i) => <strong className="mono">{i.external_id}</strong> },
-          { h: 'Id', c: (i) => <span className="mono muted">{i.id}</span> },
-          { h: 'Properties', c: (i) => <span className="hint">{Object.keys(i.properties.default).length} default · {Object.keys(i.properties.custom).length} custom · {Object.keys(i.properties.computed).length} computed</span> },
-          { h: 'First seen', c: (i) => fmtDate(i.created_at) },
-          { h: 'Last seen', c: (i) => fmtDate(i.last_seen_at) },
+          { h: t('External id'), c: (i) => <strong className="mono">{i.external_id}</strong> },
+          { h: t('Id'), c: (i) => <span className="mono muted">{i.id}</span> },
+          { h: t('Properties'), c: (i) => <span className="hint">{Object.keys(i.properties.default).length} {t('default ·')} {Object.keys(i.properties.custom).length} {t('custom ·')} {Object.keys(i.properties.computed).length} computed</span> },
+          { h: t('First seen'), c: (i) => fmtDate(i.created_at) },
+          { h: t('Last seen'), c: (i) => fmtDate(i.last_seen_at) },
         ]}
       />
       <div className="actions" style={{ marginTop: 12 }}>
@@ -64,7 +64,7 @@ function QaTime({ id }: { id: string }) {
       <div className="row" style={{ alignItems: 'end' }}>
         <div className="grow">
           <strong>{t('QA time travel')}</strong>
-          <div className="hint">Pin this player's clock to test future live events and schedules. {q.data?.qa_time ? <Badge tone="info">pinned to {fmtDate(q.data.qa_time)}</Badge> : <span className="muted">{t('real time')}</span>}</div>
+          <div className="hint">{t("Pin this player's clock to test future live events and schedules.")} {q.data?.qa_time ? <Badge tone="info">{t('pinned to')} {fmtDate(q.data.qa_time)}</Badge> : <span className="muted">{t('real time')}</span>}</div>
         </div>
         <Field label={t('Travel to')}><input type="datetime-local" value={at} onChange={(e) => setAt(e.target.value)} /></Field>
         <button className="btn ghost" disabled={!at} onClick={save}>{t('Pin')}</button>
@@ -125,8 +125,8 @@ function Props({ i, onSaved }: { i: Identity; onSaved: (n: Identity) => void }) 
     <div className="grid c2">
       <div className="card">
         <ErrorBox error={err} />
-        <Field label={t('Default properties')} hint="set by the client at authenticate (platform, country, app version, …); merged on save"><JsonField value={dflt} onChange={setDflt} rows={8} /></Field>
-        <Field label={t('Custom properties')} hint="set by the game/backend (level, vip, …); merged on save, null deletes a key"><JsonField value={custom} onChange={setCustom} rows={8} /></Field>
+        <Field label={t('Default properties')} hint={t('set by the client at authenticate (platform, country, app version, …); merged on save')}><JsonField value={dflt} onChange={setDflt} rows={8} /></Field>
+        <Field label={t('Custom properties')} hint={t('set by the game/backend (level, vip, …); merged on save, null deletes a key')}><JsonField value={custom} onChange={setCustom} rows={8} /></Field>
         <button className="btn" onClick={save}>{t('Save')}</button>{ok && <span className="muted" style={{ marginLeft: 10 }}>{t('Saved')}</span>}
       </div>
       <div className="card">
@@ -148,11 +148,11 @@ function Events({ id }: { id: string }) {
         rowKey={(e) => e.id}
         empty={t('No events recorded')}
         cols={[
-          { h: 'Time', w: '180px', c: (e) => fmtDate(e.event_time) },
-          { h: 'Name', c: (e) => <code>{e.name}</code> },
-          { h: 'Value', c: (e) => e.value === undefined || e.value === null ? <span className="muted">—</span> : <code>{JSON.stringify(e.value)}</code> },
-          { h: 'Metadata', c: (e) => e.metadata && Object.keys(e.metadata as object).length ? <code className="hint">{JSON.stringify(e.metadata)}</code> : <span className="muted">—</span> },
-          { h: 'Experiments', c: (e) => e.experiments && Object.keys(e.experiments).length ? Object.entries(e.experiments).map(([k, v]) => <Badge key={k} tone="info">{k}={v}</Badge>) : <span className="muted">—</span> },
+          { h: t('Time'), w: '180px', c: (e) => fmtDate(e.event_time) },
+          { h: t('Name'), c: (e) => <code>{e.name}</code> },
+          { h: t('Value'), c: (e) => e.value === undefined || e.value === null ? <span className="muted">—</span> : <code>{JSON.stringify(e.value)}</code> },
+          { h: t('Metadata'), c: (e) => e.metadata && Object.keys(e.metadata as object).length ? <code className="hint">{JSON.stringify(e.metadata)}</code> : <span className="muted">—</span> },
+          { h: t('Experiments'), c: (e) => e.experiments && Object.keys(e.experiments).length ? Object.entries(e.experiments).map(([k, v]) => <Badge key={k} tone="info">{k}={v}</Badge>) : <span className="muted">—</span> },
         ]}
       />
     </>
@@ -247,10 +247,10 @@ function InboxTab({ id }: { id: string }) {
         rowKey={(m) => m.id}
         empty={t('Inbox is empty')}
         cols={[
-          { h: 'Delivered', w: '180px', c: (m) => fmtDate(m.delivered_at) },
-          { h: 'Title', c: (m) => <><strong>{m.title}</strong>{m.key && <div className="hint">campaign {m.key}</div>}</> },
-          { h: 'State', c: (m) => m.read_at ? <Badge>read</Badge> : <Badge tone="info">unread</Badge> },
-          { h: 'Expires', c: (m) => fmtDate(m.expires_at) },
+          { h: t('Delivered'), w: '180px', c: (m) => fmtDate(m.delivered_at) },
+          { h: t('Title'), c: (m) => <><strong>{m.title}</strong>{m.key && <div className="hint">campaign {m.key}</div>}</> },
+          { h: t('State'), c: (m) => m.read_at ? <Badge>read</Badge> : <Badge tone="info">unread</Badge> },
+          { h: t('Expires'), c: (m) => fmtDate(m.expires_at) },
           { h: '', c: (m) => <button className="btn ghost sm" onClick={() => del(`/identities/${id}/inbox/${m.id}`).then(q.reload)}>{t('Delete')}</button> },
         ]}
       />
@@ -272,11 +272,11 @@ function PushTab({ id }: { id: string }) {
         rowKey={(t) => t.token}
         empty={t('No registered devices')}
         cols={[
-          { h: 'Platform', c: (t) => <Badge tone="info">{t.platform}</Badge> },
-          { h: 'Device', c: (t) => <span className="mono">{t.device_id || '—'}</span> },
-          { h: 'Token', c: (t) => <span className="mono hint">{t.token.slice(0, 24)}…</span> },
-          { h: 'Updated', c: (t) => fmtDate(t.updated_at) },
-          { h: 'Failures', c: (t) => t.failures ? <Badge tone="warn">{t.failures}</Badge> : 0 },
+          { h: t('Platform'), c: (t) => <Badge tone="info">{t.platform}</Badge> },
+          { h: t('Device'), c: (t) => <span className="mono">{t.device_id || '—'}</span> },
+          { h: t('Token'), c: (t) => <span className="mono hint">{t.token.slice(0, 24)}…</span> },
+          { h: t('Updated'), c: (t) => fmtDate(t.updated_at) },
+          { h: t('Failures'), c: (t) => t.failures ? <Badge tone="warn">{t.failures}</Badge> : 0 },
         ]}
       />
     </>
@@ -304,10 +304,10 @@ function TimelineTab({ id }: { id: string }) {
         rowKey={(it) => `${it.kind}-${it.at}-${it.title}`}
         empty={t('Nothing yet.')}
         cols={[
-          { h: 'When', c: (it) => fmtDate(it.at), w: '170px' },
-          { h: 'Kind', c: (it) => <Badge tone={it.kind === 'event' ? 'muted' : it.kind === 'message' ? 'info' : it.kind === 'journey' ? 'warn' : 'ok'}>{it.kind}</Badge>, w: '90px' },
-          { h: 'What', c: (it) => <span className="mono">{it.title}</span> },
-          { h: 'Detail', c: (it) => <span className="hint mono">{Object.entries(it.detail).filter(([, v]) => v !== null && v !== '' && !(typeof v === 'object' && v && Object.keys(v as object).length === 0)).map(([k, v]) => `${k}=${typeof v === 'object' ? JSON.stringify(v) : String(v)}`).join(' · ').slice(0, 200)}</span> },
+          { h: t('When'), c: (it) => fmtDate(it.at), w: '170px' },
+          { h: t('Kind'), c: (it) => <Badge tone={it.kind === 'event' ? 'muted' : it.kind === 'message' ? 'info' : it.kind === 'journey' ? 'warn' : 'ok'}>{it.kind}</Badge>, w: '90px' },
+          { h: t('What'), c: (it) => <span className="mono">{it.title}</span> },
+          { h: t('Detail'), c: (it) => <span className="hint mono">{Object.entries(it.detail).filter(([, v]) => v !== null && v !== '' && !(typeof v === 'object' && v && Object.keys(v as object).length === 0)).map(([k, v]) => `${k}=${typeof v === 'object' ? JSON.stringify(v) : String(v)}`).join(' · ').slice(0, 200)}</span> },
         ]}
       />
     </div>

@@ -18,13 +18,13 @@ export default function Metrics() {
     <EntityPage<Metric>
       title={t('Metrics')}
       path="/metrics"
-      blurb="Named measurements over events. Attach them to experiments as goal (success) or monitor (guardrail) metrics; results report each per variant with lift vs control."
+      blurb={t('Named measurements over events. Attach them to experiments as goal (success) or monitor (guardrail) metrics; results report each per variant with lift vs control.')}
       cols={[
-        { h: 'Key', c: (m) => <><strong>{m.key}</strong><div className="hint">{m.name}</div></> },
-        { h: 'Kind', c: (m) => <Badge tone={m.kind === 'goal' ? 'ok' : 'info'}>{m.kind}</Badge> },
-        { h: 'Event', c: (m) => <code>{m.event_name}</code> },
-        { h: 'Aggregation', c: (m) => <>{m.aggregation}{m.field ? <span className="hint"> of {m.field}</span> : null}</> },
-        { h: 'Updated', c: (m) => fmtDate(m.updated_at) },
+        { h: t('Key'), c: (m) => <><strong>{m.key}</strong><div className="hint">{m.name}</div></> },
+        { h: t('Kind'), c: (m) => <Badge tone={m.kind === 'goal' ? 'ok' : 'info'}>{m.kind}</Badge> },
+        { h: t('Event'), c: (m) => <code>{m.event_name}</code> },
+        { h: t('Aggregation'), c: (m) => <>{m.aggregation}{m.field ? <span className="hint"> of {m.field}</span> : null}</> },
+        { h: t('Updated'), c: (m) => fmtDate(m.updated_at) },
       ]}
       blank={() => ({ key: '', name: '', description: '', kind: 'goal', event_name: '', aggregation: 'count', field: '', tags: [] })}
       form={(d, set, isNew) => (
@@ -35,7 +35,7 @@ export default function Metrics() {
           </div>
           <Text label={t('Description')} value={d.description} onChange={(description) => set({ description })} />
           <div className="row">
-            <Field label={t('Kind')} hint="goal = what the experiment should move; monitor = guardrail">
+            <Field label={t('Kind')} hint={t('goal = what the experiment should move; monitor = guardrail')}>
               <select value={d.kind} onChange={(e) => set({ kind: e.target.value as Metric['kind'] })}><option value="goal">goal</option><option value="monitor">monitor</option></select>
             </Field>
             <Text label={t('Event name')} value={d.event_name} onChange={(event_name) => set({ event_name })} mono placeholder="purchase" />
@@ -60,7 +60,7 @@ function UsedBy({ metric }: { metric: Metric }) {
     <div className="card">
       <strong>{t('Used by')}</strong>
       <ErrorBox error={q.error} />
-      <div className="hint" style={{ marginTop: 6 }}>{q.data ? (q.data.used_by.length ? q.data.used_by.map((k) => <code key={k} style={{ marginRight: 8 }}>{k}</code>) : 'No experiment uses this metric yet') : '…'}</div>
+      <div className="hint" style={{ marginTop: 6 }}>{q.data ? (q.data.used_by.length ? q.data.used_by.map((k) => <code key={k} style={{ marginRight: 8 }}>{k}</code>) : t('No experiment uses this metric yet')) : '…'}</div>
     </div>
   );
 }

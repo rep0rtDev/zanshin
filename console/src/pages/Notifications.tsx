@@ -29,7 +29,7 @@ function TestSend({ c }: { c: Channel }) {
     <div className="card">
       <div className="row" style={{ alignItems: 'center' }}>
         <strong>{t('Delivery')}</strong>
-        <span className="hint">{c.last_sent_at ? tf('last sent {0}', fmtDate(c.last_sent_at)) : 'never sent'}{c.last_status ? tf(' · HTTP {0}', c.last_status) : ''}</span>
+        <span className="hint">{c.last_sent_at ? tf('last sent {0}', fmtDate(c.last_sent_at)) : t('never sent')}{c.last_status ? tf(' · HTTP {0}', c.last_status) : ''}</span>
         {c.last_error && <Badge tone="bad">{c.last_error}</Badge>}
         <button className="btn sm" style={{ marginLeft: 'auto' }} onClick={() => post<{ ok: boolean; status: number | null; error: string }>(`/notification-channels/${encodeURIComponent(c.key)}/test`).then((r) => { setRes(r); setErr(null); }, setErr)}>{t('Send test message')}</button>
       </div>
@@ -46,11 +46,11 @@ export default function Notifications() {
       path="/notification-channels"
       blurb={t('Post configuration changes, failed export runs, unhealthy integrations and alerts to Slack, Discord or any webhook.')}
       cols={[
-        { h: 'Key', c: (c) => <><strong>{c.key}</strong><div className="hint">{c.name}</div></> },
-        { h: 'Kind', c: (c) => <code>{c.kind}</code> },
-        { h: 'Topics', c: (c) => (c.topics.length === 0 ? '*' : c.topics.join(', ')) },
-        { h: 'Status', c: (c) => (c.last_error ? <Badge tone="bad">error</Badge> : c.last_sent_at ? <Badge tone="ok">ok</Badge> : <span className="hint">—</span>) },
-        { h: 'Enabled', c: (c) => (c.enabled ? 'yes' : 'no') },
+        { h: t('Key'), c: (c) => <><strong>{c.key}</strong><div className="hint">{c.name}</div></> },
+        { h: t('Kind'), c: (c) => <code>{c.kind}</code> },
+        { h: t('Topics'), c: (c) => (c.topics.length === 0 ? '*' : c.topics.join(', ')) },
+        { h: t('Status'), c: (c) => (c.last_error ? <Badge tone="bad">error</Badge> : c.last_sent_at ? <Badge tone="ok">ok</Badge> : <span className="hint">—</span>) },
+        { h: t('Enabled'), c: (c) => (c.enabled ? 'yes' : 'no') },
       ]}
       blank={() => ({ key: '', name: '', kind: 'slack', url: '', topics: ['*'], kinds: [], enabled: true, headers: {}, tags: [] })}
       form={(c, set, isNew) => (

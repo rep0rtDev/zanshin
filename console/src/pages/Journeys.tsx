@@ -103,11 +103,11 @@ function StepEditor({ step, steps, onChange }: { step: Step; steps: Step[]; onCh
   const str = (k: string) => (s[k] as string) ?? '';
   const set = (patch: Record<string, unknown>) => onChange({ ...step, ...patch });
   const target = (label: string, k: string, optional?: boolean, filter?: (x: Step) => boolean) => (
-    <Field label={label}><select value={str(k)} onChange={(e) => set({ [k]: e.target.value || (optional ? null : '') })}>{optional && <option value="">— next step —</option>}{!optional && <option value="">—</option>}{steps.filter((x) => x.id !== step.id && (!filter || filter(x))).map((x) => <option key={x.id} value={x.id}>{x.id}</option>)}</select></Field>
+    <Field label={label}><select value={str(k)} onChange={(e) => set({ [k]: e.target.value || (optional ? null : '') })}>{optional && <option value="">{tr('— next step —')}</option>}{!optional && <option value="">—</option>}{steps.filter((x) => x.id !== step.id && (!filter || filter(x))).map((x) => <option key={x.id} value={x.id}>{x.id}</option>)}</select></Field>
   );
   switch (step.kind) {
     case 'message': return <>
-      <Text label={tr('Title')} value={str('title')} onChange={(title) => set({ title })} placeholder="Thanks, {{custom.name}}!" />
+      <Text label={tr('Title')} value={str('title')} onChange={(title) => set({ title })} placeholder='Thanks, {{custom.name}}!' />
       <Field label={tr('Body')}><textarea rows={2} value={str('body')} onChange={(e) => set({ body: e.target.value })} style={{ fontFamily: 'inherit' }} /></Field>
       <div className="row"><Text label={tr('Template key (optional)')} value={str('template_key')} onChange={(v) => set({ template_key: v || null })} mono /><Text label={tr('Image URL')} value={str('image_url')} onChange={(image_url) => set({ image_url })} /><div className="field fixed"><span className="label">{tr('Push')}</span><Toggle value={!!s.push} onChange={(push) => set({ push })} label={s.push ? 'yes' : 'no'} /></div></div>
       <Field label={tr('Payload (JSON)')}><JsonField value={s.payload} onChange={(payload) => set({ payload: payload ?? null })} rows={1} /></Field>
@@ -115,13 +115,13 @@ function StepEditor({ step, steps, onChange }: { step: Step; steps: Step[]; onCh
     case 'track': return <div className="row"><Text label={tr('Event name')} value={str('name')} onChange={(name) => set({ name })} mono /><Text label={tr('Value')} value={str('value')} onChange={(value) => set({ value })} /><Field label={tr('Metadata (JSON)')}><JsonField value={s.metadata} onChange={(metadata) => set({ metadata: metadata ?? {} })} rows={1} /></Field></div>;
     case 'flag_override': return <div className="row"><Text label={tr('Flag key')} value={str('flag')} onChange={(flag) => set({ flag })} mono /><Field label={tr('Value (JSON)')}><JsonField value={s.value} onChange={(value) => set({ value })} rows={1} /></Field></div>;
     case 'experiment_assign': return <div className="row"><Text label={tr('Experiment key')} value={str('experiment')} onChange={(experiment) => set({ experiment })} mono /><Text label={tr('Variant')} value={str('variant')} onChange={(variant) => set({ variant })} mono /></div>;
-    case 'live_event': return <div className="row"><Text label={tr('Live event key')} value={str('live_event')} onChange={(live_event) => set({ live_event })} mono hint={tr('starts for this player the moment they reach the step, whatever the event schedule')} /><Num label={tr('Duration (s)')} value={(s.duration_secs as number) ?? null} onChange={(duration_secs) => set({ duration_secs: duration_secs ?? null })} min={1} hint="blank = the event's own duration" /></div>;
+    case 'live_event': return <div className="row"><Text label={tr('Live event key')} value={str('live_event')} onChange={(live_event) => set({ live_event })} mono hint={tr('starts for this player the moment they reach the step, whatever the event schedule')} /><Num label={tr('Duration (s)')} value={(s.duration_secs as number) ?? null} onChange={(duration_secs) => set({ duration_secs: duration_secs ?? null })} min={1} hint={tr("blank = the event's own duration")} /></div>;
     case 'integration': return <>
       <div className="row"><Text label={tr('Integration key')} value={str('integration')} onChange={(integration) => set({ integration })} mono /><Text label={tr('Title')} value={str('title')} onChange={(title) => set({ title })} /></div>
       <Field label={tr('Body')}><textarea rows={2} value={str('body')} onChange={(e) => set({ body: e.target.value })} style={{ fontFamily: 'inherit' }} /></Field>
       <Field label={tr('Payload (JSON)')}><JsonField value={s.payload} onChange={(payload) => set({ payload: payload ?? {} })} rows={1} /></Field>
     </>;
-    case 'wait': return <Num label={tr('Seconds')} value={(s.secs as number) ?? 0} onChange={(secs) => set({ secs: secs ?? 1 })} min={1} hint="counted from the moment this player arrives — e.g. 86400 = one day" />;
+    case 'wait': return <Num label={tr('Seconds')} value={(s.secs as number) ?? 0} onChange={(secs) => set({ secs: secs ?? 1 })} min={1} hint={tr('counted from the moment this player arrives — e.g. 86400 = one day')} />;
     case 'wait_until': return <div className="row"><Num label={tr('Hour')} value={(s.hour as number) ?? 9} onChange={(hour) => set({ hour: hour ?? 9 })} min={0} max={23} /><Num label={tr('Minute')} value={(s.minute as number) ?? 0} onChange={(minute) => set({ minute: minute ?? 0 })} min={0} max={59} /><Text label={tr('Timezone property')} value={str('timezone_prop')} onChange={(timezone_prop) => set({ timezone_prop })} mono hint={tr('IANA zone read from the player, UTC fallback')} /></div>;
     case 'time_window': {
       const mode = s.at ? 'at' : 'cron';
@@ -129,7 +129,7 @@ function StepEditor({ step, steps, onChange }: { step: Step; steps: Step[]; onCh
         <div className="row" style={{ alignItems: 'end' }}>
           <Field label={tr('Wait for')}><select value={mode} onChange={(e) => (e.target.value === 'at' ? set({ at: new Date(Date.now() + 86400e3).toISOString(), cron: null }) : set({ at: null, cron: '0 0 9 * * Sat' }))}><option value="cron">{tr('next slot of a schedule')}</option><option value="at">{tr('a specific date')}</option></select></Field>
           {mode === 'at' && <DateTime label={tr('Date')} value={(s.at as string) ?? null} onChange={(at) => set({ at })} />}
-          {mode === 'cron' && <Text label={tr('Cron (sec min hour dom month dow)')} value={str('cron')} onChange={(cron) => set({ cron })} mono placeholder="0 0 9 * * Sat" />}
+          {mode === 'cron' && <Text label={tr('Cron (sec min hour dom month dow)')} value={str('cron')} onChange={(cron) => set({ cron })} mono placeholder='0 0 9 * * Sat' />}
         </div>
         {mode === 'cron' && <div className="row"><Field label={tr('Resolve in')}><select value={str('timezone') || 'UTC'} onChange={(e) => set({ timezone: e.target.value === 'UTC' ? null : e.target.value })}><option value="UTC">{tr('UTC')}</option><option value="player">{tr('the player\'s own timezone')}</option><option value="Europe/London">Europe/London</option><option value="Europe/Berlin">Europe/Berlin</option><option value="America/New_York">America/New_York</option><option value="America/Los_Angeles">America/Los_Angeles</option><option value="Asia/Tokyo">Asia/Tokyo</option><option value="Asia/Shanghai">Asia/Shanghai</option></select></Field>{str('timezone') === 'player' && <Text label={tr('Timezone property')} value={str('timezone_prop')} onChange={(timezone_prop) => set({ timezone_prop })} mono />}</div>}
       </>;
@@ -146,17 +146,17 @@ function StepEditor({ step, steps, onChange }: { step: Step; steps: Step[]; onCh
       return <>
         {branches.map((b, i) => (
           <div className="row" key={i} style={{ alignItems: 'end' }}>
-            <Field label={tf('Branch {0} → step', i + 1)}><select value={b.step} onChange={(e) => upd(i, { step: e.target.value })}><option value="">— pick —</option>{steps.filter((x) => x.id !== step.id).map((x) => <option key={x.id} value={x.id}>{x.id}</option>)}</select></Field>
+            <Field label={tf('Branch {0} → step', i + 1)}><select value={b.step} onChange={(e) => upd(i, { step: e.target.value })}><option value="">{tr('— pick —')}</option>{steps.filter((x) => x.id !== step.id).map((x) => <option key={x.id} value={x.id}>{x.id}</option>)}</select></Field>
             <Num label={tr('Weight')} value={b.weight} onChange={(weight) => upd(i, { weight: weight ?? 0 })} min={0} hint={`${Math.round((b.weight / total) * 100)}%`} />
             {branches.length > 2 && <button className="btn ghost sm" onClick={() => set({ branches: branches.filter((_, k) => k !== i) })}>{tr('Remove')}</button>}
           </div>
         ))}
-        <div><button className="btn ghost sm" onClick={() => set({ branches: [...branches, { step: '', weight: 50 }] })}>+ branch</button></div>
+        <div><button className="btn ghost sm" onClick={() => set({ branches: [...branches, { step: '', weight: 50 }] })}>{tr('+ branch')}</button></div>
         <div className="hint">{tr('Sticky per run: the player always lands in the same branch. Conversion is reported per branch on the Runs tab.')}</div>
       </>;
     }
     case 'revert': return target('Undo step', 'step', false, (x) => ['flag_override', 'experiment_assign', 'live_event'].includes(x.kind));
-    case 'enter_journey': return <Text label={tr('Journey key')} value={str('journey')} onChange={(journey) => set({ journey })} mono hint="the player is enrolled there as well (targeting and cooldown of that journey apply); journeys cannot form a cycle" />;
+    case 'enter_journey': return <Text label={tr('Journey key')} value={str('journey')} onChange={(journey) => set({ journey })} mono hint={tr('the player is enrolled there as well (targeting and cooldown of that journey apply); journeys cannot form a cycle')} />;
     default: return <div className="hint">{tr('The player leaves the journey here.')}</div>;
   }
 }
@@ -280,7 +280,7 @@ function Runs({ j }: { j: Journey }) {
       )}
       <div className="chips" style={{ marginTop: 8 }}>
         {(q.data?.stats ?? []).map((s) => <span key={s.status} className="chip">{s.status}: {fmtNum(s.count)}</span>)}
-        {t && t.completed > 0 && <span className="chip">time to finish · fastest {fmtDur(t.min_secs)} · average {fmtDur(t.avg_secs)} · slowest {fmtDur(t.max_secs)}</span>}
+        {t && t.completed > 0 && <span className="chip">{tr('time to finish · fastest')} {fmtDur(t.min_secs)} {tr('· average')} {fmtDur(t.avg_secs)} {tr('· slowest')} {fmtDur(t.max_secs)}</span>}
       </div>
       <div style={{ marginTop: 10 }}><Canvas steps={j.steps} stats={q.data?.steps} selected={-1} onSelect={() => undefined} /></div>
       <Table<Run>
@@ -288,10 +288,10 @@ function Runs({ j }: { j: Journey }) {
         rowKey={(r) => r.id}
         empty={tr('Nobody has entered yet')}
         cols={[
-          { h: 'Player', c: (r) => <Link to={`/identities/${r.identity_id}`} className="mono">{r.external_id}</Link> },
-          { h: 'Status', c: (r) => <><Badge tone={TONE[r.status]}>{r.status}</Badge> <span className="hint">step {r.step + 1}</span></> },
-          { h: 'Entered', c: (r) => fmtDate(r.entered_at) },
-          { h: 'Detail', c: (r) => <span className="hint">{r.error || (r.status === 'active' && r.wake_at ? tf('wakes {0}', fmtDate(r.wake_at)) : r.status === 'done' ? tf('finished in {0}', fmtDur((new Date(r.updated_at).getTime() - new Date(r.entered_at).getTime()) / 1000)) : '')}</span> },
+          { h: tr('Player'), c: (r) => <Link to={`/identities/${r.identity_id}`} className="mono">{r.external_id}</Link> },
+          { h: tr('Status'), c: (r) => <><Badge tone={TONE[r.status]}>{r.status}</Badge> <span className="hint">step {r.step + 1}</span></> },
+          { h: tr('Entered'), c: (r) => fmtDate(r.entered_at) },
+          { h: tr('Detail'), c: (r) => <span className="hint">{r.error || (r.status === 'active' && r.wake_at ? tf('wakes {0}', fmtDate(r.wake_at)) : r.status === 'done' ? tf('finished in {0}', fmtDur((new Date(r.updated_at).getTime() - new Date(r.entered_at).getTime()) / 1000)) : '')}</span> },
           { h: '', c: (r) => r.status === 'active' ? <button className="btn ghost sm" onClick={() => post(`/journeys/${k}/runs/${r.id}/exit`).then(q.reload, setErr)}>{tr('Exit')}</button> : null },
         ]}
       />
@@ -310,11 +310,11 @@ export default function Journeys() {
       path="/journeys"
       blurb={tr('Per-player flows: an entry trigger admits the player, then actions (messages, events, flag overrides, experiment variants, live events on the player\'s own timeline), delays (fixed, local time, date or recurring schedule) and branches run on that player\'s own clock. Waits are persisted and survive restarts.')}
       cols={[
-        { h: 'Key', c: (j) => <><strong>{j.key}</strong><div className="hint">{j.name}</div></> },
-        { h: 'Trigger', c: (j) => <code>{j.trigger.kind}{'name' in j.trigger ? ` ${j.trigger.name}` : ''}{'audience' in j.trigger ? ` ${j.trigger.audience}` : ''}{'live_event' in j.trigger ? ` ${j.trigger.live_event}` : ''}</code> },
-        { h: 'Steps', c: (j) => j.steps.length },
-        { h: 'Status', c: (j) => <StatusBadge s={j.status} /> },
-        { h: 'Updated', c: (j) => fmtDate(j.updated_at) },
+        { h: tr('Key'), c: (j) => <><strong>{j.key}</strong><div className="hint">{j.name}</div></> },
+        { h: tr('Trigger'), c: (j) => <code>{j.trigger.kind}{'name' in j.trigger ? ` ${j.trigger.name}` : ''}{'audience' in j.trigger ? ` ${j.trigger.audience}` : ''}{'live_event' in j.trigger ? ` ${j.trigger.live_event}` : ''}</code> },
+        { h: tr('Steps'), c: (j) => j.steps.length },
+        { h: tr('Status'), c: (j) => <StatusBadge s={j.status} /> },
+        { h: tr('Updated'), c: (j) => fmtDate(j.updated_at) },
       ]}
       blank={() => ({ key: '', name: '', description: '', enabled: true, trigger: { kind: 'event', name: '' }, condition: null, audiences: [], steps: [blankStep('message', 1)], cooldown_secs: 0, max_entries: null, starts_at: null, ends_at: null, tags: [] })}
       form={(d, set, isNew) => (
@@ -329,13 +329,13 @@ export default function Journeys() {
           <TriggerEditor value={d.trigger ?? { kind: 'manual' }} onChange={(trigger) => set({ trigger })} />
           <Field label={tr('Flow')}><StepsEditor value={d.steps ?? []} onChange={(steps) => set({ steps })} /></Field>
           <div className="row">
-            <Num label={tr('Rejoin cooldown (s)')} value={d.cooldown_secs} onChange={(cooldown_secs) => set({ cooldown_secs: cooldown_secs ?? 0 })} min={0} hint="0 = a player goes through once; otherwise they become eligible again this long after finishing" />
-            <Num label={tr('Max entries per player')} value={d.max_entries ?? null} onChange={(max_entries) => set({ max_entries: max_entries ?? null })} min={1} hint="blank = unlimited" />
+            <Num label={tr('Rejoin cooldown (s)')} value={d.cooldown_secs} onChange={(cooldown_secs) => set({ cooldown_secs: cooldown_secs ?? 0 })} min={0} hint={tr('0 = a player goes through once; otherwise they become eligible again this long after finishing')} />
+            <Num label={tr('Max entries per player')} value={d.max_entries ?? null} onChange={(max_entries) => set({ max_entries: max_entries ?? null })} min={1} hint={tr('blank = unlimited')} />
           </div>
           <div className="row">
             <Text label={tr('Goal event')} value={d.goal?.event ?? ''} onChange={(event) => set({ goal: event ? { event, within_secs: d.goal?.within_secs ?? null } : null })} mono hint={tr('tracked event that counts as conversion')} />
-            <Num label={tr('Goal deadline (s)')} value={d.goal?.within_secs ?? null} onChange={(within_secs) => set({ goal: d.goal?.event ? { ...d.goal, within_secs: within_secs ?? null } : null })} min={1} hint="blank = any time after entry" />
-            <Text label={tr('Exit on events')} value={(d.exit_when?.events ?? []).join(', ')} onChange={(v) => { const events = v.split(',').map((x) => x.trim()).filter(Boolean); set({ exit_when: events.length || d.exit_when?.on_goal ? { events, on_goal: !!d.exit_when?.on_goal } : null }); }} mono hint="comma-separated; active runs end when the player tracks one" />
+            <Num label={tr('Goal deadline (s)')} value={d.goal?.within_secs ?? null} onChange={(within_secs) => set({ goal: d.goal?.event ? { ...d.goal, within_secs: within_secs ?? null } : null })} min={1} hint={tr('blank = any time after entry')} />
+            <Text label={tr('Exit on events')} value={(d.exit_when?.events ?? []).join(', ')} onChange={(v) => { const events = v.split(',').map((x) => x.trim()).filter(Boolean); set({ exit_when: events.length || d.exit_when?.on_goal ? { events, on_goal: !!d.exit_when?.on_goal } : null }); }} mono hint={tr('comma-separated; active runs end when the player tracks one')} />
             <div className="field fixed"><span className="label">{tr('Exit on goal')}</span><Toggle value={!!d.exit_when?.on_goal} onChange={(on_goal) => set({ exit_when: on_goal || (d.exit_when?.events?.length ?? 0) > 0 ? { events: d.exit_when?.events ?? [], on_goal } : null })} label={d.exit_when?.on_goal ? 'yes' : 'no'} /></div>
           </div>
           <Field label={tr('Entry condition')}><ConditionEditor optional value={d.condition} onChange={(condition) => set({ condition })} /></Field>
@@ -343,7 +343,7 @@ export default function Journeys() {
           <div className="row">
             <DateTime label={tr('Admits players from')} value={d.starts_at} onChange={(starts_at) => set({ starts_at })} />
             <DateTime label={tr('Until')} value={d.ends_at} onChange={(ends_at) => set({ ends_at })} />
-            <span className="hint" style={{ alignSelf: 'end', paddingBottom: 8 }}>scheduled → running → terminated; players already inside keep going</span>
+            <span className="hint" style={{ alignSelf: 'end', paddingBottom: 8 }}>{tr('scheduled → running → terminated; players already inside keep going')}</span>
           </div>
           <Tags value={d.tags} onChange={(tags) => set({ tags })} />
         </>

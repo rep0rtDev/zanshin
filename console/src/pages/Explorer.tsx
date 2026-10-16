@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { del, get, post, put, useLoad } from '../api';
 import { Num, Text } from '../crud';
 import { Badge, ErrorBox, Field, Page, Table, Toggle, fmtDate, fmtNum } from '../ui';
-import { t, tf } from '../i18n';
+import { t, tf, t as tr } from '../i18n';
 
 type SqlResult = { columns: string[]; types: string[]; rows: unknown[][]; rows_read: number; elapsed_secs: number; truncated: boolean };
 type SavedQuery = { key: string; name: string; description: string; sql: string; tags: string[]; updated_at: string };
@@ -18,7 +18,7 @@ export default function Explorer() {
   const [tab, setTab] = useState<(typeof TABS)[number]>('sql');
   return (
     <Page title={t('Explorer')}>
-      <div className="tabs">{TABS.map((t) => <button key={t} className={tab === t ? 'active' : ''} onClick={() => setTab(t)}>{LABEL[t]}</button>)}</div>
+      <div className="tabs">{TABS.map((t) => <button key={t} className={tab === t ? 'active' : ''} onClick={() => setTab(t)}>{tr(LABEL[t])}</button>)}</div>
       {tab === 'sql' && <Sql />}
       {tab === 'queries' && <Queries />}
       {tab === 'paths' && <PathsView />}
@@ -31,7 +31,7 @@ export default function Explorer() {
 function ResultTable({ r }: { r: SqlResult }) {
   return (
     <div className="card">
-      <div className="hint" style={{ marginBottom: 6 }}>{fmtNum(r.rows.length)} rows{r.truncated ? ' (truncated)' : ''} · {fmtNum(r.rows_read)} read · {r.elapsed_secs.toFixed(3)}s</div>
+      <div className="hint" style={{ marginBottom: 6 }}>{fmtNum(r.rows.length)} rows{r.truncated ? ' (truncated)' : ''} · {fmtNum(r.rows_read)} {t('read ·')} {r.elapsed_secs.toFixed(3)}s</div>
       <div style={{ overflowX: 'auto' }}>
         <table className="table">
           <thead><tr>{r.columns.map((c, i) => <th key={i}>{c}<div className="hint">{r.types[i]}</div></th>)}</tr></thead>
@@ -57,14 +57,14 @@ function Sql() {
   const toCohort = () => post<{ audience: string; matched: number; members: number }>('/sql/cohort', { sql, audience_key: cohort }).then((d) => { setMsg(tf('{0} players → audience {1} ({2} members)', d.matched, d.audience, d.members)); setErr(null); }, setErr);
   return (
     <div className="stack">
-      {st.data && !st.data.available && <div className="card"><Badge tone="warn">{t('ClickHouse is not enabled')}</Badge> <span className="hint">{t('The SQL explorer reads the ClickHouse') + ' '}<code>events</code> table; configure <code>clickhouse.enabled</code>{' ' + t('to use it.')}</span></div>}
+      {st.data && !st.data.available && <div className="card"><Badge tone="warn">{t('ClickHouse is not enabled')}</Badge> <span className="hint">{t('The SQL explorer reads the ClickHouse') + ' '}<code>events</code> {t('table; configure')} <code>clickhouse.enabled</code>{' ' + t('to use it.')}</span></div>}
       <div className="card">
-        <Field label={t('Read-only SQL')} hint="single SELECT / WITH statement on `events`; readonly=2, 30 s, row cap">
+        <Field label={t('Read-only SQL')} hint={t('single SELECT / WITH statement on `events`; readonly=2, 30 s, row cap')}>
           <textarea className="mono" value={sql} onChange={(e) => setSql(e.target.value)} rows={8} style={{ width: '100%' }} spellCheck={false} />
         </Field>
         <div className="row" style={{ alignItems: 'end' }}>
           <Num label={t('Row limit')} value={limit} onChange={(v) => setLimit(v ?? 1000)} min={1} max={st.data?.max_rows ?? 10000} />
-          <button className="btn" disabled={busy || !sql.trim()} onClick={run}>{busy ? 'Running…' : 'Run'}</button>
+          <button className="btn" disabled={busy || !sql.trim()} onClick={run}>{busy ? t('Running…') : t('Run')}</button>
           <div className="row" style={{ marginLeft: 'auto', alignItems: 'end' }}>
             <Text label={t('Save as')} value={saveKey} onChange={setSaveKey} mono />
             <button className="btn ghost sm" disabled={!saveKey} onClick={save}>{t('Save query')}</button>
@@ -95,10 +95,10 @@ function Queries() {
         rowKey={(s) => s.key}
         empty={t('No saved queries — save one from the SQL tab.')}
         cols={[
-          { h: 'Key', c: (s) => <strong className="mono">{s.key}</strong> },
-          { h: 'Name', c: (s) => s.name },
-          { h: 'SQL', c: (s) => <span className="mono hint" title={s.sql}>{s.sql.replace(/\s+/g, ' ').slice(0, 90)}</span> },
-          { h: 'Updated', c: (s) => fmtDate(s.updated_at) },
+          { h: t('Key'), c: (s) => <strong className="mono">{s.key}</strong> },
+          { h: t('Name'), c: (s) => s.name },
+          { h: t('SQL'), c: (s) => <span className="mono hint" title={s.sql}>{s.sql.replace(/\s+/g, ' ').slice(0, 90)}</span> },
+          { h: t('Updated'), c: (s) => fmtDate(s.updated_at) },
           { h: '', c: (s) => <span className="row"><button className="btn ghost sm" onClick={() => run(s.key)}>{t('Run')}</button><button className="btn ghost sm" onClick={() => setEdit(s)}>{t('Edit')}</button><button className="btn ghost sm" onClick={() => del(`/analytics/queries/${encodeURIComponent(s.key)}`).then(q.reload, setErr)}>{t('Delete')}</button></span> },
         ]}
       />
@@ -137,11 +137,11 @@ function PathsView() {
       <ErrorBox error={err} />
       {res && (
         <>
-          <div className="hint">{fmtNum(res.anchors)} occurrences of <code>{res.event ?? event}</code>{res.truncated ? ' · computed on a capped sample' : ''}</div>
+          <div className="hint">{fmtNum(res.anchors)} {t('occurrences of')} <code>{res.event ?? event}</code>{res.truncated ? t(' · computed on a capped sample') : ''}</div>
           <div className="grid" style={{ gridTemplateColumns: `repeat(${Math.max(1, res.levels.length)}, minmax(0, 1fr))`, gap: 12 }}>
             {res.levels.map((l) => (
               <div key={l.depth} className="card">
-                <strong>Step {l.depth}</strong>
+                <strong>{t('Step')} {l.depth}</strong>
                 {l.items.map((it) => (
                   <div key={it.name} className="row" style={{ alignItems: 'center', margin: '4px 0' }}>
                     <span className="mono" style={{ width: 150, overflow: 'hidden', textOverflow: 'ellipsis' }} title={it.name}>{it.name}</span>
@@ -154,7 +154,7 @@ function PathsView() {
           </div>
           <div className="card">
             <strong>{t('Top sequences')}</strong>
-            <Table<Paths['sequences'][number]> rows={res.sequences} rowKey={(s) => s.steps.join('>')} cols={[{ h: 'Path', c: (s) => <span className="mono">{s.steps.join(' → ')}</span> }, { h: 'Players', c: (s) => fmtNum(s.count), w: '100px' }, { h: 'Share', c: (s) => `${((s.count / Math.max(1, res.anchors)) * 100).toFixed(1)}%`, w: '80px' }]} />
+            <Table<Paths['sequences'][number]> rows={res.sequences} rowKey={(s) => s.steps.join('>')} cols={[{ h: t('Path'), c: (s) => <span className="mono">{s.steps.join(' → ')}</span> }, { h: t('Players'), c: (s) => fmtNum(s.count), w: '100px' }, { h: t('Share'), c: (s) => `${((s.count / Math.max(1, res.anchors)) * 100).toFixed(1)}%`, w: '80px' }]} />
           </div>
         </>
       )}
@@ -185,18 +185,18 @@ function Alerts() {
         rowKey={(a) => a.key}
         empty={t('No metric alerts yet.')}
         cols={[
-          { h: 'Key', c: (a) => <strong className="mono">{a.key}</strong> },
-          { h: 'Rule', c: (a) => <span>{a.aggregation}({a.event}{a.field ? `.${a.field}` : ''}) over {a.window_secs}s {a.condition.kind === 'anomaly' ? tf('anomaly z≥{0}', a.condition.zscore) : `${a.condition.kind} ${a.condition.threshold}`}</span> },
-          { h: 'Last value', c: (a) => a.last_value === null ? '—' : fmtNum(a.last_value) },
-          { h: 'Last fired', c: (a) => a.last_fired_at ? fmtDate(a.last_fired_at) : '—' },
-          { h: 'State', c: (a) => <Badge tone={a.enabled ? 'ok' : 'muted'}>{a.enabled ? 'enabled' : 'disabled'}</Badge> },
+          { h: t('Key'), c: (a) => <strong className="mono">{a.key}</strong> },
+          { h: t('Rule'), c: (a) => <span>{a.aggregation}({a.event}{a.field ? `.${a.field}` : ''}{t(') over')} {a.window_secs}s {a.condition.kind === 'anomaly' ? tf('anomaly z≥{0}', a.condition.zscore) : `${a.condition.kind} ${a.condition.threshold}`}</span> },
+          { h: t('Last value'), c: (a) => a.last_value === null ? '—' : fmtNum(a.last_value) },
+          { h: t('Last fired'), c: (a) => a.last_fired_at ? fmtDate(a.last_fired_at) : '—' },
+          { h: t('State'), c: (a) => <Badge tone={a.enabled ? 'ok' : 'muted'}>{a.enabled ? 'enabled' : 'disabled'}</Badge> },
           { h: '', c: (a) => <span className="row"><button className="btn ghost sm" onClick={() => post<Record<string, unknown>>(`/analytics/alerts/${encodeURIComponent(a.key)}/check`, {}).then((d) => { setCheck(d); q.reload(); }, setErr)}>{t('Check')}</button><button className="btn ghost sm" onClick={() => get<{ items: Fire[] }>(`/analytics/alerts/${encodeURIComponent(a.key)}/fires`).then((d) => setFires({ key: a.key, items: d.items }), setErr)}>{t('History')}</button><button className="btn ghost sm" onClick={() => { setForm({ ...a }); setEditing(true); }}>{t('Edit')}</button><button className="btn ghost sm" onClick={() => del(`/analytics/alerts/${encodeURIComponent(a.key)}`).then(q.reload, setErr)}>{t('Delete')}</button></span> },
         ]}
       />
-      {check && <div className="card hint">Check: value {fmtNum(check.value as number)} · {check.fired ? 'fired' : check.suppressed ? 'condition met, suppressed by cooldown' : 'ok'}</div>}
-      {fires && <div className="card"><strong>{t('Fires of') + ' '}<code>{fires.key}</code></strong><Table<Fire> rows={fires.items} rowKey={(f) => f.id} empty={t('Never fired.')} cols={[{ h: 'When', c: (f) => fmtDate(f.fired_at) }, { h: 'Value', c: (f) => fmtNum(f.value) }, { h: 'Baseline', c: (f) => f.baseline === null ? '—' : fmtNum(f.baseline) }, { h: 'Text', c: (f) => f.text }]} /></div>}
+      {check && <div className="card hint">{t('Check: value')} {fmtNum(check.value as number)} · {check.fired ? 'fired' : check.suppressed ? t('condition met, suppressed by cooldown') : 'ok'}</div>}
+      {fires && <div className="card"><strong>{t('Fires of') + ' '}<code>{fires.key}</code></strong><Table<Fire> rows={fires.items} rowKey={(f) => f.id} empty={t('Never fired.')} cols={[{ h: t('When'), c: (f) => fmtDate(f.fired_at) }, { h: t('Value'), c: (f) => fmtNum(f.value) }, { h: t('Baseline'), c: (f) => f.baseline === null ? '—' : fmtNum(f.baseline) }, { h: t('Text'), c: (f) => f.text }]} /></div>}
       <div className="card stack">
-        <strong>{editing ? tf('Edit {0}', form.key) : 'New alert'}</strong>
+        <strong>{editing ? tf('Edit {0}', form.key) : t('New alert')}</strong>
         <div className="row" style={{ alignItems: 'end' }}>
           {!editing && <Text label={t('Key')} value={form.key} onChange={(key) => setForm({ ...form, key })} mono />}
           <Text label={t('Name')} value={form.name} onChange={(name) => setForm({ ...form, name })} />
@@ -211,7 +211,7 @@ function Alerts() {
           <Field label={t('Condition')}><select value={c.kind} onChange={(e) => setForm({ ...form, condition: e.target.value === 'anomaly' ? { kind: 'anomaly', zscore: 3, baseline_windows: 7, min_delta: 0 } : { kind: e.target.value as 'above' | 'below', threshold: 0 } })}><option value="below">{t('below threshold')}</option><option value="above">{t('above threshold')}</option><option value="anomaly">{t('anomaly vs previous windows')}</option></select></Field>
           {c.kind !== 'anomaly' && <Num label={t('Threshold')} value={c.threshold} onChange={(v) => setForm({ ...form, condition: { kind: c.kind, threshold: v ?? 0 } })} />}
           {c.kind === 'anomaly' && <><Num label="z-score" value={c.zscore} onChange={(v) => setForm({ ...form, condition: { ...c, zscore: v ?? 3 } })} min={0.5} /><Num label={t('Baseline windows')} value={c.baseline_windows} onChange={(v) => setForm({ ...form, condition: { ...c, baseline_windows: v ?? 7 } })} min={3} max={60} /><Num label={t('Min delta')} value={c.min_delta} onChange={(v) => setForm({ ...form, condition: { ...c, min_delta: v ?? 0 } })} min={0} /></>}
-          <button className="btn" disabled={!form.key || !form.event} onClick={save}>{editing ? 'Save' : 'Create'}</button>
+          <button className="btn" disabled={!form.key || !form.event} onClick={save}>{editing ? t('Save') : t('Create')}</button>
           {editing && <button className="btn ghost" onClick={() => { setForm(blankAlert()); setEditing(false); }}>{t('Cancel')}</button>}
         </div>
         <div className="hint">{t('Alerts are evaluated every minute by housekeeping and delivered to notification channels subscribed to') + ' '}<code>alert</code>.</div>
@@ -244,18 +244,18 @@ function Reports() {
         rowKey={(r) => r.key}
         empty={t('No scheduled reports yet.')}
         cols={[
-          { h: 'Key', c: (r) => <strong className="mono">{r.key}</strong> },
-          { h: 'Query', c: (r) => <span className="mono">{r.query_key}</span> },
-          { h: 'Schedule', c: (r) => <span className="mono">{r.cron} <span className="hint">{r.timezone}</span></span> },
-          { h: 'Delivery', c: (r) => <span className="hint">{r.channels.length ? r.channels.join(', ') : 'all report channels'}{r.email ? tf(' · email via {0} ({1})', r.email.integration, r.email.to.length) : ''}</span> },
-          { h: 'Last run', c: (r) => r.last_run_at ? <span>{fmtDate(r.last_run_at)} <Badge tone={r.last_status.startsWith('error') ? 'bad' : r.last_status === 'partial' ? 'warn' : 'ok'}>{r.last_status || 'ok'}</Badge></span> : '—' },
-          { h: 'State', c: (r) => <Badge tone={r.enabled ? 'ok' : 'muted'}>{r.enabled ? 'enabled' : 'disabled'}</Badge> },
+          { h: t('Key'), c: (r) => <strong className="mono">{r.key}</strong> },
+          { h: t('Query'), c: (r) => <span className="mono">{r.query_key}</span> },
+          { h: t('Schedule'), c: (r) => <span className="mono">{r.cron} <span className="hint">{r.timezone}</span></span> },
+          { h: t('Delivery'), c: (r) => <span className="hint">{r.channels.length ? r.channels.join(', ') : t('all report channels')}{r.email ? tf(' · email via {0} ({1})', r.email.integration, r.email.to.length) : ''}</span> },
+          { h: t('Last run'), c: (r) => r.last_run_at ? <span>{fmtDate(r.last_run_at)} <Badge tone={r.last_status.startsWith('error') ? 'bad' : r.last_status === 'partial' ? 'warn' : 'ok'}>{r.last_status || 'ok'}</Badge></span> : '—' },
+          { h: t('State'), c: (r) => <Badge tone={r.enabled ? 'ok' : 'muted'}>{r.enabled ? 'enabled' : 'disabled'}</Badge> },
           { h: '', c: (r) => <span className="row"><button className="btn ghost sm" onClick={() => post<Record<string, unknown>>(`/analytics/reports/${encodeURIComponent(r.key)}/run`, {}).then((d) => { setOut(d); setErr(null); q.reload(); }, setErr)}>{t('Run now')}</button><button className="btn ghost sm" onClick={() => { setForm({ ...r }); setEmailOn(!!r.email); setEditing(true); }}>{t('Edit')}</button><button className="btn ghost sm" onClick={() => del(`/analytics/reports/${encodeURIComponent(r.key)}`).then(q.reload, setErr)}>{t('Delete')}</button></span> },
         ]}
       />
-      {out && <div className="card hint">Run: {String(out.status)} · {String(out.rows)} rows</div>}
+      {out && <div className="card hint">{t('Run:')} {String(out.status)} · {String(out.rows)} rows</div>}
       <div className="card stack">
-        <strong>{editing ? tf('Edit {0}', form.key) : 'New report'}</strong>
+        <strong>{editing ? tf('Edit {0}', form.key) : t('New report')}</strong>
         <div className="row" style={{ alignItems: 'end' }}>
           {!editing && <Text label={t('Key')} value={form.key} onChange={(key) => setForm({ ...form, key })} mono />}
           <Text label={t('Name')} value={form.name} onChange={(name) => setForm({ ...form, name })} />
@@ -269,7 +269,7 @@ function Reports() {
           <Text label={t('Notification channels (comma-separated keys, empty = all subscribed to `report`)')} value={form.channels.join(', ')} onChange={(v) => setForm({ ...form, channels: v.split(',').map((x) => x.trim()).filter(Boolean) })} mono />
           <Toggle label={t('Email')} value={emailOn} onChange={setEmailOn} />
           {emailOn && <><Text label={t('Email integration key')} value={email.integration} onChange={(integration) => setForm({ ...form, email: { ...email, integration } })} mono /><Text label={t('Recipients (comma-separated)')} value={email.to.join(', ')} onChange={(v) => setForm({ ...form, email: { ...email, to: v.split(',').map((x) => x.trim()).filter(Boolean) } })} mono /></>}
-          <button className="btn" disabled={!form.key || !form.query_key} onClick={save}>{editing ? 'Save' : 'Create'}</button>
+          <button className="btn" disabled={!form.key || !form.query_key} onClick={save}>{editing ? t('Save') : t('Create')}</button>
           {editing && <button className="btn ghost" onClick={() => { setForm(blankReport()); setEditing(false); }}>{t('Cancel')}</button>}
         </div>
       </div>

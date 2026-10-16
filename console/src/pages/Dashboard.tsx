@@ -56,7 +56,7 @@ export default function Dashboard() {
         <Stat label={t('Live events')} value={<Link to="/live-events">{fmtNum(events.data?.length ?? 0)}</Link>} sub={events.data ? `${events.data.filter((e) => e.enabled).length} ${t('enabled')}` : undefined} />
         <Stat label={t('Message campaigns')} value={<Link to="/messages">{fmtNum(msgs.data?.length ?? 0)}</Link>} sub={msgs.data ? `${msgs.data.filter((m) => m.enabled).length} ${t('enabled')}` : undefined} />
         <Stat label={t('Push devices')} value={fmtNum(push.data?.tokens ?? 0)} sub={push.data ? `${fmtNum(push.data.identities)} ${t('identities')} · ${t('provider')} ${push.data.mode}` : undefined} />
-        <Stat label={t('Sessions, 24h')} value={fmtNum((auth.data?.buckets ?? []).reduce((a, b) => a + b.count, 0))} sub="$authenticate events" />
+        <Stat label={t('Sessions, 24h')} value={fmtNum((auth.data?.buckets ?? []).reduce((a, b) => a + b.count, 0))} sub={t('$authenticate events')} />
       </div>
       <div className="card" style={{ marginTop: 16 }}>
         <div style={{ display: 'flex', justifyContent: 'space-between' }}>

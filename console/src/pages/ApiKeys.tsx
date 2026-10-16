@@ -46,7 +46,7 @@ export default function ApiKeys() {
       </form>
       {minted && (
         <div className="card">
-          <strong>{minted.name}</strong> — copy the secret now, it is shown once:
+          <strong>{minted.name}</strong> {t('— copy the secret now, it is shown once:')}
           <pre className="code" style={{ marginTop: 8 }}>{minted.secret}</pre>
         </div>
       )}
@@ -54,13 +54,13 @@ export default function ApiKeys() {
         rows={q.data}
         rowKey={(k) => k.id}
         cols={[
-          { h: 'Name', c: (k) => <strong>{k.name}</strong> },
-          { h: 'Kind', c: (k) => <><Badge tone={k.kind === 'admin' ? 'bad' : k.kind === 'server' ? 'info' : 'muted'}>{k.kind}</Badge>{k.kind === 'admin' && (k.permissions ? <Badge>{t('custom perms')}</Badge> : k.role !== 'admin' && <Badge>{k.role}</Badge>)}</> },
-          { h: 'Limits', c: (k) => <span className="hint">{k.rate_limit_per_minute ? `${k.rate_limit_per_minute}/min` : 'default'}{k.expires_at ? tf(' · expires {0}', fmtDate(k.expires_at)) : ''}</span> },
-          { h: "Prefix", c: (k) => <span className="mono">{k.prefix}…</span> },
-          { h: 'Created', c: (k) => fmtDate(k.created_at) },
-          { h: 'Last used', c: (k) => fmtDate(k.last_used_at) },
-          { h: '', w: '200px', c: (k) => k.revoked_at ? <Badge tone="bad">revoked</Badge> : k.rotated_to ? <Badge tone="warn">rotated · expires {fmtDate(k.expires_at)}</Badge> : <span className="row" style={{ gap: 6 }}><Confirm onConfirm={() => post<{ secret: string }>('/api-keys/' + k.id + '/rotate', { grace_hours: 24 }).then((r) => { setMinted({ secret: r.secret, name: k.name + ' (rotated — old key works 24 h)' }); q.reload(); }, setErr)}>{t('Rotate')}</Confirm><Confirm danger onConfirm={() => del('/api-keys/' + k.id).then(q.reload, setErr)}>{t('Revoke')}</Confirm></span> },
+          { h: t('Name'), c: (k) => <strong>{k.name}</strong> },
+          { h: t('Kind'), c: (k) => <><Badge tone={k.kind === 'admin' ? 'bad' : k.kind === 'server' ? 'info' : 'muted'}>{k.kind}</Badge>{k.kind === 'admin' && (k.permissions ? <Badge>{t('custom perms')}</Badge> : k.role !== 'admin' && <Badge>{k.role}</Badge>)}</> },
+          { h: t('Limits'), c: (k) => <span className="hint">{k.rate_limit_per_minute ? `${k.rate_limit_per_minute}/min` : 'default'}{k.expires_at ? tf(' · expires {0}', fmtDate(k.expires_at)) : ''}</span> },
+          { h: t('Prefix'), c: (k) => <span className="mono">{k.prefix}…</span> },
+          { h: t('Created'), c: (k) => fmtDate(k.created_at) },
+          { h: t('Last used'), c: (k) => fmtDate(k.last_used_at) },
+          { h: '', w: '200px', c: (k) => k.revoked_at ? <Badge tone="bad">revoked</Badge> : k.rotated_to ? <Badge tone="warn">{t('rotated · expires')} {fmtDate(k.expires_at)}</Badge> : <span className="row" style={{ gap: 6 }}><Confirm onConfirm={() => post<{ secret: string }>('/api-keys/' + k.id + '/rotate', { grace_hours: 24 }).then((r) => { setMinted({ secret: r.secret, name: k.name + ' (rotated — old key works 24 h)' }); q.reload(); }, setErr)}>{t('Rotate')}</Confirm><Confirm danger onConfirm={() => del('/api-keys/' + k.id).then(q.reload, setErr)}>{t('Revoke')}</Confirm></span> },
         ]}
       />
     </Page>
