@@ -87,7 +87,17 @@ test('Taxonomy tabs navigate to absolute paths', async ({ page }) => {
 
 test('desktop tables keep header and rows aligned; player Inbox tab loads', async ({ page }) => {
   await login(page);
-  await page.goto('/console/taxonomy/properties');
+  const key = 'align_' + Date.now();
+  await page.locator('.side a', { hasText: 'Feature flags' }).click();
+  await page.getByRole('button', { name: /^New feature flag$/ }).click();
+  await page.getByLabel('Key').fill(key);
+  for (;;) {
+    const next = page.getByRole('button', { name: 'Next', exact: true });
+    if (!(await next.isVisible().catch(() => false))) break;
+    await next.click();
+  }
+  await page.getByRole('button', { name: 'Create', exact: true }).click();
+  await page.goto('/console/flags');
   const tbl = page.locator('table.table').first();
   await expect(tbl).toBeVisible();
   expect(await tbl.evaluate((e) => getComputedStyle(e).display)).toBe('table');
