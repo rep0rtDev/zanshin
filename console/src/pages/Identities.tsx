@@ -100,7 +100,7 @@ function Detail() {
           </div>
           <QaTime id={i.id} />
           <div className="tabs">
-            {(['props', 'timeline', 'flags', 'events', 'inbox', 'push', 'journeys'] as const).map((t) => <button key={t} className={tab === t ? 'active' : ''} onClick={() => setTab(t)}>{{ props: 'Properties', timeline: 'Timeline', flags: 'Flags', events: 'Events', inbox: 'Inbox', push: 'Push devices', journeys: 'Journeys' }[t]}</button>)}
+            {(['props', 'timeline', 'flags', 'events', 'inbox', 'push', 'journeys'] as const).map((k) => <button key={k} className={tab === k ? 'active' : ''} onClick={() => setTab(k)}>{t({ props: 'Properties', timeline: 'Timeline', flags: 'Flags', events: 'Events', inbox: 'Inbox', push: 'Push devices', journeys: 'Journeys' }[k])}</button>)}
           </div>
           {tab === 'props' && <Props i={i} onSaved={(n) => q.setData(n)} />}
           {tab === 'timeline' && <TimelineTab id={i.id} />}
