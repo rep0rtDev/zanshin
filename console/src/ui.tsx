@@ -68,12 +68,12 @@ export function Table<T>({ cols, rows, rowKey, empty = t('Nothing here yet'), on
   if (!rows) return <div className="muted">{t('Loading…')}</div>;
   if (rows.length === 0) return <div className="muted empty">{empty}</div>;
   return (
-    <table className="table">
+    <table className="table stack">
       <thead><tr>{cols.map((c, i) => <th key={i} style={c.w ? { width: c.w } : undefined}>{c.h}</th>)}</tr></thead>
       <tbody>
         {rows.map((r) => (
           <tr key={rowKey(r)} className={onRow ? 'clickable' : undefined} onClick={onRow ? () => onRow(r) : undefined}>
-            {cols.map((c, i) => <td key={i}>{c.c(r)}</td>)}
+            {cols.map((c, i) => <td key={i} data-h={typeof c.h === 'string' ? c.h : undefined}>{c.c(r)}</td>)}
           </tr>
         ))}
       </tbody>

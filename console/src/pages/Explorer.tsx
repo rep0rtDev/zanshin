@@ -266,7 +266,7 @@ function Reports() {
           <Toggle label={t('Enabled')} value={form.enabled} onChange={(enabled) => setForm({ ...form, enabled })} />
         </div>
         <div className="row" style={{ alignItems: 'end' }}>
-          <Text label="Notification channels (comma-separated keys, empty = all subscribed to `report`)" value={form.channels.join(', ')} onChange={(v) => setForm({ ...form, channels: v.split(',').map((x) => x.trim()).filter(Boolean) })} mono />
+          <Text label={t('Notification channels (comma-separated keys, empty = all subscribed to `report`)')} value={form.channels.join(', ')} onChange={(v) => setForm({ ...form, channels: v.split(',').map((x) => x.trim()).filter(Boolean) })} mono />
           <Toggle label={t('Email')} value={emailOn} onChange={setEmailOn} />
           {emailOn && <><Text label={t('Email integration key')} value={email.integration} onChange={(integration) => setForm({ ...form, email: { ...email, integration } })} mono /><Text label={t('Recipients (comma-separated)')} value={email.to.join(', ')} onChange={(v) => setForm({ ...form, email: { ...email, to: v.split(',').map((x) => x.trim()).filter(Boolean) } })} mono /></>}
           <button className="btn" disabled={!form.key || !form.query_key} onClick={save}>{editing ? 'Save' : 'Create'}</button>

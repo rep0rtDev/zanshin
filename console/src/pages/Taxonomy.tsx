@@ -213,7 +213,7 @@ function Properties() {
       <ErrorBox error={error ?? q.error} />
       <div className="card">
         <h3>{t('Read-only custom property')}</h3>
-        <p className="muted">Read-only properties can only be written through the server API (e.g. from Nakama); clients get a 400 when they try to set them.</p>
+        <p className="muted">{t('Read-only properties can only be written through the server API (e.g. from Nakama); clients get a 400 when they try to set them.')}</p>
         <div className="row" style={{ alignItems: 'end' }}>
           <label className="field"><span className="label">{t('Key')}</span><input className="mono" value={key} onChange={(e) => setKey(e.target.value)} placeholder="vip_tier" /></label>
           <label className="field grow"><span className="label">{t('Description')}</span><input value={desc} onChange={(e) => setDesc(e.target.value)} /></label>
@@ -311,7 +311,7 @@ function Labels() {
   const loadUsage = (id: string) => run(async () => setUsage({ ...usage, [id]: await get(`/labels/${id}/usage`) }));
   return (
     <>
-      <p className="muted">Labels (category tags) group flags, experiments, audiences, live events, messages and event definitions. Renaming a label updates every tagged item; clients can filter by label.</p>
+      <p className="muted">{t('Labels (category tags) group flags, experiments, audiences, live events, messages and event definitions. Renaming a label updates every tagged item; clients can filter by label.')}</p>
       <div className="actions"><button className="btn" onClick={() => setEdit({ name: '', color: COLORS[0], description: '' })}>{t('New label')}</button></div>
       <ErrorBox error={error ?? q.error} />
       {edit && (

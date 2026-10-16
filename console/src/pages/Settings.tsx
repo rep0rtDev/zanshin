@@ -45,7 +45,7 @@ function General() {
           <ConsolePrefs />
           <div className="card">
             <strong>{t('Rate limits')}</strong>
-            <p className="hint">Requests per minute per caller, by scope. Change them in the server config (<code>limits.*</code>).</p>
+            <p className="hint">{t('Requests per minute per caller, by scope. Change them in the server config (')}<code>limits.*</code>).</p>
             <dl className="kv">{Object.entries(s.limits).map(([k, v]) => <><dt key={k + 'k'}>{k}</dt><dd key={k + 'v'}>{k === 'enabled' ? (v ? 'yes' : 'no') : v === 0 ? 'unlimited' : fmtNum(v)}</dd></>)}</dl>
           </div>
           <div className="card">
@@ -171,7 +171,7 @@ function Projects() {
   return (
     <div className="card" style={{ maxWidth: 760 }}>
       <ErrorBox error={err ?? q.error} />
-      <p className="hint">Each project is an isolated game / environment inside this deployment: its own configuration, players, events, keys and analytics (own PostgreSQL schema, Redis namespace and ClickHouse database). Console users and SSO are shared. SDKs and `zanshinctl` address a project with the <code>x-zanshin-project</code> header; session tokens carry it automatically.</p>
+      <p className="hint">{t('Each project is an isolated game / environment inside this deployment: its own configuration, players, events, keys and analytics (own PostgreSQL schema, Redis namespace and ClickHouse database). Console users and SSO are shared. SDKs and `zanshinctl` address a project with the')} <code>x-zanshin-project</code> header; session tokens carry it automatically.</p>
       <table className="table">
         <thead><tr><th>{t('Slug')}</th><th>{t('Name')}</th><th>{t('Status')}</th><th>{t('Created')}</th><th /></tr></thead>
         <tbody>

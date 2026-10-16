@@ -47,7 +47,7 @@ function Lifecycle({ exp, reload }: { exp: Experiment; reload: () => void }) {
         {(exp.status === 'running' || exp.status === 'paused') && <button className="btn ghost" onClick={() => act('stop')}>{t('Stop')}</button>}
         {exp.status !== 'running' && <button className="btn danger ghost" onClick={() => act('reset')}>{t('Reset assignments')}</button>}
       </div>
-      <div className="hint" style={{ marginTop: 8 }}>Assignments are sticky: an identity keeps its variant while the experiment runs. Stopping keeps results; reset wipes assignments so the experiment can be re-run.</div>
+      <div className="hint" style={{ marginTop: 8 }}>{t('Assignments are sticky: an identity keeps its variant while the experiment runs. Stopping keeps results; reset wipes assignments so the experiment can be re-run.')}</div>
     </div>
   );
 }

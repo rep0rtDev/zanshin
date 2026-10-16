@@ -139,7 +139,7 @@ function VariantsPanel({ value, onChange }: { value: LEVariant[]; onChange: (v: 
             <button className="btn ghost sm" onClick={() => onChange(value.filter((_, j) => j !== i))}>{tr('Remove')}</button>
           </div>
           <div className="row">
-            <Field label="Payload (JSON, blank = event payload)"><JsonField value={v.payload} onChange={(payload) => upd(i, { payload: payload ?? null })} rows={2} /></Field>
+            <Field label={tr('Payload (JSON, blank = event payload)')}><JsonField value={v.payload} onChange={(payload) => upd(i, { payload: payload ?? null })} rows={2} /></Field>
             <Field label={tr('Flag overrides (JSON)')}><JsonField value={v.flag_overrides} onChange={(fo) => upd(i, { flag_overrides: (fo ?? {}) as Record<string, unknown> })} rows={2} /></Field>
           </div>
         </div>

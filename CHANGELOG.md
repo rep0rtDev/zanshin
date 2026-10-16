@@ -6,6 +6,13 @@ Release automation reads the section whose heading contains the tagged version.
 
 ## [Unreleased]
 
+## [0.3.1] — 2026-10-16
+
+### Changed
+- Console on phones (≤760 px): list tables render as stacked rows (first column as the title, other columns as `label value` pairs) instead of a horizontally scrolling table; forms stack to one column; the live-event calendar gives way to the list; tabs scroll horizontally; inputs and buttons get touch-sized hit targets. No page overflows the viewport at 390 px any more.
+- Console Russian locale: page blurbs, hints and placeholders that bypassed `t()` are now translated (Flags, Audiences, Experiments, Live events, Messages, Change requests, Taxonomy, Notifications, Settings, Insights, Data, Explorer, Identities), and leftover English dictionary entries (Journeys → «Сценарии», Kill switch, Push, Email, …) are translated.
+- Console favicon is the Zanshin mark instead of the Vite default.
+
 ### Fixed
 - Compose: service healthchecks probe `127.0.0.1` instead of `localhost` — on Docker networks without IPv6 `localhost` resolves to `::1` first, so ClickHouse was reported unhealthy forever and `zanshin` never started.
 

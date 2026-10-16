@@ -134,7 +134,7 @@ function DryRun({ flag }: { flag: Flag }) {
   return (
     <div className="card">
       <strong>{t('Dry run')}</strong>
-      <div className="hint" style={{ marginBottom: 8 }}>Evaluate this flag against hypothetical properties; the subject string drives percentage bucketing.</div>
+      <div className="hint" style={{ marginBottom: 8 }}>{t('Evaluate this flag against hypothetical properties; the subject string drives percentage bucketing.')}</div>
       <ErrorBox error={err} />
       <Field label={t('Subject')}><input value={subject} onChange={(e) => setSubject(e.target.value)} /></Field>
       <Field label={t('Properties')}><JsonField value={props} onChange={setProps} rows={5} /></Field>
@@ -158,7 +158,7 @@ function PrerequisitesEditor({ self, value, onChange }: { self: string; value: P
               {flags.map((f) => <option key={f.key} value={f.key}>{f.key}</option>)}
             </select>
           </label>
-          <Field label="Required value (JSON, empty = just enabled)"><input className="mono" value={p.value === undefined ? '' : JSON.stringify(p.value)} onChange={(e) => { const v = e.target.value; try { upd(i, { value: v.trim() ? JSON.parse(v) : undefined }); } catch { /* keep typing */ } }} /></Field>
+          <Field label={t('Required value (JSON, empty = just enabled)')}><input className="mono" value={p.value === undefined ? '' : JSON.stringify(p.value)} onChange={(e) => { const v = e.target.value; try { upd(i, { value: v.trim() ? JSON.parse(v) : undefined }); } catch { /* keep typing */ } }} /></Field>
           <button type="button" className="btn ghost sm" onClick={() => onChange(value.filter((_, j) => j !== i))}>remove</button>
         </div>
       ))}

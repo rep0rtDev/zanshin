@@ -12,3 +12,14 @@ test('on a phone the sidebar is a drawer and Health is reachable', async ({ page
   await expect(page.locator('.side')).not.toBeInViewport();
   await expect(page.locator('.stat').first()).toBeVisible();
 });
+
+test('list pages stack rows and never overflow the phone viewport', async ({ page }) => {
+  await login(page);
+  for (const path of ['/console/flags', '/console/audiences', '/console/experiments', '/console/api-keys']) {
+    await page.goto(path);
+    await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
+    await expect(page.locator('.table:not(.stack)')).toHaveCount(0);
+    const [sw, cw] = await page.evaluate(() => [document.documentElement.scrollWidth, document.documentElement.clientWidth]);
+    expect(sw, `${path} overflows horizontally`).toBeLessThanOrEqual(cw);
+  }
+});
