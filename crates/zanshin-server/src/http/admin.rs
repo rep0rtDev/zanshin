@@ -167,7 +167,7 @@ pub fn router() -> Router<AppState> {
         .route("/messages/{key}/stats", get(message_stats))
         .route(
             "/identities/{identity_id}/messages",
-            axum::routing::post(send_direct_message),
+            get(list_identity_inbox).post(send_direct_message),
         )
         .route("/analytics/events", get(analytics_timeseries))
         .route("/analytics/events/names", get(analytics_names))
@@ -1433,6 +1433,16 @@ async fn message_stats(
     Ok(Json(
         serde_json::json!({ "message": m.key, "delivered": delivered, "read": read, "consumed": consumed }),
     ))
+}
+
+async fn list_identity_inbox(
+    State(state): State<AppState>,
+    AdminAuth(_): AdminAuth,
+    Path(identity_id): Path<Uuid>,
+) -> ApiResult<Json<serde_json::Value>> {
+    let identity = state.identity.get(identity_id).await?;
+    let messages = state.eval.inbox(&identity, 200).await?;
+    Ok(Json(serde_json::json!({ "messages": messages })))
 }
 
 async fn send_direct_message(

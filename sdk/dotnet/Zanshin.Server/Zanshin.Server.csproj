@@ -9,7 +9,7 @@
     <RootNamespace>Zanshin.Server</RootNamespace>
     <AssemblyName>Zanshin.Server</AssemblyName>
     <PackageId>Zanshin.Server</PackageId>
-    <Version>0.3.5</Version>
+    <Version>0.3.6</Version>
     <Description>Server-side .NET SDK for Zanshin (self-hosted LiveOps): flags, experiments, audiences, live events, inbox, events, with a change-stream-invalidated cache.</Description>
     <RepositoryUrl>https://github.com/rep0rtDev/zanshin</RepositoryUrl>
     <PackageProjectUrl>https://github.com/rep0rtDev/zanshin</PackageProjectUrl>

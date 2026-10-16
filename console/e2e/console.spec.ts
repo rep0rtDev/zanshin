@@ -84,3 +84,24 @@ test('Taxonomy tabs navigate to absolute paths', async ({ page }) => {
   await expect(page).toHaveURL(/\/console\/taxonomy\/events$/);
   expect(await page.locator('.crumbs').innerText()).not.toMatch(/events.*events/);
 });
+
+test('desktop tables keep header and rows aligned; player Inbox tab loads', async ({ page }) => {
+  await login(page);
+  await page.goto('/console/taxonomy/properties');
+  const tbl = page.locator('table.table').first();
+  await expect(tbl).toBeVisible();
+  expect(await tbl.evaluate((e) => getComputedStyle(e).display)).toBe('table');
+  const ths = await tbl.locator('th').evaluateAll((els) => els.map((e) => Math.round(e.getBoundingClientRect().x)));
+  const tds = await tbl.locator('tbody tr').first().locator('td').evaluateAll((els) => els.map((e) => Math.round(e.getBoundingClientRect().x)));
+  expect(tds.slice(0, ths.length)).toEqual(ths);
+
+  await page.goto('/console/identities');
+  const row = page.locator('.table tr.clickable').first();
+  if (await row.count()) {
+    await row.click();
+    await page.locator('.tabs button', { hasText: 'Inbox' }).click();
+    await expect(page.locator('.tabs button.active')).toHaveText('Inbox');
+    await page.waitForTimeout(800);
+    await expect(page.locator('.error')).toHaveCount(0);
+  }
+});

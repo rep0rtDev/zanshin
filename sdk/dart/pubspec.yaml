@@ -1,6 +1,6 @@
 name: zanshin
 description: Zanshin LiveOps client for Dart and Flutter — flags, experiments, live events, inbox, events and a live change stream. Zero dependencies.
-version: 0.3.5
+version: 0.3.6
 repository: https://github.com/rep0rtDev/zanshin
 environment:
   sdk: ">=3.0.0 <4.0.0"

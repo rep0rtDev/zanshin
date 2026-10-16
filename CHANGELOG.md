@@ -6,6 +6,14 @@ Release automation reads the section whose heading contains the tagged version.
 
 ## [Unreleased]
 
+## [0.3.6] — 2026-10-16
+
+### Fixed
+- Console: desktop tables rendered the header and the rows as two independent grids (a generic `.stack` flex utility matched the `table.stack` class), so values drifted away from their columns; the utility no longer applies to tables.
+- Console: the player «Inbox» tab failed with 405 — the admin API had no `GET /admin/v1/identities/{id}/messages`; it exists now (the same resolved inbox the client sees).
+- Console: `ErrorBox` never renders an empty red bar — when the server returns no message it shows «Request failed (status)».
+- Console i18n: player detail tabs, notification kinds, property section headings (default / computed / custom), inbox state badges and campaign hint are translated.
+
 ## [0.3.5] — 2026-10-16
 
 ### Fixed
