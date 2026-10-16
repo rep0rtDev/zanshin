@@ -6,6 +6,12 @@ Release automation reads the section whose heading contains the tagged version.
 
 ## [Unreleased]
 
+## [0.3.5] — 2026-10-16
+
+### Fixed
+- Console: Taxonomy tabs were relative links inside a nested route, so every click appended a segment (`/taxonomy/events/properties/events/…`) and the breadcrumb grew without end; links are absolute now (same fix as Settings in 0.3.2) and an e2e test covers it.
+- Console: settings rows (Taxonomy enforcement / auto-discover / Geo-IP / session inactivity) no longer stretch every field to an equal column — fields size to content, hints wrap at a sane width, checkboxes keep their label on one line, buttons stay compact; pager buttons use the small style.
+
 ## [0.3.4] — 2026-10-16
 
 ### Fixed
