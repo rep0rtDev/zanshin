@@ -179,7 +179,10 @@ ol.chain { margin: 10px 0 0; padding-left: 18px; display: grid; gap: 6px; }
   .table.stack td[data-h]:not(:first-child)::before{content:attr(data-h);color:var(--muted);font-size:11.5px;white-space:nowrap}
   .table.stack td[data-h=''],.table.stack td:not([data-h]){flex-basis:100%;padding-top:0}
   .table.stack td[data-h='']{margin-top:-4px}
-  .table.stack td *{min-width:0;overflow-wrap:anywhere}
+  .table.stack td *:not(.menu):not(.menu-pop):not(.menu-pop *){min-width:0;overflow-wrap:anywhere}
+  .table.stack tr{position:relative}.table.stack td .menu{position:static}
+  .table.stack td .menu-pop{left:auto;right:8px;top:auto;bottom:calc(100% - 44px);min-width:170px;width:max-content;max-width:calc(100vw - 48px)}
+  .table.stack td .menu-pop .menu-item{white-space:nowrap;min-height:40px;display:flex;align-items:center}
   .main{overflow-x:hidden}.main .chips,.main .tabs,.main .steps{max-width:100%}
   .table.stack td:empty{display:none}.table.stack tr.clickable:hover td{background:none}
   .table.stack td .menu{margin-left:auto}
@@ -198,7 +201,20 @@ ol.chain { margin: 10px 0 0; padding-left: 18px; display: grid; gap: 6px; }
   .table.stack td .btn,.table.stack td button{min-height:32px}
   .toolbar .search{width:100%}
   button,input,select,textarea{font-size:16px}
-  .menu-pop{right:auto;left:0}
+  .menu-pop{right:0;left:auto;min-width:170px;width:max-content;max-width:calc(100vw - 48px)}
+  .menu-pop .menu-item{white-space:nowrap;min-height:40px;display:flex;align-items:center}
+  /* rule builder on a phone: one control per line */
+  .rb{padding:10px}
+  .rb-tools{justify-content:flex-start;flex-wrap:wrap}
+  .rb-head{flex-wrap:wrap;gap:8px}.rb-head .spacer{flex-basis:100%;display:none}
+  .rb-mode{min-height:40px}
+  .rb-group{padding-left:8px;margin:8px 0}
+  .rb-row{flex-wrap:wrap;gap:6px;padding:8px;border:1px solid var(--line);border-radius:8px;background:var(--card);margin:6px 0}
+  .rb-row>input,.rb-row>select,.rb-row>.field,.rb-row>.chips,.rb-row>textarea{flex:1 1 100%!important;min-width:0;width:100%;min-height:40px}
+  .rb-row>span{display:none}
+  .rb-row>.btn,.rb-row>button{flex:0 0 auto;margin-left:auto;min-height:36px}
+  .rb textarea,.rb-expr textarea{min-height:140px;font-size:14px;line-height:1.45}
+  .rb .btn.ghost.sm{min-height:36px;padding:0 12px}
 }
 /* ---- lists & detail v3 ---- */
 .count{margin-left:10px;font-size:12px;color:var(--muted);font-weight:500;background:var(--bg);border:1px solid var(--line);border-radius:999px;padding:1px 8px;vertical-align:middle}

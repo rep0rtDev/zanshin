@@ -23,3 +23,15 @@ test('list pages stack rows and never overflow the phone viewport', async ({ pag
     expect(sw, `${path} overflows horizontally`).toBeLessThanOrEqual(cw);
   }
 });
+
+test('row menu keeps its width on a phone', async ({ page }) => {
+  await login(page);
+  await page.goto('/console/flags');
+  await page.locator('.table.stack .menu button').first().click();
+  const pop = page.locator('.menu-pop').first();
+  await expect(pop).toBeVisible();
+  const box = await pop.boundingBox();
+  expect(box!.width).toBeGreaterThan(120);
+  const viewport = page.viewportSize()!;
+  expect(box!.x + box!.width).toBeLessThanOrEqual(viewport.width);
+});

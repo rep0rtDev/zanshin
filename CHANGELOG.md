@@ -6,6 +6,12 @@ Release automation reads the section whose heading contains the tagged version.
 
 ## [Unreleased]
 
+## [0.3.4] — 2026-10-16
+
+### Fixed
+- Console on phones: the row «⋯» menu inherited the stacked-table `min-width: 0 / overflow-wrap: anywhere` rules and rendered as a one-letter-wide column; the popup now keeps its width, opens right-aligned and has touch-sized items.
+- Console on phones: the rule builder is usable — each condition is a card with property, operator and value on their own lines, group headers and «+ condition / + group» wrap, the expression editor is taller.
+
 ## [0.3.3] — 2026-10-16
 
 ### Changed
