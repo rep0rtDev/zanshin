@@ -35,7 +35,7 @@ x-zanshin: &zanshin
     ZANSHIN__CLICKHOUSE__RETENTION_DAYS: ${ZANSHIN_RETENTION_DAYS:-400}
   secrets: [database_url, clickhouse_password, jwt_secret, data_keys, admin_bootstrap_key]
   healthcheck:
-    test: ["CMD", "curl", "-fsS", "http://localhost:7550/readyz"]
+    test: ["CMD", "curl", "-fsS", "http://127.0.0.1:7550/readyz"]
     interval: 10s
     timeout: 3s
     retries: 6
@@ -171,7 +171,7 @@ services:
     ulimits:
       nofile: { soft: 262144, hard: 262144 }
     healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://localhost:8123/ping"]
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8123/ping"]
       interval: 5s
       timeout: 3s
       retries: 30
