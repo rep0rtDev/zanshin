@@ -6,6 +6,9 @@ Release automation reads the section whose heading contains the tagged version.
 
 ## [Unreleased]
 
+### Fixed
+- Compose: service healthchecks probe `127.0.0.1` instead of `localhost` — on Docker networks without IPv6 `localhost` resolves to `::1` first, so ClickHouse was reported unhealthy forever and `zanshin` never started.
+
 ## [0.3.0] — 2026-10-15
 
 ### Added
