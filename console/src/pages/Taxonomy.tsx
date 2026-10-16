@@ -3,7 +3,7 @@ import { toast } from '../toast';
 import { NavLink, Navigate, Route, Routes } from 'react-router-dom';
 import { del, get, post, put, qs, useLoad } from '../api';
 import { Badge, Confirm, ErrorBox, Field, JsonField, Page, Table, Toggle, fmtDate, fmtNum } from '../ui';
-import { t } from '../i18n';
+import { t, tf } from '../i18n';
 
 type Label = { id: string; name: string; color: string; description: string; created_at: string };
 type EventDef = {
@@ -109,7 +109,7 @@ function Events() {
         </Field>
         <div className="field"><span className="label">{t('Auto-discover')}</span><Badge tone={settings.data?.auto_discover ? 'ok' : 'muted'}>{settings.data?.auto_discover ? 'on' : 'off'}</Badge></div>
         <div className="field"><span className="label">{t('Geo-IP')}</span><Badge tone={settings.data?.geoip_enabled ? 'ok' : 'muted'}>{settings.data?.geoip_enabled ? 'enabled' : 'not configured'}</Badge></div>
-        <div className="field"><span className="label">{t('Session inactivity')}</span><span>{settings.data ? `${Math.round(settings.data.session_inactivity_secs / 60)} min` : '…'}</span></div>
+        <div className="field"><span className="label">{t('Session inactivity')}</span><span>{settings.data ? tf('{0} min', Math.round(settings.data.session_inactivity_secs / 60)) : '…'}</span></div>
         <div className="spacer" />
         <label className="hint" style={{ whiteSpace: 'nowrap' }}><input type="checkbox" checked={showCore} onChange={(e) => setShowCore(e.target.checked)} />{' ' + t('Show core')}</label>
         <label className="hint" style={{ whiteSpace: 'nowrap' }}><input type="checkbox" checked={showSynthetic} onChange={(e) => setShowSynthetic(e.target.checked)} />{' ' + t('Show synthetic')}</label>
@@ -121,7 +121,7 @@ function Events() {
       <ErrorBox error={error ?? defs.error ?? settings.error} />
       {edit && (
         <div className="card">
-          <h3>{edit.is_core ? `Core event ${edit.name}` : edit.name ? `Edit ${edit.name}` : 'New event definition'}</h3>
+          <h3>{edit.is_core ? tf('Core event {0}', edit.name) : edit.name ? tf('Edit {0}', edit.name) : 'New event definition'}</h3>
           <div className="row">
             <label className="field"><span className="label">{t('Name')}</span><input className="mono" value={edit.name ?? ''} disabled={!!edit.updated_at} onChange={(e) => setEdit({ ...edit, name: e.target.value })} placeholder="levelCompleted" /></label>
             <Field label={t('Value type')} hint={t('number · string · object (JSON) · revenue (metadata.amount + metadata.currency) · any')}>
@@ -254,7 +254,7 @@ function Schemas() {
       <p className="muted">{t('JSON Schemas describe the shape of structured flag and live-event values. Attach one to a flag and every variant, override and default is validated on save.')}</p>
       <div className="actions">
         <button className="btn" onClick={() => { setEdit({ name: '', description: '', schema: { type: 'object', properties: {} } }); setVerdict(null); }}>{t('New schema')}</button>
-        <button className="btn ghost" title={t('ANY, Number, String, Object, Event-Revenue-Metadata — skips ones that already exist')} onClick={() => run(async () => { const r = await post<{ created: string[] }>('/schemas/presets'); toast(r.created.length ? `Added ${r.created.join(', ')}` : 'Built-in validators already present'); q.reload(); })}>{t('Add built-in validators')}</button>
+        <button className="btn ghost" title={t('ANY, Number, String, Object, Event-Revenue-Metadata — skips ones that already exist')} onClick={() => run(async () => { const r = await post<{ created: string[] }>('/schemas/presets'); toast(r.created.length ? tf('Added {0}', r.created.join(', ')) : 'Built-in validators already present'); q.reload(); })}>{t('Add built-in validators')}</button>
       </div>
       <ErrorBox error={error ?? q.error} />
       {edit && (

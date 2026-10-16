@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
-import { intlLocale, t } from './i18n';
+import { intlLocale, t, tf } from './i18n';
 
 export function Page({ title, actions, children }: { title: ReactNode; actions?: ReactNode; children: ReactNode }) {
   return (
@@ -188,7 +188,7 @@ export function KeyPicker({ value, onChange, options, placeholder = t('Search…
           const o = options.find((x) => x.key === k);
           return (
             <span key={k} className={'chip on' + (o ? '' : ' missing')} title={o?.name ?? 'unknown'}>
-              {k}<button type="button" className="chip-x" aria-label={`Remove ${k}`} onClick={(e) => { e.stopPropagation(); onChange(value.filter((x) => x !== k)); }}>×</button>
+              {k}<button type="button" className="chip-x" aria-label={tf('Remove {0}', k)} onClick={(e) => { e.stopPropagation(); onChange(value.filter((x) => x !== k)); }}>×</button>
             </span>
           );
         })}

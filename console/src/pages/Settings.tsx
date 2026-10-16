@@ -4,7 +4,7 @@ import { get, post, project, put, useLoad } from '../api';
 import { useMe } from '../me';
 import { toast } from '../toast';
 import { Badge, ErrorBox, Field, Page, displayTimezone, fmtDate, fmtNum, setDisplayTz } from '../ui';
-import { t } from '../i18n';
+import { t, tf } from '../i18n';
 
 type System = { version: string; started_at: string; uptime_secs: number; stores: { postgres: boolean; redis: boolean; clickhouse: boolean; event_store: string }; push: { provider: string }; auth: { oidc: boolean; saml?: boolean; scim?: boolean; access_ttl_secs: number; refresh_ttl_secs: number }; limits: Record<string, number>; taxonomy: { mode: string; auto_discover: boolean; geoip: boolean }; audit_retention_days: number; counts: Record<string, number> };
 type TaxSettings = { mode: string; auto_discover: boolean; geoip_enabled: boolean; session_inactivity_secs: number };
@@ -76,7 +76,7 @@ function ConsolePrefs() {
       <strong>{t('Console')}</strong>
       <ErrorBox error={err} />
       <div className="row" style={{ alignItems: 'end', marginTop: 8 }}>
-        <Field label={t('Display timezone')} hint={`Applies to every date shown in the console, for all users. Currently ${displayTimezone()}.`}>
+        <Field label={t('Display timezone')} hint={tf('Applies to every date shown in the console, for all users. Currently {0}.', displayTimezone())}>
           <select value={cur.timezone} onChange={(e) => setD({ ...cur, timezone: e.target.value })}>
             <option value="">{t('Browser default')}</option>
             {tzs.map((t) => <option key={t} value={t}>{t}</option>)}
@@ -162,7 +162,7 @@ function Projects() {
   const [err, setErr] = useState<Error | null>(null);
   const cur = project.get();
   const create = () =>
-    post('/projects', { slug, name }).then(() => { toast(`Project ${slug} created`); setSlug(''); setName(''); q.reload(); }, setErr);
+    post('/projects', { slug, name }).then(() => { toast(tf('Project {0} created', slug)); setSlug(''); setName(''); q.reload(); }, setErr);
   const archive = (p: ProjectRow) =>
     put(`/projects/${p.slug}`, { archived: !p.archived }).then(() => { toast(p.archived ? 'Project resumed' : 'Project archived'); q.reload(); }, setErr);
   if (cur !== 'default') {
@@ -199,10 +199,10 @@ export default function Settings() {
   return (
     <Page title={t('Settings')}>
       <div className="tabs">
-        <NavLink to="" end>{t('General')}</NavLink>
-        <NavLink to="players">{t('Players & events')}</NavLink>
-        <NavLink to="projects">{t('Projects')}</NavLink>
-        <NavLink to="configuration">{t('Configuration')}</NavLink>
+        <NavLink to="/settings" end>{t('General')}</NavLink>
+        <NavLink to="/settings/players">{t('Players & events')}</NavLink>
+        <NavLink to="/settings/projects">{t('Projects')}</NavLink>
+        <NavLink to="/settings/configuration">{t('Configuration')}</NavLink>
         <NavLink to="/taxonomy">{t('Taxonomy →')}</NavLink>
         {me?.role === 'admin' && <NavLink to="/api-keys">{t('API keys →')}</NavLink>}
         <NavLink to="/data">{t('Data & backups →')}</NavLink>

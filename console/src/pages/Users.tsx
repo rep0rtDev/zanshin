@@ -4,7 +4,7 @@ import { Badge, ErrorBox, Field, Menu, Page, Table, fmtDate } from '../ui';
 import { PermissionEditor, type Permissions } from '../permissions';
 import { useMe } from '../me';
 import { toast } from '../toast';
-import { t } from '../i18n';
+import { t, tf } from '../i18n';
 
 type User = { id: string; email: string; name: string; permissions: Permissions; archetype: string | null; totp_enabled: boolean; disabled: boolean; must_change_password: boolean; created_at: string; last_login_at: string | null; recovery_codes_left: number; created_by: string | null };
 
@@ -24,7 +24,7 @@ export default function Users() {
   const resetLink = async (u: User) => {
     try {
       const r = await post<{ path: string }>(`/users/${u.id}/reset-link`);
-      setSecret({ title: `Password reset link for ${u.email} (valid 24 h)`, body: `${window.location.origin}/console${r.path.replace(/^\/console/, '')}` });
+      setSecret({ title: tf('Password reset link for {0} (valid 24 h)', u.email), body: `${window.location.origin}/console${r.path.replace(/^\/console/, '')}` });
     } catch (e) { setErr(e as Error); }
   };
   return (
@@ -84,14 +84,14 @@ function UserForm({ user, onClose, onSaved }: { user: User | null; onClose: () =
       } else {
         const r = await post<{ email: string; reset_token?: string }>('/users', { email, name, password: mode === 'password' ? password : undefined, archetype, permissions: archetype ? undefined : permissions });
         onSaved(mode === 'password'
-          ? { title: `Initial password for ${r.email} (they must change it on first login)`, body: password }
-          : { title: `Password setup link for ${r.email} (valid 24 h)`, body: `${window.location.origin}/console/reset?token=${r.reset_token}` });
+          ? { title: tf('Initial password for {0} (they must change it on first login)', r.email), body: password }
+          : { title: tf('Password setup link for {0} (valid 24 h)', r.email), body: `${window.location.origin}/console/reset?token=${r.reset_token}` });
       }
     } catch (e) { setErr(e as Error); } finally { setBusy(false); }
   };
   return (
     <form className="card stack" onSubmit={submit}>
-      <h3 style={{ margin: 0 }}>{user ? `Edit ${user.email}` : 'New console user'}</h3>
+      <h3 style={{ margin: 0 }}>{user ? tf('Edit {0}', user.email) : 'New console user'}</h3>
       <ErrorBox error={err} />
       <div className="row">
         <Field label={t('Email')}><input type="email" value={email} onChange={(e) => setEmail(e.target.value)} required disabled={!!user} /></Field>

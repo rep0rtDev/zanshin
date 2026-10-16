@@ -48,3 +48,27 @@ test('Russian locale translates navigation, pages and the login screen', async (
   await expect(page.getByRole('heading', { name: /^Состояние/, level: 1 })).toBeVisible();
   await expect(page.locator('th', { hasText: 'Сервис' }).first()).toBeVisible();
 });
+
+test('Settings tabs switch sections instead of nesting paths', async ({ page }) => {
+  await login(page);
+  await page.goto('/console/settings');
+  await page.locator('.tabs a', { hasText: 'Players & events' }).click();
+  await expect(page).toHaveURL(/\/console\/settings\/players$/);
+  await expect(page.locator('.tabs a.active')).toHaveText('Players & events');
+  await page.locator('.tabs a', { hasText: 'Projects' }).click();
+  await expect(page).toHaveURL(/\/console\/settings\/projects$/);
+  await expect(page.locator('.tabs a.active')).toHaveText('Projects');
+  await expect(page.locator('.main .card').first()).toBeVisible();
+  await page.locator('.tabs a', { hasText: 'General' }).click();
+  await expect(page).toHaveURL(/\/console\/settings$/);
+});
+
+test('Russian locale has no half-translated templates', async ({ page }) => {
+  await login(page, 'ru');
+  for (const path of ['/console/journeys', '/console/webhooks', '/console/flags']) {
+    await page.goto(path);
+    await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
+    const text = await page.locator('.main').innerText();
+    expect(text, `${path} mixes English template with Russian words`).not.toMatch(/\bNo [^\n]* yet\b|\bSearch [^\n]*…|\bNew [а-яё]/i);
+  }
+});

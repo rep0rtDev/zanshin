@@ -6,6 +6,12 @@ Release automation reads the section whose heading contains the tagged version.
 
 ## [Unreleased]
 
+## [0.3.2] — 2026-10-16
+
+### Fixed
+- Console: Settings tabs navigated to nested paths (`/settings/players/projects/…`) because the tab links were relative to the current route, so the section went blank and «General» stayed highlighted; links are absolute now.
+- Console (Russian): templated strings («No {x} yet», «Search {x}…», «Created {x}», «until {date}», Insights/Health captions, journey step summaries, member checks…) were English with a translated word pasted in; they go through a placeholder-aware `tf()` and are fully translated. Strings that are data (copied object names, filter keys) stay untranslated.
+
 ## [0.3.1] — 2026-10-16
 
 ### Changed

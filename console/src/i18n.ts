@@ -25,3 +25,8 @@ const dict: Record<string, string> = locale === 'ru' ? ru : {};
 export function t(s: string): string {
   return dict[s] ?? s;
 }
+
+/** Translates a template with `{0}`, `{1}`… placeholders, then substitutes the values. */
+export function tf(s: string, ...args: unknown[]): string {
+  return t(s).replace(/\{(\d+)\}/g, (_, i) => String(args[Number(i)] ?? ''));
+}

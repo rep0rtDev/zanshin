@@ -4,7 +4,7 @@ import { EntityPage, Text, Num, Tags, DateTime } from '../crud';
 import { AudiencePicker, ConditionEditor } from '../RuleBuilder';
 import type { Cond } from '../RuleBuilder';
 import { Badge, ErrorBox, Field, JsonField, Stat, Table, Toggle, fmtDate, fmtNum } from '../ui';
-import { t } from '../i18n';
+import { t, tf } from '../i18n';
 
 type Schedule = { kind: 'once' } | { kind: 'cron'; cron: string; window_secs?: number | null } | { kind: 'live_event'; live_event: string; anchor?: 'start' | 'end'; offset_secs?: number; window_secs?: number | null };
 type Campaign = {
@@ -152,7 +152,7 @@ function Deliveries({ c }: { c: Campaign }) {
           { h: 'Player', c: (d) => <span className="mono">{d.external_id}</span> },
           { h: 'Channel', c: (d) => <code>{d.channel}</code> },
           { h: 'Status', c: (d) => <Badge tone={d.status === 'sent' ? 'ok' : d.status === 'failed' ? 'bad' : 'warn'}>{d.status}</Badge> },
-          { h: 'Detail', c: (d) => <span className="hint">{d.detail}{d.occurrence ? ` · occurrence ${fmtDate(d.occurrence)}` : ''}</span> },
+          { h: 'Detail', c: (d) => <span className="hint">{d.detail}{d.occurrence ? tf(' · occurrence {0}', fmtDate(d.occurrence)) : ''}</span> },
         ]}
       />
     </div>

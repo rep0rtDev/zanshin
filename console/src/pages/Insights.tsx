@@ -3,7 +3,7 @@ import { del, get, post, qs, useLoad } from '../api';
 import { EntityPage, Num, Tags, Text } from '../crud';
 import { ErrorBox, Field, JsonField, Page, Stat, Table, Toggle, fmtDate, fmtNum } from '../ui';
 import { Calendar, Errors, Explore, FilterBar, Ltv, PlayerMap, Playtime, StatusBoard, filterQs, type Filter } from './InsightsV3';
-import { t as tr } from '../i18n';
+import { t as tr, tf } from '../i18n';
 
 type Totals = Record<string, number>;
 type Day = { day: string; dau: number; new_users: number; sessions: number; avg_session_secs: number; revenue: number; payers: number; purchases: number };
@@ -40,7 +40,7 @@ function Bars({ series, field, annotations, color = 'var(--fg)', money: isMoney 
         {series.length > 0 && <><text x={0} y={H + 12} fontSize={10} fill="var(--muted)">{series[0].day}</text><text x={W} y={H + 12} fontSize={10} fill="var(--muted)" textAnchor="end">{series[series.length - 1].day}</text></>}
       </svg>
       <div className="hint" style={{ minHeight: 18 }}>
-        {hover != null && series[hover] ? <>{series[hover].day}: <strong>{isMoney ? money(vals[hover]) : fmtNum(vals[hover])}</strong>{marks.filter((m) => m.i === hover).map((m) => <span key={m.a.id}> · {m.a.title}</span>)}</> : marks.length ? `${marks.length} annotation(s) in range` : ''}
+        {hover != null && series[hover] ? <>{series[hover].day}: <strong>{isMoney ? money(vals[hover]) : fmtNum(vals[hover])}</strong>{marks.filter((m) => m.i === hover).map((m) => <span key={m.a.id}> · {m.a.title}</span>)}</> : marks.length ? tf('{0} annotation(s) in range', marks.length) : ''}
       </div>
     </div>
   );
@@ -57,12 +57,12 @@ function GameMetrics({ filter }: { filter: Filter }) {
       <div className="row" style={{ alignItems: 'center' }}>{r.picker}<span className="hint">backend: {q.data?.backend ?? '…'} · revenue events: {q.data?.revenue_events.join(', ')}</span></div>
       <ErrorBox error={q.error ?? ann.error} />
       <div className="stats">
-        <Stat label={tr('DAU (latest)')} value={fmtNum(t.dau ?? 0)} sub={`avg ${fmtNum(Math.round(t.dau_avg ?? 0))}`} />
-        <Stat label={tr('WAU / MAU')} value={`${fmtNum(t.wau ?? 0)} / ${fmtNum(t.mau ?? 0)}`} sub={`stickiness ${pct(t.stickiness)}`} />
-        <Stat label={tr('New players')} value={fmtNum(t.new_users ?? 0)} sub={`${fmtNum(t.total_players ?? 0)} total`} />
-        <Stat label={tr('Sessions')} value={fmtNum(t.sessions ?? 0)} sub={`avg ${Math.round((t.avg_session_secs ?? 0) / 60)} min`} />
-        <Stat label={tr('Revenue')} value={money(t.revenue ?? 0)} sub={`${fmtNum(t.purchases ?? 0)} purchases`} />
-        <Stat label={tr('ARPDAU / ARPPU')} value={`${money(t.arpdau ?? 0)} / ${money(t.arppu ?? 0)}`} sub={`paying share ${pct(t.paying_share)}`} />
+        <Stat label={tr('DAU (latest)')} value={fmtNum(t.dau ?? 0)} sub={tf('avg {0}', fmtNum(Math.round(t.dau_avg ?? 0)))} />
+        <Stat label={tr('WAU / MAU')} value={`${fmtNum(t.wau ?? 0)} / ${fmtNum(t.mau ?? 0)}`} sub={tf('stickiness {0}', pct(t.stickiness))} />
+        <Stat label={tr('New players')} value={fmtNum(t.new_users ?? 0)} sub={tf('{0} total', fmtNum(t.total_players ?? 0))} />
+        <Stat label={tr('Sessions')} value={fmtNum(t.sessions ?? 0)} sub={tf('avg {0} min', Math.round((t.avg_session_secs ?? 0) / 60))} />
+        <Stat label={tr('Revenue')} value={money(t.revenue ?? 0)} sub={tf('{0} purchases', fmtNum(t.purchases ?? 0))} />
+        <Stat label={tr('ARPDAU / ARPPU')} value={`${money(t.arpdau ?? 0)} / ${money(t.arppu ?? 0)}`} sub={tf('paying share {0}', pct(t.paying_share))} />
       </div>
       {q.data && <>
         <div className="card"><strong>{tr('Daily active players')}</strong><Bars series={q.data.series} field="dau" annotations={ann.data?.items} /></div>
@@ -132,7 +132,7 @@ function Lifetime() {
   const r = useRange();
   const q = useLoad(() => get<LifetimeRes>('/analytics/lifetime' + qs({ from: r.from })), [r.from]);
   const a = q.data?.averages ?? {};
-  const dur = (s: number) => (s >= 3600 ? `${(s / 3600).toFixed(1)} h` : `${Math.round(s / 60)} min`);
+  const dur = (s: number) => (s >= 3600 ? `${(s / 3600).toFixed(1)} h` : tf('{0} min', Math.round(s / 60)));
   const Buckets = ({ title, rows }: { title: string; rows?: { label: string; players: number }[] }) => {
     const max = Math.max(1, ...(rows ?? []).map((b) => b.players));
     return (
@@ -187,7 +187,7 @@ function Funnels({ filter }: { filter: Filter }) {
   const [cohortStep, setCohortStep] = useState(1);
   const [cohortReached, setCohortReached] = useState(true);
   const [cohortMsg, setCohortMsg] = useState('');
-  const toAudience = () => post<{ audience: string; matched: number; members: number }>('/analytics/funnel/cohort', { steps, window_secs: windowSecs, from: r.from, model, count, cohort, filter, step: cohortStep, reached: cohortReached, audience_key: cohortKey }).then((d) => { setCohortMsg(`${d.matched} players → audience ${d.audience} (${d.members} members)`); setErr(null); }, setErr);
+  const toAudience = () => post<{ audience: string; matched: number; members: number }>('/analytics/funnel/cohort', { steps, window_secs: windowSecs, from: r.from, model, count, cohort, filter, step: cohortStep, reached: cohortReached, audience_key: cohortKey }).then((d) => { setCohortMsg(tf('{0} players → audience {1} ({2} members)', d.matched, d.audience, d.members)); setErr(null); }, setErr);
   return (
     <div className="stack">
       <div className="row" style={{ alignItems: 'end' }}>{r.picker}<Field label={tr('Count')} hint={tr('unique: once per player · total: every entry')}><select value={count} onChange={(e) => setCount(e.target.value as typeof count)}><option value="unique">{tr('unique players')}</option><option value="total">{tr('total entries')}</option></select></Field><Field label={tr('Cohort')} hint={tr('static: entered in range · shifting: conversions in range, entry may be earlier')}><select value={cohort} onChange={(e) => setCohort(e.target.value as typeof cohort)}><option value="static">static</option><option value="shifting">shifting</option></select></Field><Field label={tr('Model')}><select value={model} onChange={(e) => setModel(e.target.value as typeof model)}><option value="window">{tr('window — all steps within N s of the first')}</option><option value="step">{tr('step — each step within N s of the previous')}</option><option value="session">{tr('session — all steps in one play session')}</option><option value="unlimited">{tr('unlimited — any time in range')}</option></select></Field>{model !== 'session' && model !== 'unlimited' && <Num label={tr('Window (s)')} value={windowSecs} onChange={(v) => setWindowSecs(v ?? 86400)} min={1} />}<button className="btn" onClick={run} disabled={steps.some((s) => !s.name)}>{tr('Run')}</button></div>

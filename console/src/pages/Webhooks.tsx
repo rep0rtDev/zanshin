@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { get, post, useLoad } from '../api';
 import { EntityPage, Num, Tags, Text } from '../crud';
 import { Badge, ErrorBox, Field, JsonField, Table, Toggle, fmtDate, fmtNum } from '../ui';
-import { t } from '../i18n';
+import { t, tf } from '../i18n';
 
 type Webhook = {
   id: string; key: string; name: string; url: string; secret: string; events: string[]; enabled: boolean; batch_size: number; batch_window_secs: number;
@@ -50,7 +50,7 @@ function Deliveries({ w }: { w: Webhook }) {
         <button className="btn sm" style={{ marginLeft: 'auto' }} onClick={() => post<Delivery>(`/webhooks/${k}/test`).then((d) => { setTest(d); setErr(null); q.reload(); }, setErr)}>{t('Send test event')}</button>
       </div>
       <ErrorBox error={err ?? q.error} />
-      {test && <div style={{ marginTop: 8 }}><Badge tone={TONE[test.status]}>{test.status}</Badge> <span className="hint">{test.last_status ? `HTTP ${test.last_status}` : ''} {test.last_error}</span></div>}
+      {test && <div style={{ marginTop: 8 }}><Badge tone={TONE[test.status]}>{test.status}</Badge> <span className="hint">{test.last_status ? tf('HTTP {0}', test.last_status) : ''} {test.last_error}</span></div>}
       <div className="chips" style={{ marginTop: 8 }}>{(q.data?.stats ?? []).map((s) => <span key={s.status} className="chip">{s.status}: {fmtNum(s.count)}</span>)}</div>
       <Table<Delivery>
         rows={q.data?.items}
@@ -59,8 +59,8 @@ function Deliveries({ w }: { w: Webhook }) {
         cols={[
           { h: 'When', c: (d) => fmtDate(d.created_at) },
           { h: 'Events', c: (d) => d.event_types.map((t) => <code key={t} style={{ marginRight: 4 }}>{t}</code>) },
-          { h: 'Status', c: (d) => <><Badge tone={TONE[d.status]}>{d.status}</Badge> <span className="hint">{d.attempts}× {d.last_status ? `HTTP ${d.last_status}` : ''}</span></> },
-          { h: 'Detail', c: (d) => <span className="hint">{d.last_error || (d.next_attempt_at && d.status === 'failed' ? `retry ${fmtDate(d.next_attempt_at)}` : '')}</span> },
+          { h: 'Status', c: (d) => <><Badge tone={TONE[d.status]}>{d.status}</Badge> <span className="hint">{d.attempts}× {d.last_status ? tf('HTTP {0}', d.last_status) : ''}</span></> },
+          { h: 'Detail', c: (d) => <span className="hint">{d.last_error || (d.next_attempt_at && d.status === 'failed' ? tf('retry {0}', fmtDate(d.next_attempt_at)) : '')}</span> },
           { h: '', c: (d) => d.status !== 'sent' ? <button className="btn ghost sm" onClick={() => post(`/webhooks/${k}/deliveries/${d.id}/retry`).then(q.reload, setErr)}>{t('Retry')}</button> : null },
         ]}
       />

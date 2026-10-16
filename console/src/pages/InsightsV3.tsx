@@ -3,13 +3,13 @@ import { Link } from 'react-router-dom';
 import { get, post, qs, useLoad } from '../api';
 import { Num, Text } from '../crud';
 import { Badge, ErrorBox, Field, Stat, Table, fmtDate, fmtNum } from '../ui';
-import { t as tr } from '../i18n';
+import { t as tr, tf } from '../i18n';
 
 export type Filter = { country?: string; platform?: string; app_version?: string; experiment?: string; variant?: string };
 export const filterQs = (f: Filter) => Object.fromEntries(Object.entries(f).filter(([, v]) => v));
 const pct = (x: number | null | undefined) => (x == null ? '—' : (x * 100).toFixed(1) + '%');
 const money = (x: number | null | undefined) => (x == null ? '—' : x.toLocaleString(undefined, { maximumFractionDigits: 2 }));
-const mins = (s: number) => `${Math.round(s / 60)} min`;
+const mins = (s: number) => tf('{0} min', Math.round(s / 60));
 const since = (days: number) => new Date(Date.now() - days * 86400e3).toISOString();
 
 /** Shared dimension filter for every event-based chart. */
@@ -56,9 +56,9 @@ export function StatusBoard() {
       <ErrorBox error={q.error} />
       <div className="stats">
         <Stat label={tr('Online now')} value={fmtNum(d?.online_now ?? 0)} sub="open play sessions, last 5 min" />
-        <Stat label={tr('DAU today')} value={fmtNum(d?.dau_today ?? 0)} sub={`${fmtNum(d?.active_last_hour ?? 0)} active last hour`} />
-        <Stat label={tr('Events / min')} value={fmtNum(Math.round((d?.events_last_hour ?? 0) / 60))} sub={`${fmtNum(d?.events_last_hour ?? 0)} in the last hour`} />
-        <Stat label={tr('Errors (24 h)')} value={<span style={{ color: (d?.errors_24h.rejected_events ?? 0) + failures > 0 ? 'var(--bad)' : undefined }}>{fmtNum((d?.errors_24h.rejected_events ?? 0) + failures)}</span>} sub={`${d?.errors_24h.rejected_events ?? 0} rejected events · ${failures} failed deliveries`} />
+        <Stat label={tr('DAU today')} value={fmtNum(d?.dau_today ?? 0)} sub={tf('{0} active last hour', fmtNum(d?.active_last_hour ?? 0))} />
+        <Stat label={tr('Events / min')} value={fmtNum(Math.round((d?.events_last_hour ?? 0) / 60))} sub={tf('{0} in the last hour', fmtNum(d?.events_last_hour ?? 0))} />
+        <Stat label={tr('Errors (24 h)')} value={<span style={{ color: (d?.errors_24h.rejected_events ?? 0) + failures > 0 ? 'var(--bad)' : undefined }}>{fmtNum((d?.errors_24h.rejected_events ?? 0) + failures)}</span>} sub={tf('{0} rejected events · {1} failed deliveries', d?.errors_24h.rejected_events ?? 0, failures)} />
       </div>
       <div className="grid" style={{ gridTemplateColumns: 'repeat(3,minmax(0,1fr))' }}>
         <div className="card">
@@ -122,7 +122,7 @@ export function Calendar() {
           {days.map((d) => <div key={d.toISOString()} className={'cal-day' + (d.toISOString().slice(0, 10) === new Date().toISOString().slice(0, 10) ? ' today' : '')}>{weeks === 4 ? d.getUTCDate() : d.toISOString().slice(5, 10)}</div>)}
         </div>
         <div className="cal-metrics" style={{ gridTemplateColumns: `repeat(${days.length}, 1fr)` }}>
-          {days.map((d) => { const m = q.data?.metrics.find((x) => x.day === d.toISOString().slice(0, 10)); const h = m ? (m.dau / maxDau) * 100 : 0; return <div key={d.toISOString()} className="cal-bar" title={m ? `${m.day}: DAU ${fmtNum(m.dau)} · revenue ${money(m.revenue)}` : ''}><div style={{ height: `${h}%` }} /></div>; })}
+          {days.map((d) => { const m = q.data?.metrics.find((x) => x.day === d.toISOString().slice(0, 10)); const h = m ? (m.dau / maxDau) * 100 : 0; return <div key={d.toISOString()} className="cal-bar" title={m ? tf('{0}: DAU {1} · revenue {2}', m.day, fmtNum(m.dau), money(m.revenue)) : ''}><div style={{ height: `${h}%` }} /></div>; })}
         </div>
         {(['live_event', 'experiment', 'campaign', 'annotation'] as const).map((kind) => lanes[kind] && (
           <div key={kind} className="cal-lane">
@@ -239,7 +239,7 @@ export function PlayerMap({ filter }: { filter: Filter }) {
       <ErrorBox error={q.error} />
       <div className="card map-grid">
         {(q.data?.countries ?? []).slice(0, 60).map((c) => (
-          <div key={c.country} className="map-cell" style={{ background: `rgba(26,95,180,${0.08 + 0.8 * (c.players / max)})`, color: c.players / max > 0.5 ? '#fff' : undefined }} title={`${c.country}: ${fmtNum(c.players)} players · ${fmtNum(c.events)} events`}>
+          <div key={c.country} className="map-cell" style={{ background: `rgba(26,95,180,${0.08 + 0.8 * (c.players / max)})`, color: c.players / max > 0.5 ? '#fff' : undefined }} title={tf('{0}: {1} players · {2} events', c.country, fmtNum(c.players), fmtNum(c.events))}>
             <div className="map-flag">{flag(c.country)}</div><div className="map-cc">{c.country}</div><div className="map-n">{fmtNum(c.players)}</div><div className="map-pct">{pct(c.share)}</div>
           </div>
         ))}
@@ -265,7 +265,7 @@ export function Playtime({ filter }: { filter: Filter }) {
       <div className="row" style={{ alignItems: 'center' }}>{r.picker}<span className="hint">{tr('from play sessions (platform / app version filters apply)')}</span></div>
       <ErrorBox error={q.error} />
       <div className="stats">
-        <Stat label={tr('Sessions')} value={fmtNum(t?.sessions ?? 0)} sub={`${(t?.sessions_per_player_day ?? 0).toFixed(2)} per player-day`} />
+        <Stat label={tr('Sessions')} value={fmtNum(t?.sessions ?? 0)} sub={tf('{0} per player-day', (t?.sessions_per_player_day ?? 0).toFixed(2))} />
         <Stat label={tr('Avg session')} value={mins(t?.avg_session_secs ?? 0)} />
         <Stat label={tr('Playtime / player-day')} value={mins(t?.playtime_per_player_day_secs ?? 0)} />
         <Stat label={tr('Total playtime')} value={`${Math.round((t?.total_secs ?? 0) / 3600)} h`} />
@@ -301,15 +301,15 @@ export function Ltv({ filter }: { filter: Filter }) {
   const importCsv = () => post('/analytics/ad-spend', { csv }).then(() => { setCsv(''); q.reload(); spend.reload(); }, setErr);
   const addRow = () => post('/analytics/ad-spend', { rows: [row] }).then(() => { q.reload(); spend.reload(); }, setErr);
   const t = q.data?.totals;
-  const cell = (v: { revenue: number; ltv: number; roas: number } | null | undefined, showRoas: boolean) => v == null ? <span className="hint">—</span> : <span title={`revenue ${money(v.revenue)}`}>{money(v.ltv)}{showRoas && <span className="hint"> · {pct(v.roas)}</span>}</span>;
+  const cell = (v: { revenue: number; ltv: number; roas: number } | null | undefined, showRoas: boolean) => v == null ? <span className="hint">—</span> : <span title={tf('revenue {0}', money(v.revenue))}>{money(v.ltv)}{showRoas && <span className="hint"> · {pct(v.roas)}</span>}</span>;
   return (
     <div className="stack">
       <div className="row" style={{ alignItems: 'end' }}>{r.picker}<Text label={tr('Day offsets')} value={days} onChange={setDays} mono hint={tr('LTV / RoAS at D-n, 0..180')} /></div>
       <ErrorBox error={q.error ?? spend.error ?? err} />
       <div className="stats">
         <Stat label={tr('Installs')} value={fmtNum(t?.installs ?? 0)} sub="new identities in range" />
-        <Stat label={tr('Ad spend')} value={money(t?.spend ?? 0)} sub={`CPI ${money(t?.cpi ?? 0)}`} />
-        {(q.data?.days ?? []).slice(0, 2).map((d) => <Stat key={d} label={`LTV D${d}`} value={money(t?.at[`d${d}`]?.ltv)} sub={`RoAS ${pct(t?.at[`d${d}`]?.roas)}`} />)}
+        <Stat label={tr('Ad spend')} value={money(t?.spend ?? 0)} sub={tf('CPI {0}', money(t?.cpi ?? 0))} />
+        {(q.data?.days ?? []).slice(0, 2).map((d) => <Stat key={d} label={tf('LTV D{0}', d)} value={money(t?.at[`d${d}`]?.ltv)} sub={tf('RoAS {0}', pct(t?.at[`d${d}`]?.roas))} />)}
       </div>
       <div className="card">
         <strong>{tr('Install cohorts')}</strong> <span className="hint">{tr('LTV = cumulative revenue per install · RoAS = revenue / spend')}</span>

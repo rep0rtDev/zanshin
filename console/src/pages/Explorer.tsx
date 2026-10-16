@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { del, get, post, put, useLoad } from '../api';
 import { Num, Text } from '../crud';
 import { Badge, ErrorBox, Field, Page, Table, Toggle, fmtDate, fmtNum } from '../ui';
-import { t } from '../i18n';
+import { t, tf } from '../i18n';
 
 type SqlResult = { columns: string[]; types: string[]; rows: unknown[][]; rows_read: number; elapsed_secs: number; truncated: boolean };
 type SavedQuery = { key: string; name: string; description: string; sql: string; tags: string[]; updated_at: string };
@@ -53,8 +53,8 @@ function Sql() {
   const [cohort, setCohort] = useState('');
   const [msg, setMsg] = useState('');
   const run = () => { setBusy(true); post<SqlResult>('/sql', { sql, limit }).then((d) => { setRes(d); setErr(null); }, setErr).finally(() => setBusy(false)); };
-  const save = () => post('/analytics/queries', { key: saveKey, name: saveKey, sql }).then(() => { setMsg(`Saved as ${saveKey}`); setErr(null); }, setErr);
-  const toCohort = () => post<{ audience: string; matched: number; members: number }>('/sql/cohort', { sql, audience_key: cohort }).then((d) => { setMsg(`${d.matched} players → audience ${d.audience} (${d.members} members)`); setErr(null); }, setErr);
+  const save = () => post('/analytics/queries', { key: saveKey, name: saveKey, sql }).then(() => { setMsg(tf('Saved as {0}', saveKey)); setErr(null); }, setErr);
+  const toCohort = () => post<{ audience: string; matched: number; members: number }>('/sql/cohort', { sql, audience_key: cohort }).then((d) => { setMsg(tf('{0} players → audience {1} ({2} members)', d.matched, d.audience, d.members)); setErr(null); }, setErr);
   return (
     <div className="stack">
       {st.data && !st.data.available && <div className="card"><Badge tone="warn">{t('ClickHouse is not enabled')}</Badge> <span className="hint">{t('The SQL explorer reads the ClickHouse') + ' '}<code>events</code> table; configure <code>clickhouse.enabled</code>{' ' + t('to use it.')}</span></div>}
@@ -186,7 +186,7 @@ function Alerts() {
         empty={t('No metric alerts yet.')}
         cols={[
           { h: 'Key', c: (a) => <strong className="mono">{a.key}</strong> },
-          { h: 'Rule', c: (a) => <span>{a.aggregation}({a.event}{a.field ? `.${a.field}` : ''}) over {a.window_secs}s {a.condition.kind === 'anomaly' ? `anomaly z≥${a.condition.zscore}` : `${a.condition.kind} ${a.condition.threshold}`}</span> },
+          { h: 'Rule', c: (a) => <span>{a.aggregation}({a.event}{a.field ? `.${a.field}` : ''}) over {a.window_secs}s {a.condition.kind === 'anomaly' ? tf('anomaly z≥{0}', a.condition.zscore) : `${a.condition.kind} ${a.condition.threshold}`}</span> },
           { h: 'Last value', c: (a) => a.last_value === null ? '—' : fmtNum(a.last_value) },
           { h: 'Last fired', c: (a) => a.last_fired_at ? fmtDate(a.last_fired_at) : '—' },
           { h: 'State', c: (a) => <Badge tone={a.enabled ? 'ok' : 'muted'}>{a.enabled ? 'enabled' : 'disabled'}</Badge> },
@@ -196,7 +196,7 @@ function Alerts() {
       {check && <div className="card hint">Check: value {fmtNum(check.value as number)} · {check.fired ? 'fired' : check.suppressed ? 'condition met, suppressed by cooldown' : 'ok'}</div>}
       {fires && <div className="card"><strong>{t('Fires of') + ' '}<code>{fires.key}</code></strong><Table<Fire> rows={fires.items} rowKey={(f) => f.id} empty={t('Never fired.')} cols={[{ h: 'When', c: (f) => fmtDate(f.fired_at) }, { h: 'Value', c: (f) => fmtNum(f.value) }, { h: 'Baseline', c: (f) => f.baseline === null ? '—' : fmtNum(f.baseline) }, { h: 'Text', c: (f) => f.text }]} /></div>}
       <div className="card stack">
-        <strong>{editing ? `Edit ${form.key}` : 'New alert'}</strong>
+        <strong>{editing ? tf('Edit {0}', form.key) : 'New alert'}</strong>
         <div className="row" style={{ alignItems: 'end' }}>
           {!editing && <Text label={t('Key')} value={form.key} onChange={(key) => setForm({ ...form, key })} mono />}
           <Text label={t('Name')} value={form.name} onChange={(name) => setForm({ ...form, name })} />
@@ -247,7 +247,7 @@ function Reports() {
           { h: 'Key', c: (r) => <strong className="mono">{r.key}</strong> },
           { h: 'Query', c: (r) => <span className="mono">{r.query_key}</span> },
           { h: 'Schedule', c: (r) => <span className="mono">{r.cron} <span className="hint">{r.timezone}</span></span> },
-          { h: 'Delivery', c: (r) => <span className="hint">{r.channels.length ? r.channels.join(', ') : 'all report channels'}{r.email ? ` · email via ${r.email.integration} (${r.email.to.length})` : ''}</span> },
+          { h: 'Delivery', c: (r) => <span className="hint">{r.channels.length ? r.channels.join(', ') : 'all report channels'}{r.email ? tf(' · email via {0} ({1})', r.email.integration, r.email.to.length) : ''}</span> },
           { h: 'Last run', c: (r) => r.last_run_at ? <span>{fmtDate(r.last_run_at)} <Badge tone={r.last_status.startsWith('error') ? 'bad' : r.last_status === 'partial' ? 'warn' : 'ok'}>{r.last_status || 'ok'}</Badge></span> : '—' },
           { h: 'State', c: (r) => <Badge tone={r.enabled ? 'ok' : 'muted'}>{r.enabled ? 'enabled' : 'disabled'}</Badge> },
           { h: '', c: (r) => <span className="row"><button className="btn ghost sm" onClick={() => post<Record<string, unknown>>(`/analytics/reports/${encodeURIComponent(r.key)}/run`, {}).then((d) => { setOut(d); setErr(null); q.reload(); }, setErr)}>{t('Run now')}</button><button className="btn ghost sm" onClick={() => { setForm({ ...r }); setEmailOn(!!r.email); setEditing(true); }}>{t('Edit')}</button><button className="btn ghost sm" onClick={() => del(`/analytics/reports/${encodeURIComponent(r.key)}`).then(q.reload, setErr)}>{t('Delete')}</button></span> },
@@ -255,7 +255,7 @@ function Reports() {
       />
       {out && <div className="card hint">Run: {String(out.status)} · {String(out.rows)} rows</div>}
       <div className="card stack">
-        <strong>{editing ? `Edit ${form.key}` : 'New report'}</strong>
+        <strong>{editing ? tf('Edit {0}', form.key) : 'New report'}</strong>
         <div className="row" style={{ alignItems: 'end' }}>
           {!editing && <Text label={t('Key')} value={form.key} onChange={(key) => setForm({ ...form, key })} mono />}
           <Text label={t('Name')} value={form.name} onChange={(name) => setForm({ ...form, name })} />

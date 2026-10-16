@@ -3,7 +3,7 @@ import { Route, Routes, useNavigate, useParams, Link } from 'react-router-dom';
 import { del, get, post, put, qs, useLoad } from '../api';
 import { Badge, Confirm, ErrorBox, Field, JsonField, Page, Table, fmtDate } from '../ui';
 import { DirectSend } from './Messages';
-import { t } from '../i18n';
+import { t, tf } from '../i18n';
 
 type Identity = { id: string; external_id: string; created_at: string; updated_at: string; last_seen_at: string; properties: { default: Record<string, unknown>; custom: Record<string, unknown>; computed: Record<string, unknown> } };
 type Ev = { id: string; event_time: string; name: string; value?: unknown; metadata?: unknown; experiments?: Record<string, string> };
@@ -175,10 +175,10 @@ function FlagsTab({ id }: { id: string }) {
   const rows = (q.data?.items ?? []).filter((r) => (!filter || r.key.includes(filter)) && (!changedOnly || !['default', 'disabled'].includes(r.reason.kind)));
   const source = (r: Resolved) => {
     const k = r.reason.kind;
-    if (k === 'experiment') return `experiment ${r.reason.experiment} · ${r.reason.variant}`;
-    if (k === 'live_event') return `live event ${r.reason.live_event}`;
-    if (k === 'variant') return `rule ${r.reason.rule_id} · variant ${r.reason.variant}`;
-    if (k === 'rule') return `rule ${r.reason.rule_id}`;
+    if (k === 'experiment') return tf('experiment {0} · {1}', r.reason.experiment, r.reason.variant);
+    if (k === 'live_event') return tf('live event {0}', r.reason.live_event);
+    if (k === 'variant') return tf('rule {0} · variant {1}', r.reason.rule_id, r.reason.variant);
+    if (k === 'rule') return tf('rule {0}', r.reason.rule_id);
     if (k === 'override') return 'identity override';
     return k;
   };
@@ -223,7 +223,7 @@ function JourneysTab({ id }: { id: string }) {
           <div className="row" style={{ alignItems: 'center' }}>
             <Link to={`/journeys/${encodeURIComponent(journey)}`}><strong>{journey}</strong></Link>
             <Badge tone={JTONE[run.status]}>{run.status}</Badge>
-            <span className="hint">entered {fmtDate(run.entered_at)}{run.context?.parent ? ` · from journey ${String(run.context.parent)}` : ''}{run.status === 'active' && run.wake_at ? ` · wakes ${fmtDate(run.wake_at)}` : ''}{run.error ? ` · ${run.error}` : ''}</span>
+            <span className="hint">entered {fmtDate(run.entered_at)}{run.context?.parent ? tf(' · from journey {0}', String(run.context.parent)) : ''}{run.status === 'active' && run.wake_at ? tf(' · wakes {0}', fmtDate(run.wake_at)) : ''}{run.error ? ` · ${run.error}` : ''}</span>
           </div>
           <table className="table" style={{ marginTop: 8 }}>
             <thead><tr><th style={{ width: 180 }}>{t('Time')}</th><th style={{ width: 160 }}>{t('Step')}</th><th>{t('What happened')}</th></tr></thead>
